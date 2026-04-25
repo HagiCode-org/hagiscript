@@ -100,6 +100,7 @@ Reason: missing executable
 hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 hagiscript npm-sync --manifest ./manifest.json --registry-mirror https://registry.npmmirror.com/
+hagiscript npm-sync --manifest ./manifest.json --registry-mirror https://registry.npmmirror.com/ --mirror-only
 ```
 
 Compatibility manifest schema:
@@ -118,7 +119,7 @@ Compatibility manifest schema:
 
 The required `version` field accepts package.json-style semver ranges such as `^1.2.0`, `>=1.0.0 <2.0.0`, or `1.0.0 || 2.0.0`. The optional `target` field controls the selector used for `npm install -g`; when omitted, Hagiscript installs `<package>@<version>`.
 
-The optional top-level `registryMirror` field configures the npm registry used for both inventory and install commands. It must be a non-empty absolute `http:` or `https:` URL. When present, HagiScript appends `--registry <registryMirror>` to `npm list -g --depth=0 --json` and `npm install -g <package>@<selector>` without changing package selection. This is useful for public mirrors such as `https://registry.npmmirror.com/` or enterprise registries such as `https://npm.company.example/repository/npm/`.
+The optional top-level `registryMirror` field configures the npm registry used for both inventory and install commands. It must be a non-empty absolute `http:` or `https:` URL. When present, HagiScript first appends `--registry <registryMirror>` to `npm list -g --depth=0 --json` and `npm install -g <package>@<selector>` without changing package selection. If that mirror-backed npm command fails, HagiScript automatically retries the same inventory or install command once against the official npm registry `https://registry.npmjs.org/`. This mirror-first retry scope is intentionally limited to npm inventory and package mutation commands; runtime validation, manifest validation, and package planning do not retry. This is useful for public mirrors such as `https://registry.npmmirror.com/` or enterprise registries such as `https://npm.company.example/repository/npm/`.
 
 Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory tools are always included using internally pinned versions from `src/runtime/tool-sync-catalog.config.json`: OpenSpec skills (`skills@1.5.1`), OmniRoute (`omniroute@3.6.9`), and code-server (`code-server@4.117.0`). Optional agent CLI sync is enabled explicitly; selected built-in CLIs or custom npm packages are added when provided.
 
@@ -141,6 +142,8 @@ Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory
 The first built-in optional agent CLI IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`). These built-in package versions are pinned in `src/runtime/tool-sync-catalog.config.json`. HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
 
 Use `--registry-mirror <url>` when automation needs to override the manifest registry for a single run. Precedence is CLI override first, manifest `registryMirror` second, and npm's default registry behavior third. If neither the CLI nor manifest provides a mirror, HagiScript does not add `--registry` and existing npm defaults, `.npmrc`, or environment configuration continue to apply.
+
+Use `--mirror-only` when a run must stay on the configured mirror and must not retry against `https://registry.npmjs.org/`. When omitted, automatic official-registry fallback remains enabled by default for mirror-backed npm inventory and install commands.
 
 For simple product-managed requests, optional CLI selections can be provided directly without writing a manifest:
 
@@ -172,6 +175,7 @@ Example output:
 ```text
 Manifest validated: ./manifest.json (2 packages, mode=packages)
 Registry mirror: https://registry.npmmirror.com/
+Fallback policy: auto
 Runtime validated: /opt/hagiscript/node
 node: /opt/hagiscript/node/bin/node (v22.12.0)
 npm: /opt/hagiscript/node/bin/npm (10.9.0)
@@ -186,10 +190,14 @@ Runtime: /opt/hagiscript/node
 Manifest: ./manifest.json
 Mode: packages
 Registry mirror: https://registry.npmmirror.com/
+Fallback policy: auto
+Fallback used: no
 Packages: 2
 No-op: 1
 Changed: 1
 ```
+
+When fallback is triggered, HagiScript logs `Fallback used: ...` during execution and records `Fallback detail: ...` in the final summary so CI or desktop automation can see which mirror failed, which official registry retry was used, and whether that retry succeeded.
 
 Use the library API from ESM consumers:
 
