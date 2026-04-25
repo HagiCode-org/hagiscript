@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { createRuntimeInfo, packageVersion } from "./index.js";
 import { registerNpmSyncCommand } from "./commands/npm-sync-commands.js";
@@ -36,7 +38,22 @@ export async function runCli(argv = process.argv): Promise<void> {
   await program.parseAsync(argv);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+export function isCliEntrypoint(
+  moduleUrl = import.meta.url,
+  argvPath = process.argv[1]
+): boolean {
+  if (!argvPath) {
+    return false;
+  }
+
+  try {
+    return realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
+  } catch {
+    return false;
+  }
+}
+
+if (isCliEntrypoint()) {
   runCli().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);

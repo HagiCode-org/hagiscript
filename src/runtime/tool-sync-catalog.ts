@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import semver from "semver";
+import toolSyncCatalogConfig from "./tool-sync-catalog.config.json" with { type: "json" };
 
 export type ToolSyncGroupId = "mandatory" | "optional-agent-cli";
 export type ToolSyncRequirement = "mandatory" | "optional";
@@ -41,6 +42,11 @@ export interface BuildToolSyncPackageSetOptions extends ToolSyncSelection {
   catalog?: readonly ToolSyncCatalogEntry[];
 }
 
+interface ToolSyncCatalogConfig {
+  schemaVersion: number;
+  tools: ToolSyncCatalogEntry[];
+}
+
 export class ToolSyncCatalogValidationError extends Error {
   readonly errors: string[];
 
@@ -51,62 +57,11 @@ export class ToolSyncCatalogValidationError extends Error {
   }
 }
 
-export const builtInToolSyncCatalog: readonly ToolSyncCatalogEntry[] = [
-  {
-    id: "openspec-skills",
-    displayName: "OpenSpec skills",
-    packageName: "skills",
-    version: "latest",
-    target: "latest",
-    group: "mandatory",
-    requirement: "mandatory"
-  },
-  {
-    id: "omniroute",
-    displayName: "OmniRoute",
-    packageName: "omniroute",
-    version: "latest",
-    target: "latest",
-    group: "mandatory",
-    requirement: "mandatory"
-  },
-  {
-    id: "code-server",
-    displayName: "code-server",
-    packageName: "code-server",
-    version: "latest",
-    target: "latest",
-    group: "mandatory",
-    requirement: "mandatory"
-  },
-  {
-    id: "codex",
-    displayName: "Codex CLI",
-    packageName: "@openai/codex",
-    version: "latest",
-    target: "latest",
-    group: "optional-agent-cli",
-    requirement: "optional"
-  },
-  {
-    id: "qoder",
-    displayName: "Qoder CLI",
-    packageName: "@qoder/cli",
-    version: "latest",
-    target: "latest",
-    group: "optional-agent-cli",
-    requirement: "optional"
-  },
-  {
-    id: "opencode",
-    displayName: "OpenCode CLI",
-    packageName: "opencode-ai",
-    version: "latest",
-    target: "latest",
-    group: "optional-agent-cli",
-    requirement: "optional"
-  }
-] as const;
+export const builtInToolSyncCatalogConfig =
+  toolSyncCatalogConfig as ToolSyncCatalogConfig;
+
+export const builtInToolSyncCatalog: readonly ToolSyncCatalogEntry[] =
+  builtInToolSyncCatalogConfig.tools;
 
 export function validateToolSyncCatalog(
   catalog: readonly ToolSyncCatalogEntry[] = builtInToolSyncCatalog
@@ -162,10 +117,6 @@ export function buildToolSyncPackageSet(
   );
 
   if (options.optionalAgentCliSyncEnabled) {
-    if (selectedIds.length === 0 && customEntries.length === 0) {
-      errors.push("at least one optional agent CLI must be selected");
-    }
-
     for (const selectedId of selectedIds) {
       if (!optionalById.has(selectedId)) {
         errors.push(`unknown optional agent CLI tool ID: ${selectedId}`);
@@ -284,7 +235,7 @@ function normalizeCustomAgentCliTools(
 ): ToolSyncCatalogEntry[] {
   return inputs.map((input, index) => {
     const packageName = input.packageName?.trim() ?? "";
-    const id = input.id?.trim() || `custom:${packageName}`;
+    const id = input.id?.trim() || `custom:${packageNameToToolId(packageName)}`;
     const version = input.version?.trim() || "latest";
     const displayName = input.displayName?.trim() || packageName;
     const target = input.target?.trim() || version;
@@ -320,6 +271,14 @@ function isValidVersionSelector(selector: string): boolean {
 
 function isValidToolId(id: string): boolean {
   return /^[a-z0-9][a-z0-9:-]*$/u.test(id);
+}
+
+function packageNameToToolId(packageName: string): string {
+  return packageName
+    .replace(/^@/u, "")
+    .replace(/[^a-zA-Z0-9]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .toLowerCase();
 }
 
 function isValidPackageName(packageName: string): boolean {
