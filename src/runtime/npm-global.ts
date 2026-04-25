@@ -27,6 +27,7 @@ export class NpmCommandError extends Error {
 export interface NpmGlobalCommandOptions {
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  registryMirror?: string;
   runCommand?: (
     command: string,
     args: string[],
@@ -38,7 +39,11 @@ export async function listGlobalPackages(
   npmPath: string,
   options: NpmGlobalCommandOptions = {}
 ): Promise<NpmCommandResult> {
-  return runNpmCommand(npmPath, ["list", "-g", "--depth=0", "--json"], options);
+  return runNpmCommand(
+    npmPath,
+    appendRegistryMirror(["list", "-g", "--depth=0", "--json"], options),
+    options
+  );
 }
 
 export async function installGlobalPackage(
@@ -46,7 +51,20 @@ export async function installGlobalPackage(
   selector: string,
   options: NpmGlobalCommandOptions = {}
 ): Promise<NpmCommandResult> {
-  return runNpmCommand(npmPath, ["install", "-g", selector], options);
+  return runNpmCommand(
+    npmPath,
+    appendRegistryMirror(["install", "-g", selector], options),
+    options
+  );
+}
+
+function appendRegistryMirror(
+  args: string[],
+  options: NpmGlobalCommandOptions
+): string[] {
+  return options.registryMirror
+    ? [...args, "--registry", options.registryMirror]
+    : args;
 }
 
 async function runNpmCommand(

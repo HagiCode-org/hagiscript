@@ -30,6 +30,7 @@ export interface NpmSyncManifestEntry {
 export interface NpmSyncManifest {
   packages: Record<string, NpmSyncManifestEntry>;
   syncMode: "packages" | "tools";
+  registryMirror?: string;
 }
 
 export interface NpmSyncToolManifestSelection {
@@ -40,6 +41,7 @@ export interface NpmSyncToolManifestSelection {
 
 export interface NpmSyncToolManifest {
   tools: NpmSyncToolManifestSelection;
+  registryMirror?: string;
 }
 
 export type InstalledGlobalPackages = Record<string, string>;
@@ -85,6 +87,7 @@ export interface NpmSyncSummary {
   manifestPath: string;
   packageCount: number;
   syncMode: NpmSyncManifest["syncMode"];
+  registryMirror?: string;
   noopCount: number;
   changedCount: number;
   actions: NpmSyncActionResult[];
@@ -93,6 +96,7 @@ export interface NpmSyncSummary {
 export interface NpmSyncOptions {
   runtimePath: string;
   manifestPath: string;
+  registryMirror?: string;
   npmOptions?: NpmGlobalCommandOptions;
   verifyRuntime?: typeof verifyNodeRuntime;
   onLog?: (event: NpmSyncLogEvent) => void;
@@ -104,6 +108,7 @@ export type NpmSyncLogEvent =
       manifestPath: string;
       packageCount: number;
       syncMode: NpmSyncManifest["syncMode"];
+      registryMirror?: string;
     }
   | { type: "runtime-valid"; runtime: NpmSyncRuntimeMetadata }
   | { type: "inventory"; packages: InstalledGlobalPackages }
@@ -172,8 +177,14 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
     throw new NpmManifestValidationError(["manifest must be a JSON object"]);
   }
 
+  const registryMirror = validateRegistryMirrorValue(
+    value.registryMirror,
+    "registryMirror",
+    errors
+  );
+
   if (isRecord(value.tools) && !Array.isArray(value.tools)) {
-    return validateToolSyncManifest(value.tools);
+    return validateToolSyncManifest(value.tools, registryMirror, errors);
   }
 
   if (!isRecord(value.packages) || Array.isArray(value.packages)) {
@@ -230,7 +241,20 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
     throw new NpmManifestValidationError(errors);
   }
 
-  return { packages, syncMode: "packages" };
+  return { packages, syncMode: "packages", registryMirror };
+}
+
+export function validateRegistryMirror(
+  value: unknown,
+  path = "registryMirror"
+): string | undefined {
+  const errors: string[] = [];
+  const registryMirror = validateRegistryMirrorValue(value, path, errors);
+  if (errors.length > 0) {
+    throw new NpmManifestValidationError(errors);
+  }
+
+  return registryMirror;
 }
 
 export function normalizeGlobalInventory(
@@ -317,11 +341,17 @@ export async function syncNpmGlobals(
   options: NpmSyncOptions
 ): Promise<NpmSyncSummary> {
   const manifest = await loadNpmSyncManifest(options.manifestPath);
+  const registryMirrorOverride = validateRegistryMirror(
+    options.registryMirror,
+    "--registry-mirror"
+  );
+  const registryMirror = registryMirrorOverride ?? manifest.registryMirror;
   options.onLog?.({
     type: "manifest-loaded",
     manifestPath: options.manifestPath,
     packageCount: Object.keys(manifest.packages).length,
-    syncMode: manifest.syncMode
+    syncMode: manifest.syncMode,
+    registryMirror
   });
 
   const verifyRuntime = options.verifyRuntime ?? verifyNodeRuntime;
@@ -346,6 +376,7 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "runtime-valid", runtime });
   const npmOptions = {
     ...options.npmOptions,
+    registryMirror,
     env: createRuntimeNpmEnv(runtime.targetDirectory, options.npmOptions?.env)
   };
 
@@ -412,6 +443,7 @@ export async function syncNpmGlobals(
     manifestPath: options.manifestPath,
     packageCount: plan.length,
     syncMode: manifest.syncMode,
+    registryMirror,
     noopCount: actions.filter((action) => !action.changed).length,
     changedCount: actions.filter((action) => action.changed).length,
     actions
@@ -421,13 +453,22 @@ export async function syncNpmGlobals(
   return summary;
 }
 
-function validateToolSyncManifest(value: Record<string, unknown>): NpmSyncManifest {
+function validateToolSyncManifest(
+  value: Record<string, unknown>,
+  registryMirror: string | undefined,
+  existingErrors: readonly string[]
+): NpmSyncManifest {
+  if (existingErrors.length > 0) {
+    throw new NpmManifestValidationError([...existingErrors]);
+  }
+
   try {
     const selection = normalizeToolSelection(value);
     const packageSet = buildToolSyncPackageSet(selection);
     return {
       packages: normalizeToolPackageSet(packageSet),
-      syncMode: "tools"
+      syncMode: "tools",
+      registryMirror
     };
   } catch (error) {
     if (error instanceof ToolSyncCatalogValidationError) {
@@ -435,6 +476,42 @@ function validateToolSyncManifest(value: Record<string, unknown>): NpmSyncManife
     }
     throw error;
   }
+}
+
+function validateRegistryMirrorValue(
+  value: unknown,
+  path: string,
+  errors: string[]
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    errors.push(`${path} must be a string URL`);
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    errors.push(`${path} must be a non-empty URL`);
+    return undefined;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    errors.push(`${path} must be an absolute http or https URL`);
+    return undefined;
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    errors.push(`${path} must use http or https protocol`);
+    return undefined;
+  }
+
+  return trimmed;
 }
 
 function normalizeToolSelection(
