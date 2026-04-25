@@ -252,7 +252,7 @@ The package `exports` field points consumers to `dist/index.js` and `dist/index.
 
 GitHub Actions provide three automation paths:
 
-- `ci.yml` installs dependencies with `npm ci`, then runs lint, format check, tests, build, and package verification.
+- `ci.yml` installs dependencies with `npm ci`, then runs tests, build, and package verification.
 - `npm-publish.yml` resolves a unique prerelease version from `main`, stamps both `package.json` and `package-lock.json` with `npm version --no-git-tag-version`, then publishes to the `dev` dist-tag.
 - `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating the tag format, rejecting tags older than the repository base version, and stamping the stable version the same way.
 - `release-drafter.yml` keeps a categorized release draft using `.github/release-drafter.yml`.

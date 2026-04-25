@@ -250,7 +250,7 @@ npm run publish:verify-release -- v0.1.0
 
 GitHub Actions 提供三类自动化流程：
 
-- `ci.yml` 使用 `npm ci` 安装依赖，并执行 lint、格式检查、测试、构建和包内容校验。
+- `ci.yml` 使用 `npm ci` 安装依赖，并执行测试、构建和包内容校验。
 - `npm-publish.yml` 在 `main` 分支解析唯一预发布版本，用 `npm version --no-git-tag-version` 同步 `package.json` 和 `package-lock.json`，再发布到 `dev` dist-tag。
 - `npm-publish.yml` 也会在非草稿、非 prerelease 的 GitHub Release 发布时，校验 `vX.Y.Z` 标签格式，拒绝早于仓库基础版本的标签，并用同样方式写入稳定版本再发布到 `latest` dist-tag。
 - `release-drafter.yml` 通过 `.github/release-drafter.yml` 维护分类清晰的发布草稿。
