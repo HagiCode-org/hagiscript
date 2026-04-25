@@ -2,6 +2,8 @@
 
 import { Command } from "commander";
 import { createRuntimeInfo, packageVersion } from "./index.js";
+import { registerNpmSyncCommand } from "./commands/npm-sync-commands.js";
+import { registerNodeRuntimeCommands } from "./commands/node-runtime-commands.js";
 
 export function createCli(): Command {
   const program = new Command();
@@ -18,6 +20,9 @@ export function createCli(): Command {
       const info = createRuntimeInfo();
       process.stdout.write(`${JSON.stringify(info, null, 2)}\n`);
     });
+
+  registerNodeRuntimeCommands(program);
+  registerNpmSyncCommand(program);
 
   program.action(() => {
     program.outputHelp();

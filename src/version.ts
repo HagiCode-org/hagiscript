@@ -1,4 +1,4 @@
-export const packageName = "hagiscript";
+export const packageName = "@hagicode/hagiscript";
 export const packageVersion = "0.1.0";
 
 export interface PackageMetadata {

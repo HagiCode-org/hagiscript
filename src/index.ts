@@ -1,3 +1,5 @@
+import { packageName, packageVersion } from "./version.js";
+
 export {
   getPackageMetadata,
   packageName,
@@ -13,8 +15,32 @@ export interface HagiscriptRuntimeInfo {
 
 export function createRuntimeInfo(): HagiscriptRuntimeInfo {
   return {
-    packageName: "hagiscript",
-    version: "0.1.0",
+    packageName,
+    version: packageVersion,
     status: "foundation"
   };
 }
+
+export {
+  installNodeRuntime,
+  type InstallNodeRuntimeResult
+} from "./runtime/node-installer.js";
+export {
+  verifyNodeRuntime,
+  type NodeRuntimeVerificationResult
+} from "./runtime/node-verify.js";
+export {
+  createNpmSyncPlan,
+  loadNpmSyncManifest,
+  normalizeGlobalInventory,
+  syncNpmGlobals,
+  validateNpmSyncManifest,
+  type InstalledGlobalPackages,
+  type NpmSyncActionKind,
+  type NpmSyncActionResult,
+  type NpmSyncManifest,
+  type NpmSyncManifestEntry,
+  type NpmSyncPlannedAction,
+  type NpmSyncRuntimeMetadata,
+  type NpmSyncSummary
+} from "./runtime/npm-sync.js";
