@@ -122,7 +122,7 @@ Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory
 {
   "tools": {
     "optionalAgentCliSyncEnabled": true,
-    "selectedOptionalAgentCliIds": ["codex", "opencode"],
+    "selectedOptionalAgentCliIds": ["codex", "claude-code", "fission-openspec", "opencode"],
     "customAgentClis": [
       {
         "packageName": "@scope/agent-cli",
@@ -133,7 +133,7 @@ Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory
 }
 ```
 
-The first built-in optional agent CLI IDs are `codex` (`@openai/codex@0.125.0`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`). These built-in package versions are pinned in `src/runtime/tool-sync-catalog.config.json`. HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
+The first built-in optional agent CLI IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`). These built-in package versions are pinned in `src/runtime/tool-sync-catalog.config.json`. HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
 
 For simple product-managed requests, optional CLI selections can be provided directly without writing a manifest:
 

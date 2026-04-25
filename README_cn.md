@@ -122,7 +122,7 @@ hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 {
   "tools": {
     "optionalAgentCliSyncEnabled": true,
-    "selectedOptionalAgentCliIds": ["codex", "opencode"],
+    "selectedOptionalAgentCliIds": ["codex", "claude-code", "fission-openspec", "opencode"],
     "customAgentClis": [
       {
         "packageName": "@scope/agent-cli",
@@ -133,7 +133,7 @@ hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 }
 ```
 
-首批内置可选 agent CLI ID 为 `codex`（`@openai/codex@0.125.0`）、`qoder`（`@qoder-ai/qodercli@0.1.48`）和 `opencode`（`opencode-ai@1.14.24`）。这些内置包版本固定在 `src/runtime/tool-sync-catalog.config.json` 中。HagiScript 会在执行 `npm list` 或 `npm install` 前校验未知工具 ID、npm 包名和版本选择器。
+首批内置可选 agent CLI ID 为 `codex`（`@openai/codex@0.125.0`）、`claude-code`（`@anthropic-ai/claude-code@2.1.119`）、`fission-openspec`（`@fission-ai/openspec@1.3.1`）、`qoder`（`@qoder-ai/qodercli@0.1.48`）和 `opencode`（`opencode-ai@1.14.24`）。这些内置包版本固定在 `src/runtime/tool-sync-catalog.config.json` 中。HagiScript 会在执行 `npm list` 或 `npm install` 前校验未知工具 ID、npm 包名和版本选择器。
 
 简单的产品托管请求也可以直接通过 CLI 选项传入可选 CLI，而不必先写 manifest：
 
