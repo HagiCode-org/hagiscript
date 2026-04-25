@@ -13,6 +13,9 @@ const runtimePath = path.join(tempRoot, "custom-node-runtime");
 const manifestPath = path.join(tempRoot, "manifest.json");
 const invalidManifestPath = path.join(tempRoot, "invalid-manifest.json");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const registryMirror =
+  process.env.HAGISCRIPT_INTEGRATION_REGISTRY_MIRROR?.trim() ||
+  "https://registry.npmmirror.com/";
 
 try {
   fs.mkdirSync(packageInstallRoot, { recursive: true });
@@ -101,7 +104,15 @@ try {
   log("Running npm-sync against the custom runtime");
   const npmSyncOutput = runCapture(
     hagiscriptCommand,
-    ["npm-sync", "--runtime", runtimePath, "--manifest", manifestPath],
+    [
+      "npm-sync",
+      "--runtime",
+      runtimePath,
+      "--manifest",
+      manifestPath,
+      "--registry-mirror",
+      registryMirror
+    ],
     packageInstallRoot
   );
   process.stdout.write(npmSyncOutput);
@@ -114,6 +125,11 @@ try {
     npmSyncOutput,
     "Runtime validated:",
     "npm-sync runtime output"
+  );
+  assertIncludes(
+    npmSyncOutput,
+    `Registry mirror: ${registryMirror}`,
+    "npm-sync registry mirror output"
   );
   assertIncludes(
     npmSyncOutput,
@@ -158,7 +174,15 @@ try {
   log("Verifying npm-sync failure diagnostics");
   const invalidOutput = runExpectFailure(
     hagiscriptCommand,
-    ["npm-sync", "--runtime", runtimePath, "--manifest", invalidManifestPath],
+    [
+      "npm-sync",
+      "--runtime",
+      runtimePath,
+      "--manifest",
+      invalidManifestPath,
+      "--registry-mirror",
+      registryMirror
+    ],
     packageInstallRoot
   );
   process.stdout.write(invalidOutput);
