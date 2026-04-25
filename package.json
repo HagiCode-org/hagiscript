@@ -35,6 +35,7 @@
     "lint": "eslint .",
     "integration:installed-runtime": "node scripts/integration-installed-runtime.mjs",
     "pack:check": "node scripts/verify-package.mjs",
+    "publish:check-prereqs": "node scripts/verify-npm-publish-prereqs.mjs",
     "publish:prepare-dev-version": "node scripts/prepare-dev-version.mjs",
     "publish:verify-release": "node scripts/verify-release-version.mjs",
     "test": "vitest run",

@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify npm publish prerequisites
+        run: npm run publish:check-prereqs
+
       - name: Run lint
         run: npm run lint
 
@@ -103,6 +106,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify npm publish prerequisites
+        run: npm run publish:check-prereqs
 
       - name: Run lint
         run: npm run lint
