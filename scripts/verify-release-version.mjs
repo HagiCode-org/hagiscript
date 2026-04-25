@@ -28,6 +28,20 @@ function getTagName() {
 
 const tagName = getTagName();
 
+function compareStableVersions(left, right) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+
+  for (let index = 0; index < 3; index += 1) {
+    const difference = leftParts[index] - rightParts[index];
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+
+  return 0;
+}
+
 if (!tagName) {
   throw new Error(
     "Missing release tag. Pass a tag name or set GITHUB_REF_NAME."
@@ -57,9 +71,9 @@ if (!packageVersionMatch?.groups) {
 
 const packageBaseVersion = `${packageVersionMatch.groups.major}.${packageVersionMatch.groups.minor}.${packageVersionMatch.groups.patch}`;
 
-if (packageBaseVersion !== expectedVersion) {
+if (compareStableVersions(packageBaseVersion, expectedVersion) > 0) {
   throw new Error(
-    `Tag ${tagName} does not match package.json version ${packageJson.version}.`
+    `Tag ${tagName} is older than package.json version ${packageJson.version}.`
   );
 }
 
