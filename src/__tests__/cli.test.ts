@@ -2,8 +2,16 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createCli, isCliEntrypoint, runCli } from "../cli.js";
+
+const packageJson = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+) as {
+  name: string;
+  version: string;
+};
 
 describe("hagiscript CLI", () => {
   it("configures name, help, and version metadata", () => {
@@ -13,7 +21,7 @@ describe("hagiscript CLI", () => {
     expect(program.helpInformation()).toContain(
       "Hagiscript language tooling CLI foundation."
     );
-    expect(program.version()).toBe("0.1.0");
+    expect(program.version()).toBe(packageJson.version);
   });
 
   it("prints foundation info without global installation", async () => {
@@ -26,8 +34,8 @@ describe("hagiscript CLI", () => {
     expect(stdout).toHaveBeenCalledWith(
       `${JSON.stringify(
         {
-          packageName: "@hagicode/hagiscript",
-          version: "0.1.0",
+          packageName: packageJson.name,
+          version: packageJson.version,
           status: "foundation"
         },
         null,
