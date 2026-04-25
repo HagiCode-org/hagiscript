@@ -60,8 +60,8 @@ describe("npm-sync manifest validation", () => {
       "skills"
     ]);
     expect(manifest.packages["@openai/codex"]).toMatchObject({
-      version: "*",
-      target: "latest",
+      version: "0.125.0",
+      target: "0.125.0",
       toolId: "codex",
       toolGroup: "optional-agent-cli"
     });
@@ -147,7 +147,7 @@ describe("npm-sync planning", () => {
       toolRequirement: "mandatory"
     });
     expect(plan.find((action) => action.packageName === "@openai/codex")).toMatchObject({
-      selectedInstallSelector: "@openai/codex@latest",
+      selectedInstallSelector: "@openai/codex@0.125.0",
       toolId: "codex",
       toolGroup: "optional-agent-cli"
     });
