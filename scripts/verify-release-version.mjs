@@ -47,8 +47,17 @@ if (!match?.groups) {
 const expectedVersion = `${match.groups.major}.${match.groups.minor}.${match.groups.patch}`;
 const packageJsonPath = path.resolve(process.argv[3] ?? "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+const packageVersionMatch = String(packageJson.version).match(
+  /^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)(?:[-+].*)?$/
+);
 
-if (packageJson.version !== expectedVersion) {
+if (!packageVersionMatch?.groups) {
+  throw new Error(`Unsupported package version: ${packageJson.version}`);
+}
+
+const packageBaseVersion = `${packageVersionMatch.groups.major}.${packageVersionMatch.groups.minor}.${packageVersionMatch.groups.patch}`;
+
+if (packageBaseVersion !== expectedVersion) {
   throw new Error(
     `Tag ${tagName} does not match package.json version ${packageJson.version}.`
   );

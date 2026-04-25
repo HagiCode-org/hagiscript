@@ -16,17 +16,29 @@ if (!match?.groups) {
 }
 
 const baseVersion = `${match.groups.major}.${match.groups.minor}.${match.groups.patch}`;
-const timestamp = new Date()
-  .toISOString()
-  .replace(/[-:]/g, "")
-  .replace("T", "")
-  .replace(/\.\d{3}Z$/, "");
 const runNumber = process.env.GITHUB_RUN_NUMBER ?? "0";
-const runAttempt = process.env.GITHUB_RUN_ATTEMPT ?? "0";
-const shortSha = (process.env.GITHUB_SHA ?? "local").slice(0, 7).toLowerCase();
-const devVersion = `${baseVersion}-dev.${timestamp}.${runNumber}.${runAttempt}.${shortSha}`;
+const runAttempt = process.env.GITHUB_RUN_ATTEMPT ?? "1";
+const shortSha = (process.env.GITHUB_SHA ?? "local")
+  .toLowerCase()
+  .replace(/[^0-9a-z]+/g, "")
+  .slice(0, 7);
 
-packageJson.version = devVersion;
-fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+if (!/^\d+$/.test(runNumber)) {
+  throw new Error(`GITHUB_RUN_NUMBER must be numeric. Received: ${runNumber}`);
+}
+
+if (!/^\d+$/.test(runAttempt)) {
+  throw new Error(
+    `GITHUB_RUN_ATTEMPT must be numeric. Received: ${runAttempt}`
+  );
+}
+
+if (shortSha.length === 0) {
+  throw new Error(
+    "GITHUB_SHA must contain at least one alphanumeric character."
+  );
+}
+
+const devVersion = `${baseVersion}-dev.${runNumber}.${runAttempt}.${shortSha}`;
 
 process.stdout.write(devVersion);
