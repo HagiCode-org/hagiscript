@@ -51,12 +51,17 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Prepare dev version
+      - name: Resolve development version
         id: version
         run: |
           version="$(npm run --silent publish:prepare-dev-version)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Prepared dev version: $version"
+          echo "Resolved dev version: $version"
+
+      - name: Stamp development package version
+        env:
+          DEV_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version --no-git-tag-version "$DEV_VERSION"
 
       - name: Verify packed files
         run: npm run pack:check
@@ -68,13 +73,23 @@ jobs:
         run: npm publish --tag dev --provenance --access public
 
       - name: Summarize publish result
+        if: always()
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version || 'n/a' }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           {
             echo "## npm dev publish"
             echo
-            echo "- Version: ${{ steps.version.outputs.version }}"
+            echo "- Version: $RESOLVED_VERSION"
             echo "- Dist-tag: dev"
             echo "- Registry: npmjs.org"
+
+            if [ "$JOB_STATUS" = "success" ]; then
+              echo "- Result: published with provenance enabled."
+            else
+              echo "- Result: failed before publish completed. Check the failed gate above."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-release:
@@ -107,6 +122,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Stamp stable package version
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm version --no-git-tag-version "$RELEASE_VERSION"
+
       - name: Verify npm publish prerequisites
         run: npm run publish:check-prereqs
 
@@ -132,13 +152,25 @@ jobs:
         run: npm publish --tag latest --provenance --access public
 
       - name: Summarize publish result
+        if: always()
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version || 'n/a' }}
+          JOB_STATUS: ${{ job.status }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
           {
             echo "## npm stable publish"
             echo
-            echo "- Version: ${{ steps.version.outputs.version }}"
+            echo "- Version: $RESOLVED_VERSION"
             echo "- Dist-tag: latest"
-            echo "- Release: ${{ github.event.release.html_url }}"
-            echo "- Tag: ${{ github.event.release.tag_name }}"
+            echo "- Release: $RELEASE_URL"
+            echo "- Tag: $TAG_NAME"
             echo "- Registry: npmjs.org"
+
+            if [ "$JOB_STATUS" = "success" ]; then
+              echo "- Result: published with provenance enabled."
+            else
+              echo "- Result: failed before publish completed. Check the failed gate above."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
