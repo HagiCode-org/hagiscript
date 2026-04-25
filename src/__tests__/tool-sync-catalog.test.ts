@@ -14,11 +14,13 @@ describe("tool sync catalog", () => {
       "omniroute",
       "code-server",
       "codex",
+      "claude-code",
+      "fission-openspec",
       "qoder",
       "opencode"
     ]);
     expect(catalog.filter((entry) => entry.requirement === "mandatory")).toHaveLength(3);
-    expect(catalog.filter((entry) => entry.group === "optional-agent-cli")).toHaveLength(3);
+    expect(catalog.filter((entry) => entry.group === "optional-agent-cli")).toHaveLength(5);
   });
 
   it("loads pinned package versions from the internal catalog config", () => {
@@ -31,6 +33,8 @@ describe("tool sync catalog", () => {
       omniroute: "3.6.9",
       "code-server": "4.117.0",
       codex: "0.125.0",
+      "claude-code": "2.1.119",
+      "fission-openspec": "1.3.1",
       qoder: "0.1.48",
       opencode: "1.14.24"
     });
@@ -55,6 +59,24 @@ describe("tool sync catalog", () => {
       toolGroup: "optional-agent-cli"
     });
     expect(packages.skills.toolRequirement).toBe("mandatory");
+  });
+
+  it("includes Claude Code and Fission OpenSpec when selected", () => {
+    const packages = buildToolSyncPackageSet({
+      optionalAgentCliSyncEnabled: true,
+      selectedOptionalAgentCliIds: ["claude-code", "fission-openspec"]
+    });
+
+    expect(packages["@anthropic-ai/claude-code"]).toMatchObject({
+      version: "2.1.119",
+      target: "2.1.119",
+      toolId: "claude-code"
+    });
+    expect(packages["@fission-ai/openspec"]).toMatchObject({
+      version: "1.3.1",
+      target: "1.3.1",
+      toolId: "fission-openspec"
+    });
   });
 
   it("allows enabled optional CLI sync with zero selections", () => {

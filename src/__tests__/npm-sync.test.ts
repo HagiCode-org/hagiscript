@@ -44,7 +44,7 @@ describe("npm-sync manifest validation", () => {
     const manifest = validateNpmSyncManifest({
       tools: {
         optionalAgentCliSyncEnabled: true,
-        selectedOptionalAgentCliIds: ["codex"],
+        selectedOptionalAgentCliIds: ["codex", "claude-code", "fission-openspec"],
         customAgentClis: [
           { packageName: "@scope/agent-cli", version: "^2.0.0" }
         ]
@@ -53,6 +53,8 @@ describe("npm-sync manifest validation", () => {
 
     expect(manifest.syncMode).toBe("tools");
     expect(Object.keys(manifest.packages)).toEqual([
+      "@anthropic-ai/claude-code",
+      "@fission-ai/openspec",
       "@openai/codex",
       "@scope/agent-cli",
       "code-server",
@@ -64,6 +66,16 @@ describe("npm-sync manifest validation", () => {
       target: "0.125.0",
       toolId: "codex",
       toolGroup: "optional-agent-cli"
+    });
+    expect(manifest.packages["@anthropic-ai/claude-code"]).toMatchObject({
+      version: "2.1.119",
+      target: "2.1.119",
+      toolId: "claude-code"
+    });
+    expect(manifest.packages["@fission-ai/openspec"]).toMatchObject({
+      version: "1.3.1",
+      target: "1.3.1",
+      toolId: "fission-openspec"
     });
   });
 
