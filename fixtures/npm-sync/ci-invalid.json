@@ -1,0 +1,7 @@
+{
+  "packages": {
+    "invalid package name": {
+      "version": "7.0.0"
+    }
+  }
+}
