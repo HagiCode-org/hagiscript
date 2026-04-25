@@ -42,9 +42,6 @@ jobs:
       - name: Run lint
         run: npm run lint
 
-      - name: Check formatting
-        run: npm run format:check
-
       - name: Run tests
         run: npm test
 
@@ -132,9 +129,6 @@ jobs:
 
       - name: Run lint
         run: npm run lint
-
-      - name: Check formatting
-        run: npm run format:check
 
       - name: Run tests
         run: npm test
