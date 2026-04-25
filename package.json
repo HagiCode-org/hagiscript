@@ -1,7 +1,7 @@
 {
-  "name": "hagiscript",
+  "name": "@hagicode/hagiscript",
   "version": "0.1.0",
-  "description": "TypeScript package foundation for Hagiscript language tooling.",
+  "description": "Scoped npm package foundation for Hagiscript language tooling.",
   "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
   "bugs": {
     "url": "https://github.com/HagiCode-org/hagiscript/issues"
@@ -33,6 +33,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "integration:installed-runtime": "node scripts/integration-installed-runtime.mjs",
     "pack:check": "node scripts/verify-package.mjs",
     "publish:prepare-dev-version": "node scripts/prepare-dev-version.mjs",
     "publish:verify-release": "node scripts/verify-release-version.mjs",
@@ -50,15 +51,16 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true,
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "commander": "^14.0.1"
+    "commander": "^14.0.1",
+    "semver": "^7.7.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",
     "@types/node": "^24.5.2",
+    "@types/semver": "^7.7.1",
     "eslint": "^9.38.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.6",
