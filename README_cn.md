@@ -212,4 +212,12 @@ GitHub Actions 提供三类自动化流程：
 - `npm-publish.yml` 也会在非草稿、非 prerelease 的 GitHub Release 发布时，校验 `vX.Y.Z` 标签并发布到 `latest` dist-tag。
 - `release-drafter.yml` 通过 `.github/release-drafter.yml` 维护分类清晰的发布草稿。
 
-首次发布前，需要先确保 npm 组织 `hagicode` 已存在，并且 `@hagicode/hagiscript` 已授权当前发布主体。GitHub Actions 发布时再配置 trusted publishing；本地手动发布时直接执行普通 `npm publish` 即可。
+首次发布前，需要先确保 npm 上已经存在组织或用户 scope `hagicode`，并且 `@hagicode/hagiscript` 已授权当前发布主体。GitHub Actions 发布时，需要在 npm trusted publishing 中配置仓库 `HagiCode-org/hagiscript` 和 workflow `.github/workflows/npm-publish.yml`。如果 scope 不存在，或 workflow 身份无权在该 scope 下创建包，npm 会在最后的 `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` 发布请求中返回 `E404 Not Found`。
+
+重试失败的发布前，先运行发布前置检查：
+
+```bash
+npm run publish:check-prereqs
+```
+
+本地手动发布时，先登录一个有权发布到 `@hagicode` scope 的 npm 账号，再直接执行普通 `npm publish`。
