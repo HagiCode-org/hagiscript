@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createCli, runCli } from "../cli.js";
 
 const { syncNpmGlobals } = vi.hoisted(() => ({
-  syncNpmGlobals: vi.fn(async ({ onLog }) => {
+  syncNpmGlobals: vi.fn(async ({ onLog, registryMirror }) => {
     onLog?.({
       type: "manifest-loaded",
       manifestPath: "/tmp/manifest.json",
       packageCount: 2,
-      syncMode: "packages"
+      syncMode: "packages",
+      registryMirror
     });
     onLog?.({
       type: "runtime-valid",
@@ -55,6 +56,7 @@ const { syncNpmGlobals } = vi.hoisted(() => ({
         manifestPath: "/tmp/manifest.json",
         packageCount: 2,
         syncMode: "packages",
+        registryMirror,
         noopCount: 1,
         changedCount: 1,
         actions: []
@@ -115,7 +117,9 @@ describe("npm-sync CLI command", () => {
       "--runtime",
       "/tmp/runtime",
       "--manifest",
-      "/tmp/manifest.json"
+      "/tmp/manifest.json",
+      "--registry-mirror",
+      "https://registry.npmmirror.com/"
     ]);
 
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
@@ -123,13 +127,15 @@ describe("npm-sync CLI command", () => {
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
         runtimePath: "/tmp/runtime",
-        manifestPath: "/tmp/manifest.json"
+        manifestPath: "/tmp/manifest.json",
+        registryMirror: "https://registry.npmmirror.com/"
       })
     );
     expect(output).toContain(
       "Manifest validated: /tmp/manifest.json (2 packages, mode=packages)"
     );
     expect(output).toContain("Plan: openspec noop installed=1.0.0");
+    expect(output).toContain("Registry mirror: https://registry.npmmirror.com/");
     expect(output).toContain("npm-sync complete.");
 
     stdout.mockRestore();
@@ -159,6 +165,31 @@ describe("npm-sync CLI command", () => {
         manifestPath: "/tmp/manifest.json"
       })
     );
+
+    stdout.mockRestore();
+  });
+
+  it("does not pass a registry mirror when the CLI option is omitted", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.not.objectContaining({ registryMirror: expect.any(String) })
+    );
+    const output = stdout.mock.calls.map(([value]) => String(value)).join("");
+    expect(output).not.toContain("Registry mirror:");
 
     stdout.mockRestore();
   });
@@ -205,6 +236,30 @@ describe("npm-sync CLI command", () => {
         " ",
         "--manifest",
         "/tmp/manifest.json"
+      ])
+    ).rejects.toThrow();
+    expect(syncNpmGlobals).not.toHaveBeenCalled();
+
+    stderr.mockRestore();
+  });
+
+  it("fails before npm sync when --registry-mirror is invalid", async () => {
+    syncNpmGlobals.mockClear();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    await expect(
+      runCli([
+        "node",
+        "hagiscript",
+        "npm-sync",
+        "--runtime",
+        "/tmp/runtime",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--registry-mirror",
+        "ftp://registry.example.com/"
       ])
     ).rejects.toThrow();
     expect(syncNpmGlobals).not.toHaveBeenCalled();

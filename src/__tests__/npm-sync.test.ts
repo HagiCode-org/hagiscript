@@ -40,8 +40,22 @@ describe("npm-sync manifest validation", () => {
     expect(manifest.syncMode).toBe("packages");
   });
 
+  it("loads flat package manifests with a registry mirror", () => {
+    const manifest = validateNpmSyncManifest({
+      registryMirror: " https://registry.npmmirror.com/ ",
+      packages: {
+        openspec: { version: "^1.2.0" }
+      }
+    });
+
+    expect(manifest.registryMirror).toBe("https://registry.npmmirror.com/");
+    expect(manifest.packages.openspec).toEqual({ version: "^1.2.0" });
+    expect(manifest.syncMode).toBe("packages");
+  });
+
   it("loads product-managed tool manifests with mandatory and selected tools", () => {
     const manifest = validateNpmSyncManifest({
+      registryMirror: "https://registry.example.com/",
       tools: {
         optionalAgentCliSyncEnabled: true,
         selectedOptionalAgentCliIds: ["codex", "claude-code", "fission-openspec"],
@@ -52,6 +66,7 @@ describe("npm-sync manifest validation", () => {
     });
 
     expect(manifest.syncMode).toBe("tools");
+    expect(manifest.registryMirror).toBe("https://registry.example.com/");
     expect(Object.keys(manifest.packages)).toEqual([
       "@anthropic-ai/claude-code",
       "@fission-ai/openspec",
@@ -103,6 +118,20 @@ describe("npm-sync manifest validation", () => {
         packages: { openspec: { version: "definitely bad" } }
       })
     ).toThrow("not a valid semver range");
+  });
+
+  it.each([
+    ["blank", " "],
+    ["non-string", 42],
+    ["relative", "registry.example.com/npm"],
+    ["unsupported protocol", "ftp://registry.example.com/"]
+  ])("rejects %s registry mirror values", (_caseName, registryMirror) => {
+    expect(() =>
+      validateNpmSyncManifest({
+        registryMirror,
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    ).toThrow("registryMirror");
   });
 });
 
@@ -211,7 +240,134 @@ describe("npm-sync execution", () => {
     expect(summary.noopCount).toBe(1);
     expect(summary.syncMode).toBe("packages");
     expect(summary.changedCount).toBe(0);
+    expect(summary.registryMirror).toBeUndefined();
     expect(runner).toHaveBeenCalledOnce();
+    expect(runner.mock.calls[0][1]).toEqual(["list", "-g", "--depth=0", "--json"]);
+  });
+
+  it("passes manifest registry mirror to inventory and install commands", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://registry.npmmirror.com/",
+        packages: { openspec: { version: "^1.0.0", target: "1.2.3" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === "list") {
+        return commandResult(command, args, { dependencies: {} });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: vi.fn(async () => ({
+        valid: true,
+        targetDirectory: "/runtime",
+        nodePath: "/runtime/bin/node",
+        npmPath: "/runtime/bin/npm",
+        nodeVersion: "v22.0.0",
+        npmVersion: "10.0.0"
+      })),
+      npmOptions: { runCommand: runner }
+    });
+
+    expect(summary.registryMirror).toBe("https://registry.npmmirror.com/");
+    expect(runner).toHaveBeenNthCalledWith(
+      1,
+      "/runtime/bin/npm",
+      [
+        "list",
+        "-g",
+        "--depth=0",
+        "--json",
+        "--registry",
+        "https://registry.npmmirror.com/"
+      ],
+      120_000
+    );
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "openspec@1.2.3",
+        "--registry",
+        "https://registry.npmmirror.com/"
+      ],
+      120_000
+    );
+  });
+
+  it("lets CLI registry mirror options take precedence over manifest state", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://manifest.example.com/",
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) =>
+      commandResult(command, args, { dependencies: { openspec: { version: "1.1.0" } } })
+    );
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      registryMirror: "https://cli.example.com/",
+      verifyRuntime: vi.fn(async () => ({
+        valid: true,
+        targetDirectory: "/runtime",
+        nodePath: "/runtime/bin/node",
+        npmPath: "/runtime/bin/npm",
+        nodeVersion: "v22.0.0",
+        npmVersion: "10.0.0"
+      })),
+      npmOptions: { runCommand: runner }
+    });
+
+    expect(summary.registryMirror).toBe("https://cli.example.com/");
+    expect(runner.mock.calls[0][1]).toContain("https://cli.example.com/");
+  });
+
+  it("rejects invalid manifest registry mirrors before npm commands run", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "file:///tmp/registry",
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) =>
+      commandResult(command, args, {})
+    );
+
+    await expect(
+      syncNpmGlobals({
+        runtimePath: "/runtime",
+        manifestPath,
+        verifyRuntime: vi.fn(async () => ({
+          valid: true,
+          targetDirectory: "/runtime",
+          nodePath: "/runtime/bin/node",
+          npmPath: "/runtime/bin/npm",
+          nodeVersion: "v22.0.0",
+          npmVersion: "10.0.0"
+        })),
+        npmOptions: { runCommand: runner }
+      })
+    ).rejects.toThrow("registryMirror");
+    expect(runner).not.toHaveBeenCalled();
   });
 
   it("wraps npm install failures with package diagnostics", async () => {
