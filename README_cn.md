@@ -94,13 +94,14 @@ Reason: missing executable
 
 ### npm 全局包同步
 
-`npm-sync` 会根据 JSON manifest，把指定 Node.js 运行时中的 npm 全局包版本同步到约束范围内。它始终使用 `--runtime` 解析出的 `npm` 可执行文件，不会使用或修改当前 shell `PATH` 中的 npm。
+`npm-sync` 会根据 JSON manifest，把 HagiScript 托管 Node.js 运行时中的 npm 全局包版本同步到约束范围内。默认情况下，它会验证或安装 `~/.hagiscript/node-runtime`，并使用该运行时内的 `npm`；它不会使用或修改当前 shell `PATH` 中的 npm。已有自动化仍可继续传入 `--runtime` 使用显式运行时目录。
 
 ```bash
+hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 ```
 
-Manifest 结构：
+兼容模式 manifest 结构：
 
 ```json
 {
@@ -114,6 +115,32 @@ Manifest 结构：
 ```
 
 必填的 `version` 字段使用 package.json 风格的 semver 范围，例如 `^1.2.0`、`>=1.0.0 <2.0.0` 或 `1.0.0 || 2.0.0`。可选的 `target` 字段用于指定实际执行 `npm install -g` 时使用的选择器；如果省略，Hagiscript 会安装 `<package>@<version>`。
+
+产品托管的工具同步可使用扩展后的 `tools` manifest。必选工具始终会被纳入同步：OpenSpec skills（`skills@latest`）、OmniRoute（`omniroute@latest`）和 code-server（`code-server@latest`）。可选 agent CLI 同步需要显式启用；如果传入内置 CLI 或自定义 npm 包选择，它们会被加入同步。
+
+```json
+{
+  "tools": {
+    "optionalAgentCliSyncEnabled": true,
+    "selectedOptionalAgentCliIds": ["codex", "opencode"],
+    "customAgentClis": [
+      {
+        "packageName": "@scope/agent-cli",
+        "version": "^1.0.0"
+      }
+    ]
+  }
+}
+```
+
+首批内置可选 agent CLI ID 为 `codex`（`@openai/codex@latest`）、`qoder`（`@qoder-ai/qodercli@latest`）和 `opencode`（`opencode-ai@latest`）。HagiScript 会在执行 `npm list` 或 `npm install` 前校验未知工具 ID、npm 包名和版本选择器。
+
+简单的产品托管请求也可以直接通过 CLI 选项传入可选 CLI，而不必先写 manifest：
+
+```bash
+hagiscript npm-sync --selected-agent-cli codex
+hagiscript npm-sync --selected-agent-cli codex --custom-agent-cli @scope/agent-cli@^1.0.0
+```
 
 openspec 和 skills 工具同步示例：
 
@@ -136,7 +163,7 @@ openspec 和 skills 工具同步示例：
 输出示例：
 
 ```text
-Manifest validated: ./manifest.json (2 packages)
+Manifest validated: ./manifest.json (2 packages, mode=packages)
 Runtime validated: /opt/hagiscript/node
 node: /opt/hagiscript/node/bin/node (v22.12.0)
 npm: /opt/hagiscript/node/bin/npm (10.9.0)
@@ -149,6 +176,7 @@ Synced: @hagicode/skills (upgrade)
 npm-sync complete.
 Runtime: /opt/hagiscript/node
 Manifest: ./manifest.json
+Mode: packages
 Packages: 2
 No-op: 1
 Changed: 1
@@ -208,11 +236,11 @@ npm run publish:verify-release -- v0.1.0
 GitHub Actions 提供三类自动化流程：
 
 - `ci.yml` 使用 `npm ci` 安装依赖，并执行 lint、格式检查、测试、构建和包内容校验。
-- `npm-publish.yml` 在 `main` 分支发布唯一预发布版本到 `dev` dist-tag。
-- `npm-publish.yml` 也会在非草稿、非 prerelease 的 GitHub Release 发布时，校验 `vX.Y.Z` 标签并发布到 `latest` dist-tag。
+- `npm-publish.yml` 在 `main` 分支解析唯一预发布版本，用 `npm version --no-git-tag-version` 同步 `package.json` 和 `package-lock.json`，再发布到 `dev` dist-tag。
+- `npm-publish.yml` 也会在非草稿、非 prerelease 的 GitHub Release 发布时，校验 `vX.Y.Z` 标签，用同样方式写入稳定版本并发布到 `latest` dist-tag。
 - `release-drafter.yml` 通过 `.github/release-drafter.yml` 维护分类清晰的发布草稿。
 
-首次发布前，需要先确保 npm 上已经存在组织或用户 scope `hagicode`，并且 `@hagicode/hagiscript` 已授权当前发布主体。GitHub Actions 发布时，需要在 npm trusted publishing 中配置仓库 `HagiCode-org/hagiscript` 和 workflow `.github/workflows/npm-publish.yml`。如果 scope 不存在，或 workflow 身份无权在该 scope 下创建包，npm 会在最后的 `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` 发布请求中返回 `E404 Not Found`。
+首次发布前，需要先确保 npm 上已经存在组织或用户 scope `hagicode`，并且 `@hagicode/hagiscript` 已授权当前发布主体。GitHub Actions 发布时，需要在 npm trusted publishing 中配置：package `@hagicode/hagiscript`、owner `HagiCode-org`、repository `hagiscript`、workflow filename `npm-publish.yml`。不要把 workflow filename 填成完整路径；如果 npm 表单有 environment 字段，除非 workflow job 显式声明了 environment，否则保持为空。如果 scope 不存在，或 workflow 身份无权在该 scope 下创建包，npm 会在最后的 `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` 发布请求中返回 `E404 Not Found`。
 
 重试失败的发布前，先运行发布前置检查：
 

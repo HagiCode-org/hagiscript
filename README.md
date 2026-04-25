@@ -94,13 +94,14 @@ Reason: missing executable
 
 ### npm Global Package Synchronization
 
-`npm-sync` aligns npm global packages inside an explicit Node.js runtime with a JSON manifest. It always uses the `npm` executable resolved from `--runtime`; it does not use or mutate npm from the ambient shell `PATH`.
+`npm-sync` aligns npm global packages inside a HagiScript-managed Node.js runtime with a JSON manifest. By default, it verifies or installs the managed runtime at `~/.hagiscript/node-runtime` and uses that runtime's `npm`; it does not use or mutate npm from the ambient shell `PATH`. Existing automation can keep passing `--runtime` to use an explicit runtime directory.
 
 ```bash
+hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 ```
 
-Manifest schema:
+Compatibility manifest schema:
 
 ```json
 {
@@ -114,6 +115,32 @@ Manifest schema:
 ```
 
 The required `version` field accepts package.json-style semver ranges such as `^1.2.0`, `>=1.0.0 <2.0.0`, or `1.0.0 || 2.0.0`. The optional `target` field controls the selector used for `npm install -g`; when omitted, Hagiscript installs `<package>@<version>`.
+
+Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory tools are always included: OpenSpec skills (`skills@latest`), OmniRoute (`omniroute@latest`), and code-server (`code-server@latest`). Optional agent CLI sync is enabled explicitly; selected built-in CLIs or custom npm packages are added when provided.
+
+```json
+{
+  "tools": {
+    "optionalAgentCliSyncEnabled": true,
+    "selectedOptionalAgentCliIds": ["codex", "opencode"],
+    "customAgentClis": [
+      {
+        "packageName": "@scope/agent-cli",
+        "version": "^1.0.0"
+      }
+    ]
+  }
+}
+```
+
+The first built-in optional agent CLI IDs are `codex` (`@openai/codex@latest`), `qoder` (`@qoder-ai/qodercli@latest`), and `opencode` (`opencode-ai@latest`). HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
+
+For simple product-managed requests, optional CLI selections can be provided directly without writing a manifest:
+
+```bash
+hagiscript npm-sync --selected-agent-cli codex
+hagiscript npm-sync --selected-agent-cli codex --custom-agent-cli @scope/agent-cli@^1.0.0
+```
 
 Example manifest for openspec and skills tooling:
 
@@ -136,7 +163,7 @@ During execution, Hagiscript validates the manifest and runtime before any npm i
 Example output:
 
 ```text
-Manifest validated: ./manifest.json (2 packages)
+Manifest validated: ./manifest.json (2 packages, mode=packages)
 Runtime validated: /opt/hagiscript/node
 node: /opt/hagiscript/node/bin/node (v22.12.0)
 npm: /opt/hagiscript/node/bin/npm (10.9.0)
@@ -149,6 +176,7 @@ Synced: @hagicode/skills (upgrade)
 npm-sync complete.
 Runtime: /opt/hagiscript/node
 Manifest: ./manifest.json
+Mode: packages
 Packages: 2
 No-op: 1
 Changed: 1
@@ -208,11 +236,11 @@ The package `exports` field points consumers to `dist/index.js` and `dist/index.
 GitHub Actions provide three automation paths:
 
 - `ci.yml` installs dependencies with `npm ci`, then runs lint, format check, tests, build, and package verification.
-- `npm-publish.yml` publishes a unique prerelease version to the `dev` dist-tag from `main`.
-- `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating the tag against `package.json`.
+- `npm-publish.yml` resolves a unique prerelease version from `main`, stamps both `package.json` and `package-lock.json` with `npm version --no-git-tag-version`, then publishes to the `dev` dist-tag.
+- `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating and stamping the stable version the same way.
 - `release-drafter.yml` keeps a categorized release draft using `.github/release-drafter.yml`.
 
-Before the first publish, make sure the npm organization or user scope `hagicode` exists on npm and grant publish access for `@hagicode/hagiscript`. For GitHub Actions releases, configure npm trusted publishing for repository `HagiCode-org/hagiscript` and workflow `.github/workflows/npm-publish.yml`. If the scope is missing or the workflow identity cannot create packages under it, npm returns `E404 Not Found` during the final `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` publish request.
+Before the first publish, make sure the npm organization or user scope `hagicode` exists on npm and grant publish access for `@hagicode/hagiscript`. For GitHub Actions releases, configure npm trusted publishing with package `@hagicode/hagiscript`, owner `HagiCode-org`, repository `hagiscript`, and workflow filename `npm-publish.yml`. Do not enter the full workflow path as the filename; leave the npm environment field empty unless the workflow job explicitly declares an environment. If the scope is missing or the workflow identity cannot create packages under it, npm returns `E404 Not Found` during the final `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` publish request.
 
 Run the publish prerequisite check before retrying a failed release:
 
