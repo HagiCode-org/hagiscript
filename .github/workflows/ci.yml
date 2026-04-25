@@ -41,3 +41,6 @@ jobs:
 
       - name: Verify packed files
         run: npm run pack:check
+
+      - name: Run installed package runtime integration test
+        run: npm run integration:installed-runtime

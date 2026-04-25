@@ -58,6 +58,9 @@ jobs:
       - name: Verify packed files
         run: npm run pack:check
 
+      - name: Run installed package runtime integration test
+        run: npm run integration:installed-runtime
+
       - name: Publish to npm dev dist-tag
         run: npm publish --tag dev --provenance --access public
 
@@ -115,6 +118,9 @@ jobs:
 
       - name: Verify packed files
         run: npm run pack:check
+
+      - name: Run installed package runtime integration test
+        run: npm run integration:installed-runtime
 
       - name: Publish to npm latest dist-tag
         run: npm publish --tag latest --provenance --access public
