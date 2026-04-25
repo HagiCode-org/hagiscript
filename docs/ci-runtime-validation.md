@@ -27,7 +27,7 @@ There is no command-name mapping layer for this validation. The user-facing shor
 
 ## Managed Tool Sync Coverage
 
-The expanded `tools` manifest shape always expands mandatory packages for OpenSpec skills (`skills@latest`), OmniRoute (`omniroute@latest`), and code-server (`code-server@latest`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex`, `qoder`, and `opencode`; custom entries must use valid npm package names and semver-compatible version selectors.
+The expanded `tools` manifest shape always expands mandatory packages from the internal pinned catalog config: OpenSpec skills (`skills@1.5.1`), OmniRoute (`omniroute@3.6.9`), and code-server (`code-server@4.117.0`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex` (`@openai/codex@0.125.0`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`); custom entries must use valid npm package names and semver-compatible version selectors.
 
 Validation happens before `npm list -g --depth=0 --json` and before any `npm install -g` mutation.
 

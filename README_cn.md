@@ -116,7 +116,7 @@ hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 
 必填的 `version` 字段使用 package.json 风格的 semver 范围，例如 `^1.2.0`、`>=1.0.0 <2.0.0` 或 `1.0.0 || 2.0.0`。可选的 `target` 字段用于指定实际执行 `npm install -g` 时使用的选择器；如果省略，Hagiscript 会安装 `<package>@<version>`。
 
-产品托管的工具同步可使用扩展后的 `tools` manifest。必选工具始终会被纳入同步：OpenSpec skills（`skills@latest`）、OmniRoute（`omniroute@latest`）和 code-server（`code-server@latest`）。可选 agent CLI 同步需要显式启用；如果传入内置 CLI 或自定义 npm 包选择，它们会被加入同步。
+产品托管的工具同步可使用扩展后的 `tools` manifest。必选工具始终会按 `src/runtime/tool-sync-catalog.config.json` 中的内部固定版本纳入同步：OpenSpec skills（`skills@1.5.1`）、OmniRoute（`omniroute@3.6.9`）和 code-server（`code-server@4.117.0`）。可选 agent CLI 同步需要显式启用；如果传入内置 CLI 或自定义 npm 包选择，它们会被加入同步。
 
 ```json
 {
@@ -133,7 +133,7 @@ hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 }
 ```
 
-首批内置可选 agent CLI ID 为 `codex`（`@openai/codex@latest`）、`qoder`（`@qoder-ai/qodercli@latest`）和 `opencode`（`opencode-ai@latest`）。HagiScript 会在执行 `npm list` 或 `npm install` 前校验未知工具 ID、npm 包名和版本选择器。
+首批内置可选 agent CLI ID 为 `codex`（`@openai/codex@0.125.0`）、`qoder`（`@qoder-ai/qodercli@0.1.48`）和 `opencode`（`opencode-ai@1.14.24`）。这些内置包版本固定在 `src/runtime/tool-sync-catalog.config.json` 中。HagiScript 会在执行 `npm list` 或 `npm install` 前校验未知工具 ID、npm 包名和版本选择器。
 
 简单的产品托管请求也可以直接通过 CLI 选项传入可选 CLI，而不必先写 manifest：
 

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "id": "openspec-skills",
+      "displayName": "OpenSpec skills",
+      "packageName": "skills",
+      "version": "1.5.1",
+      "target": "1.5.1",
+      "group": "mandatory",
+      "requirement": "mandatory"
+    },
+    {
+      "id": "omniroute",
+      "displayName": "OmniRoute",
+      "packageName": "omniroute",
+      "version": "3.6.9",
+      "target": "3.6.9",
+      "group": "mandatory",
+      "requirement": "mandatory"
+    },
+    {
+      "id": "code-server",
+      "displayName": "code-server",
+      "packageName": "code-server",
+      "version": "4.117.0",
+      "target": "4.117.0",
+      "group": "mandatory",
+      "requirement": "mandatory"
+    },
+    {
+      "id": "codex",
+      "displayName": "Codex CLI",
+      "packageName": "@openai/codex",
+      "version": "0.125.0",
+      "target": "0.125.0",
+      "group": "optional-agent-cli",
+      "requirement": "optional"
+    },
+    {
+      "id": "qoder",
+      "displayName": "Qoder CLI",
+      "packageName": "@qoder-ai/qodercli",
+      "version": "0.1.48",
+      "target": "0.1.48",
+      "group": "optional-agent-cli",
+      "requirement": "optional"
+    },
+    {
+      "id": "opencode",
+      "displayName": "OpenCode CLI",
+      "packageName": "opencode-ai",
+      "version": "1.14.24",
+      "target": "1.14.24",
+      "group": "optional-agent-cli",
+      "requirement": "optional"
+    }
+  ]
+}

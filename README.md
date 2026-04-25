@@ -116,7 +116,7 @@ Compatibility manifest schema:
 
 The required `version` field accepts package.json-style semver ranges such as `^1.2.0`, `>=1.0.0 <2.0.0`, or `1.0.0 || 2.0.0`. The optional `target` field controls the selector used for `npm install -g`; when omitted, Hagiscript installs `<package>@<version>`.
 
-Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory tools are always included: OpenSpec skills (`skills@latest`), OmniRoute (`omniroute@latest`), and code-server (`code-server@latest`). Optional agent CLI sync is enabled explicitly; selected built-in CLIs or custom npm packages are added when provided.
+Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory tools are always included using internally pinned versions from `src/runtime/tool-sync-catalog.config.json`: OpenSpec skills (`skills@1.5.1`), OmniRoute (`omniroute@3.6.9`), and code-server (`code-server@4.117.0`). Optional agent CLI sync is enabled explicitly; selected built-in CLIs or custom npm packages are added when provided.
 
 ```json
 {
@@ -133,7 +133,7 @@ Product-managed tool sync can use the expanded `tools` manifest shape. Mandatory
 }
 ```
 
-The first built-in optional agent CLI IDs are `codex` (`@openai/codex@latest`), `qoder` (`@qoder-ai/qodercli@latest`), and `opencode` (`opencode-ai@latest`). HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
+The first built-in optional agent CLI IDs are `codex` (`@openai/codex@0.125.0`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`). These built-in package versions are pinned in `src/runtime/tool-sync-catalog.config.json`. HagiScript validates unknown tool IDs, npm package names, and version selectors before `npm list` or `npm install` runs.
 
 For simple product-managed requests, optional CLI selections can be provided directly without writing a manifest:
 
