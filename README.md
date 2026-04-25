@@ -246,7 +246,7 @@ GitHub Actions provide three automation paths:
 
 - `ci.yml` installs dependencies with `npm ci`, then runs lint, format check, tests, build, and package verification.
 - `npm-publish.yml` resolves a unique prerelease version from `main`, stamps both `package.json` and `package-lock.json` with `npm version --no-git-tag-version`, then publishes to the `dev` dist-tag.
-- `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating and stamping the stable version the same way.
+- `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating the tag format, rejecting tags older than the repository base version, and stamping the stable version the same way.
 - `release-drafter.yml` keeps a categorized release draft using `.github/release-drafter.yml`.
 
 Before the first publish, make sure the npm organization or user scope `hagicode` exists on npm and grant publish access for `@hagicode/hagiscript`. For GitHub Actions releases, configure npm trusted publishing with package `@hagicode/hagiscript`, owner `HagiCode-org`, repository `hagiscript`, and workflow filename `npm-publish.yml`. Do not enter the full workflow path as the filename; leave the npm environment field empty unless the workflow job explicitly declares an environment. If the scope is missing or the workflow identity cannot create packages under it, npm returns `E404 Not Found` during the final `PUT https://registry.npmjs.org/@hagicode%2fhagiscript` publish request.
