@@ -11,6 +11,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hagiscript-it-"));
 const packageInstallRoot = path.join(tempRoot, "installed-package");
 const runtimePath = path.join(tempRoot, "custom-node-runtime");
 const manifestPath = path.join(tempRoot, "manifest.json");
+const invalidManifestPath = path.join(tempRoot, "invalid-manifest.json");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
 try {
@@ -35,29 +36,39 @@ try {
     stdio: "inherit"
   });
 
-  const hagiscriptCli = path.join(
+  const hagiscriptCommand = path.join(
     packageInstallRoot,
     "node_modules",
-    "@hagicode",
-    "hagiscript",
-    "dist",
-    "cli.js"
+    ".bin",
+    process.platform === "win32" ? "hagiscript.cmd" : "hagiscript"
   );
-  run(process.execPath, [hagiscriptCli, "--version"], packageInstallRoot);
-  run(process.execPath, [hagiscriptCli, "info"], packageInstallRoot);
+  run(hagiscriptCommand, ["--version"], packageInstallRoot);
+  run(hagiscriptCommand, ["info"], packageInstallRoot);
 
   log(`Installing Node.js into custom path ${runtimePath}`);
-  run(
-    process.execPath,
-    [hagiscriptCli, "install-node", "--target", runtimePath],
+  const installNodeOutput = runCapture(
+    hagiscriptCommand,
+    ["install-node", "--target", runtimePath],
     packageInstallRoot
   );
+  process.stdout.write(installNodeOutput);
+  assertIncludes(
+    installNodeOutput,
+    "Node.js runtime installed successfully.",
+    "install-node success output"
+  );
+
   const checkNodeOutput = runCapture(
-    process.execPath,
-    [hagiscriptCli, "check-node", "--target", runtimePath],
+    hagiscriptCommand,
+    ["check-node", "--target", runtimePath],
     packageInstallRoot
   );
   process.stdout.write(checkNodeOutput);
+  assertIncludes(
+    checkNodeOutput,
+    "Node.js runtime is valid.",
+    "check-node validation output"
+  );
   const runtimeNpm = extractRuntimeNpmPath(checkNodeOutput);
   const runtimeGlobalRoot = execFileSync(runtimeNpm, ["root", "-g"], {
     cwd: packageInstallRoot,
@@ -76,8 +87,9 @@ try {
     `${JSON.stringify(
       {
         packages: {
-          "is-number": {
-            version: "7.0.0"
+          "@openai/codex": {
+            version: ">=0.0.0",
+            target: "latest"
           }
         }
       },
@@ -87,18 +99,28 @@ try {
   );
 
   log("Running npm-sync against the custom runtime");
-  run(
-    process.execPath,
-    [
-      hagiscriptCli,
-      "npm-sync",
-      "--runtime",
-      runtimePath,
-      "--manifest",
-      manifestPath
-    ],
+  const npmSyncOutput = runCapture(
+    hagiscriptCommand,
+    ["npm-sync", "--runtime", runtimePath, "--manifest", manifestPath],
     packageInstallRoot
   );
+  process.stdout.write(npmSyncOutput);
+  assertIncludes(
+    npmSyncOutput,
+    "Manifest validated:",
+    "npm-sync manifest output"
+  );
+  assertIncludes(
+    npmSyncOutput,
+    "Runtime validated:",
+    "npm-sync runtime output"
+  );
+  assertIncludes(
+    npmSyncOutput,
+    "Plan: @openai/codex install",
+    "npm-sync plan output"
+  );
+  assertIncludes(npmSyncOutput, "Changed: 1", "npm-sync summary output");
 
   const inventoryOutput = execFileSync(
     runtimeNpm,
@@ -110,13 +132,41 @@ try {
     }
   );
   const inventory = JSON.parse(inventoryOutput);
-  const installedVersion = inventory.dependencies?.["is-number"]?.version;
+  const installedVersion = inventory.dependencies?.["@openai/codex"]?.version;
 
-  if (installedVersion !== "7.0.0") {
+  if (!installedVersion) {
     throw new Error(
-      `Expected custom runtime to contain is-number@7.0.0, got ${installedVersion ?? "missing"}.`
+      "Expected custom runtime to contain @openai/codex installed by npm-sync."
     );
   }
+
+  fs.writeFileSync(
+    invalidManifestPath,
+    `${JSON.stringify(
+      {
+        packages: {
+          "invalid package name": {
+            version: "7.0.0"
+          }
+        }
+      },
+      null,
+      2
+    )}\n`
+  );
+
+  log("Verifying npm-sync failure diagnostics");
+  const invalidOutput = runExpectFailure(
+    hagiscriptCommand,
+    ["npm-sync", "--runtime", runtimePath, "--manifest", invalidManifestPath],
+    packageInstallRoot
+  );
+  process.stdout.write(invalidOutput);
+  assertIncludes(
+    invalidOutput,
+    "Manifest validation failed:",
+    "npm-sync invalid manifest diagnostics"
+  );
 
   log("Installed-package custom-runtime integration test passed");
 } finally {
@@ -141,6 +191,21 @@ function runCapture(command, args, cwd) {
     encoding: "utf8",
     env: integrationEnv()
   });
+}
+
+function runExpectFailure(command, args, cwd) {
+  try {
+    execFileSync(command, args, {
+      cwd,
+      encoding: "utf8",
+      env: integrationEnv(),
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } catch (error) {
+    return `${error.stdout ?? ""}${error.stderr ?? ""}`;
+  }
+
+  throw new Error(`Expected command to fail: ${command} ${args.join(" ")}`);
 }
 
 function integrationEnv(npmPrefix) {
@@ -178,6 +243,14 @@ function extractRuntimeNpmPath(output) {
   }
 
   return npmLine.slice("npm: ".length).trim();
+}
+
+function assertIncludes(output, expected, label) {
+  if (!output.includes(expected)) {
+    throw new Error(
+      `Expected ${label} to include ${expected}. Output:\n${output}`
+    );
+  }
 }
 
 function log(message) {
