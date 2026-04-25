@@ -1,5 +1,9 @@
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { createCli, runCli } from "../cli.js";
+import { createCli, isCliEntrypoint, runCli } from "../cli.js";
 
 describe("hagiscript CLI", () => {
   it("configures name, help, and version metadata", () => {
@@ -32,5 +36,18 @@ describe("hagiscript CLI", () => {
     );
 
     stdout.mockRestore();
+  });
+
+  it("recognizes npm bin symlinks as CLI entrypoints", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-cli-"));
+    const target = join(directory, "dist", "cli.js");
+    const link = join(directory, "node_modules", ".bin", "hagiscript");
+
+    await mkdir(join(directory, "dist"), { recursive: true });
+    await mkdir(join(directory, "node_modules", ".bin"), { recursive: true });
+    await writeFile(target, "");
+    await symlink(target, link);
+
+    expect(isCliEntrypoint(pathToFileURL(target).href, link)).toBe(true);
   });
 });

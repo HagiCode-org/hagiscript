@@ -6,7 +6,8 @@ const { syncNpmGlobals } = vi.hoisted(() => ({
     onLog?.({
       type: "manifest-loaded",
       manifestPath: "/tmp/manifest.json",
-      packageCount: 2
+      packageCount: 2,
+      syncMode: "packages"
     });
     onLog?.({
       type: "runtime-valid",
@@ -53,6 +54,7 @@ const { syncNpmGlobals } = vi.hoisted(() => ({
         },
         manifestPath: "/tmp/manifest.json",
         packageCount: 2,
+        syncMode: "packages",
         noopCount: 1,
         changedCount: 1,
         actions: []
@@ -66,12 +68,29 @@ vi.mock("../runtime/npm-sync.js", async (importOriginal) => ({
   syncNpmGlobals
 }));
 
+const { resolveManagedNodeRuntime } = vi.hoisted(() => ({
+  resolveManagedNodeRuntime: vi.fn(async () => ({
+    targetDirectory: "/tmp/managed-runtime",
+    nodePath: "/tmp/managed-runtime/bin/node",
+    npmPath: "/tmp/managed-runtime/bin/npm",
+    nodeVersion: "v22.0.0",
+    npmVersion: "10.0.0",
+    installed: false
+  }))
+}));
+
+vi.mock("../runtime/node-installer.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../runtime/node-installer.js")>()),
+  getDefaultManagedNodeRuntimeDirectory: () => "/tmp/managed-runtime",
+  resolveManagedNodeRuntime
+}));
+
 describe("npm-sync CLI command", () => {
   it("appears in help output", () => {
     expect(createCli().helpInformation()).toContain("npm-sync");
   });
 
-  it("requires runtime and manifest options", async () => {
+  it("requires a manifest or inline tool selection", async () => {
     const stderr = vi
       .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
@@ -84,6 +103,7 @@ describe("npm-sync CLI command", () => {
 
   it("prints deterministic sync logs", async () => {
     syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
     const stdout = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
@@ -99,6 +119,7 @@ describe("npm-sync CLI command", () => {
     ]);
 
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
+    expect(resolveManagedNodeRuntime).not.toHaveBeenCalled();
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
         runtimePath: "/tmp/runtime",
@@ -106,10 +127,65 @@ describe("npm-sync CLI command", () => {
       })
     );
     expect(output).toContain(
-      "Manifest validated: /tmp/manifest.json (2 packages)"
+      "Manifest validated: /tmp/manifest.json (2 packages, mode=packages)"
     );
     expect(output).toContain("Plan: openspec noop installed=1.0.0");
     expect(output).toContain("npm-sync complete.");
+
+    stdout.mockRestore();
+  });
+
+  it("defaults to the managed runtime when --runtime is omitted", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--manifest",
+      "/tmp/manifest.json"
+    ]);
+
+    expect(resolveManagedNodeRuntime).toHaveBeenCalledWith({
+      targetDirectory: "/tmp/managed-runtime"
+    });
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/managed-runtime",
+        manifestPath: "/tmp/manifest.json"
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("builds an inline tool manifest from selected optional CLI arguments", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--selected-agent-cli",
+      "codex",
+      "--custom-agent-cli",
+      "@scope/agent-cli@^1.0.0"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/managed-runtime",
+        manifestPath: expect.stringContaining("hagiscript-tool-sync-")
+      })
+    );
 
     stdout.mockRestore();
   });

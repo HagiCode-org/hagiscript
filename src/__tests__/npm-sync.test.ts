@@ -37,6 +37,46 @@ describe("npm-sync manifest validation", () => {
     expect(manifest.packages["@hagicode/skills"]).toEqual({
       version: ">=0.5.0 <1.0.0"
     });
+    expect(manifest.syncMode).toBe("packages");
+  });
+
+  it("loads product-managed tool manifests with mandatory and selected tools", () => {
+    const manifest = validateNpmSyncManifest({
+      tools: {
+        optionalAgentCliSyncEnabled: true,
+        selectedOptionalAgentCliIds: ["codex"],
+        customAgentClis: [
+          { packageName: "@scope/agent-cli", version: "^2.0.0" }
+        ]
+      }
+    });
+
+    expect(manifest.syncMode).toBe("tools");
+    expect(Object.keys(manifest.packages)).toEqual([
+      "@openai/codex",
+      "@scope/agent-cli",
+      "code-server",
+      "omniroute",
+      "skills"
+    ]);
+    expect(manifest.packages["@openai/codex"]).toMatchObject({
+      version: "*",
+      target: "latest",
+      toolId: "codex",
+      toolGroup: "optional-agent-cli"
+    });
+  });
+
+  it("allows product-managed tool manifests with empty optional selections", () => {
+    const manifest = validateNpmSyncManifest({
+      tools: { optionalAgentCliSyncEnabled: true }
+    });
+
+    expect(Object.keys(manifest.packages)).toEqual([
+      "code-server",
+      "omniroute",
+      "skills"
+    ]);
   });
 
   it("rejects manifests without packages", () => {
@@ -89,6 +129,29 @@ describe("npm-sync planning", () => {
         ?.selectedInstallSelector
     ).toBe("ambiguous@3.0.0");
   });
+
+  it("retains originating tool metadata on planned actions", () => {
+    const toolManifest = validateNpmSyncManifest({
+      tools: {
+        optionalAgentCliSyncEnabled: true,
+        selectedOptionalAgentCliIds: ["codex"]
+      }
+    });
+
+    const plan = createNpmSyncPlan(toolManifest, {});
+
+    expect(plan.find((action) => action.packageName === "skills")).toMatchObject({
+      action: "install",
+      toolId: "openspec-skills",
+      toolGroup: "mandatory",
+      toolRequirement: "mandatory"
+    });
+    expect(plan.find((action) => action.packageName === "@openai/codex")).toMatchObject({
+      selectedInstallSelector: "@openai/codex@latest",
+      toolId: "codex",
+      toolGroup: "optional-agent-cli"
+    });
+  });
 });
 
 describe("npm-sync execution", () => {
@@ -134,6 +197,7 @@ describe("npm-sync execution", () => {
     });
 
     expect(summary.noopCount).toBe(1);
+    expect(summary.syncMode).toBe("packages");
     expect(summary.changedCount).toBe(0);
     expect(runner).toHaveBeenCalledOnce();
   });

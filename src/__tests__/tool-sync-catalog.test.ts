@@ -42,10 +42,10 @@ describe("tool sync catalog", () => {
     expect(packages.skills.toolRequirement).toBe("mandatory");
   });
 
-  it("rejects enabled optional CLI sync with zero selections", () => {
-    expect(() =>
-      buildToolSyncPackageSet({ optionalAgentCliSyncEnabled: true })
-    ).toThrow("at least one optional agent CLI must be selected");
+  it("allows enabled optional CLI sync with zero selections", () => {
+    expect(
+      Object.keys(buildToolSyncPackageSet({ optionalAgentCliSyncEnabled: true }))
+    ).toEqual(["code-server", "omniroute", "skills"]);
   });
 
   it("rejects unknown optional CLI IDs", () => {
@@ -71,7 +71,7 @@ describe("tool sync catalog", () => {
     expect(packages["@scope/agent-cli"]).toMatchObject({
       version: "^1.0.0",
       target: "^1.0.0",
-      toolId: "custom:@scope/agent-cli"
+      toolId: "custom:scope-agent-cli"
     });
   });
 
