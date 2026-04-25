@@ -22,8 +22,11 @@ export function createRuntimeInfo(): HagiscriptRuntimeInfo {
 }
 
 export {
+  getDefaultManagedNodeRuntimeDirectory,
   installNodeRuntime,
-  type InstallNodeRuntimeResult
+  resolveManagedNodeRuntime,
+  type InstallNodeRuntimeResult,
+  type ResolveManagedNodeRuntimeResult
 } from "./runtime/node-installer.js";
 export {
   verifyNodeRuntime,
@@ -44,3 +47,15 @@ export {
   type NpmSyncRuntimeMetadata,
   type NpmSyncSummary
 } from "./runtime/npm-sync.js";
+export {
+  buildToolSyncPackageSet,
+  builtInToolSyncCatalog,
+  normalizeToolSyncEntry,
+  validateToolSyncCatalog,
+  type CustomAgentCliToolInput,
+  type ToolSyncCatalogEntry,
+  type ToolSyncGroupId,
+  type ToolSyncPackageConstraint,
+  type ToolSyncRequirement,
+  type ToolSyncSelection
+} from "./runtime/tool-sync-catalog.js";

@@ -1,5 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import {
   assertTargetIsEmptyOrMissing,
   extractNodeArchive,
@@ -23,6 +24,17 @@ export interface InstallNodeRuntimeOptions {
   onProgress?: (progress: DownloadProgress) => void;
 }
 
+export interface ResolveManagedNodeRuntimeOptions {
+  targetDirectory?: string;
+  versionSelector?: string;
+  fetchImpl?: typeof fetch;
+  downloadTimeoutMs?: number;
+  verifyTimeoutMs?: number;
+  verifyRuntime?: typeof verifyNodeRuntime;
+  installRuntime?: typeof installNodeRuntime;
+  onProgress?: (progress: DownloadProgress) => void;
+}
+
 export interface InstallNodeRuntimeResult {
   version: string;
   npmVersion: string;
@@ -30,6 +42,52 @@ export interface InstallNodeRuntimeResult {
   nodePath: string;
   npmPath: string;
   archiveUrl: string;
+}
+
+export interface ResolveManagedNodeRuntimeResult {
+  targetDirectory: string;
+  nodePath: string;
+  npmPath: string;
+  nodeVersion: string;
+  npmVersion: string;
+  installed: boolean;
+}
+
+export function getDefaultManagedNodeRuntimeDirectory(): string {
+  return join(homedir(), ".hagiscript", "node-runtime");
+}
+
+export async function resolveManagedNodeRuntime(
+  options: ResolveManagedNodeRuntimeOptions = {}
+): Promise<ResolveManagedNodeRuntimeResult> {
+  const targetDirectory = resolve(
+    options.targetDirectory ?? getDefaultManagedNodeRuntimeDirectory()
+  );
+  const verifyRuntime = options.verifyRuntime ?? verifyNodeRuntime;
+  const initialVerification = await verifyRuntime(targetDirectory, {
+    timeoutMs: options.verifyTimeoutMs
+  });
+
+  if (initialVerification.valid) {
+    return toResolvedRuntime(initialVerification, false);
+  }
+
+  const installRuntime = options.installRuntime ?? installNodeRuntime;
+  await installRuntime({
+    targetDirectory,
+    versionSelector: options.versionSelector,
+    fetchImpl: options.fetchImpl,
+    downloadTimeoutMs: options.downloadTimeoutMs,
+    verifyTimeoutMs: options.verifyTimeoutMs,
+    onProgress: options.onProgress
+  });
+
+  const finalVerification = await verifyRuntime(targetDirectory, {
+    timeoutMs: options.verifyTimeoutMs
+  });
+  assertValidVerification(finalVerification);
+
+  return toResolvedRuntime(finalVerification, true);
 }
 
 export async function installNodeRuntime(
@@ -96,4 +154,20 @@ function assertValidVerification(
       `Installed Node.js runtime failed verification: ${verification.failureReason ?? "unknown failure"}`
     );
   }
+}
+
+function toResolvedRuntime(
+  verification: NodeRuntimeVerificationResult,
+  installed: boolean
+): ResolveManagedNodeRuntimeResult {
+  assertValidVerification(verification);
+
+  return {
+    targetDirectory: verification.targetDirectory,
+    nodePath: verification.nodePath,
+    npmPath: verification.npmPath,
+    nodeVersion: verification.nodeVersion,
+    npmVersion: verification.npmVersion,
+    installed
+  };
 }
