@@ -44,3 +44,59 @@ jobs:
 
       - name: Run installed package runtime integration test
         run: npm run integration:installed-runtime
+
+  runtime-management:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for HagiScript build
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Prepare HagiScript CLI
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run HagiScript install-node
+        run: |
+          set -euo pipefail
+          node dist/cli.js install-node --target "$RUNNER_TEMP/hagiscript-node-runtime" --version 22 | tee "$RUNNER_TEMP/install-node.log"
+          grep -F "Node.js runtime installed successfully." "$RUNNER_TEMP/install-node.log"
+          grep -F "Node.js:" "$RUNNER_TEMP/install-node.log"
+          grep -F "npm:" "$RUNNER_TEMP/install-node.log"
+
+      - name: Run HagiScript check-node
+        run: |
+          set -euo pipefail
+          node dist/cli.js check-node --target "$RUNNER_TEMP/hagiscript-node-runtime" | tee "$RUNNER_TEMP/check-node.log"
+          grep -F "Node.js runtime is valid." "$RUNNER_TEMP/check-node.log"
+          grep -F "node:" "$RUNNER_TEMP/check-node.log"
+          grep -F "npm:" "$RUNNER_TEMP/check-node.log"
+
+      - name: Run HagiScript npm-sync
+        run: |
+          set -euo pipefail
+          node dist/cli.js npm-sync --runtime "$RUNNER_TEMP/hagiscript-node-runtime" --manifest fixtures/npm-sync/ci-install.json | tee "$RUNNER_TEMP/npm-sync.log"
+          grep -F "Manifest validated:" "$RUNNER_TEMP/npm-sync.log"
+          grep -F "Runtime validated:" "$RUNNER_TEMP/npm-sync.log"
+          grep -F "Plan: is-number install" "$RUNNER_TEMP/npm-sync.log"
+          grep -F "Synced: is-number (install)" "$RUNNER_TEMP/npm-sync.log"
+          grep -F "Changed: 1" "$RUNNER_TEMP/npm-sync.log"
+
+      - name: Verify HagiScript npm-sync failure diagnostics
+        run: |
+          set -euo pipefail
+          if node dist/cli.js npm-sync --runtime "$RUNNER_TEMP/hagiscript-node-runtime" --manifest fixtures/npm-sync/ci-invalid.json >"$RUNNER_TEMP/npm-sync-invalid.log" 2>&1; then
+            echo "Expected npm-sync to fail for invalid fixture manifest."
+            cat "$RUNNER_TEMP/npm-sync-invalid.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/npm-sync-invalid.log"
+          grep -F "Manifest validation failed:" "$RUNNER_TEMP/npm-sync-invalid.log"
