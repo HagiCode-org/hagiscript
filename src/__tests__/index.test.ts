@@ -8,17 +8,17 @@ import {
 
 describe("hagiscript public API", () => {
   it("exports package metadata", () => {
-    expect(packageName).toBe("hagiscript");
+    expect(packageName).toBe("@hagicode/hagiscript");
     expect(packageVersion).toBe("0.1.0");
     expect(getPackageMetadata()).toEqual({
-      name: "hagiscript",
+      name: "@hagicode/hagiscript",
       version: "0.1.0"
     });
   });
 
   it("creates runtime foundation info", () => {
     expect(createRuntimeInfo()).toEqual({
-      packageName: "hagiscript",
+      packageName: "@hagicode/hagiscript",
       version: "0.1.0",
       status: "foundation"
     });

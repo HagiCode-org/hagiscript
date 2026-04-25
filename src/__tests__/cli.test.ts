@@ -22,7 +22,7 @@ describe("hagiscript CLI", () => {
     expect(stdout).toHaveBeenCalledWith(
       `${JSON.stringify(
         {
-          packageName: "hagiscript",
+          packageName: "@hagicode/hagiscript",
           version: "0.1.0",
           status: "foundation"
         },
