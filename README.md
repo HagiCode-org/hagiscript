@@ -1,21 +1,32 @@
-# hagiscript
+# Hagiscript
 
-`hagiscript` is the npm package foundation for future Hagiscript language tooling. This initial package intentionally keeps runtime behavior small: it exposes version metadata, a baseline runtime-info API, and an executable CLI placeholder that can be built, tested, packed, and published safely.
+`@hagicode/hagiscript` is the scoped npm package foundation for future Hagiscript language tooling. This initial package intentionally keeps runtime behavior small: it exposes version metadata, a baseline runtime-info API, and an executable CLI placeholder that can be built, tested, packed, and published safely.
 
 ## Installation Assumptions
 
 - Node.js 20 or newer is required.
 - npm is the package manager for this standalone repository.
-- The initial package name is `hagiscript`. If npm name availability requires a scoped name later, update `package.json`, release workflows, and documentation together.
-- npm publishing requires either trusted publishing with GitHub Actions provenance or an npm token compatible with `npm publish --provenance`.
+- The npm package name is `@hagicode/hagiscript`.
+- GitHub Actions publishing uses `npm publish --provenance`. Local manual publishing should use plain `npm publish` unless you are inside a supported trusted publishing environment.
 
 ## Usage
+
+Install the package from npm:
+
+```bash
+npm install @hagicode/hagiscript
+```
+
+The installed CLI command remains `hagiscript`.
 
 Run the CLI locally during development:
 
 ```bash
 npm run dev -- --help
 npm run dev -- info
+npm run dev -- install-node --target .tmp/node-runtime
+npm run dev -- check-node --target .tmp/node-runtime
+npm run dev -- npm-sync --runtime .tmp/node-runtime --manifest manifest.json
 ```
 
 After building, run the compiled CLI:
@@ -24,12 +35,129 @@ After building, run the compiled CLI:
 npm run build
 node dist/cli.js --version
 node dist/cli.js info
+node dist/cli.js install-node --target .tmp/node-runtime
+node dist/cli.js check-node --target .tmp/node-runtime
+node dist/cli.js npm-sync --runtime .tmp/node-runtime --manifest manifest.json
+```
+
+### Managed Node.js Runtime Commands
+
+`install-node` downloads an official Node.js archive from `https://nodejs.org/dist`, extracts it into the target directory, and verifies both `node` and `npm` before reporting success.
+
+```bash
+hagiscript install-node --target /opt/hagiscript/node
+hagiscript install-node --target /opt/hagiscript/node20 --version 20
+hagiscript install-node --target /opt/hagiscript/lts --version lts
+```
+
+When `--version` is omitted, Hagiscript installs the latest available Node.js 22 release. Supported selectors are `lts`, `latest`, `current`, a major version such as `22`, an exact version such as `22.12.0`, or an exact version with a `v` prefix such as `v22.12.0`.
+
+The target path must be missing or empty. Hagiscript refuses to install into a non-empty target directory and does not delete existing user files. During installation, temporary staging files are created beside the target directory and cleaned up after success or failure.
+
+Example success output:
+
+```text
+Installing Node.js 22 into /opt/hagiscript/node
+Download progress: 100%
+Node.js runtime installed successfully.
+Target: /opt/hagiscript/node
+Node.js: v22.12.0
+npm: 10.9.0
+node: /opt/hagiscript/node/bin/node
+npm: /opt/hagiscript/node/bin/npm
+```
+
+`check-node` validates an existing runtime directory and exits with code `0` only when both `node --version` and `npm --version` succeed.
+
+```bash
+hagiscript check-node --target /opt/hagiscript/node
+```
+
+Example valid output:
+
+```text
+Node.js runtime is valid.
+Target: /opt/hagiscript/node
+Node.js: v22.12.0
+npm: 10.9.0
+node: /opt/hagiscript/node/bin/node
+npm: /opt/hagiscript/node/bin/npm
+```
+
+Example invalid output exits non-zero and includes the failure reason:
+
+```text
+Node.js runtime is invalid.
+Target: /opt/hagiscript/node
+Reason: missing executable
+```
+
+### npm Global Package Synchronization
+
+`npm-sync` aligns npm global packages inside an explicit Node.js runtime with a JSON manifest. It always uses the `npm` executable resolved from `--runtime`; it does not use or mutate npm from the ambient shell `PATH`.
+
+```bash
+hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
+```
+
+Manifest schema:
+
+```json
+{
+  "packages": {
+    "<npm-package-name>": {
+      "version": "<semver range>",
+      "target": "<optional npm install selector>"
+    }
+  }
+}
+```
+
+The required `version` field accepts package.json-style semver ranges such as `^1.2.0`, `>=1.0.0 <2.0.0`, or `1.0.0 || 2.0.0`. The optional `target` field controls the selector used for `npm install -g`; when omitted, Hagiscript installs `<package>@<version>`.
+
+Example manifest for openspec and skills tooling:
+
+```json
+{
+  "packages": {
+    "@openspec/cli": {
+      "version": "^1.0.0"
+    },
+    "@hagicode/skills": {
+      "version": ">=0.5.0 <1.0.0",
+      "target": "0.5.4"
+    }
+  }
+}
+```
+
+During execution, Hagiscript validates the manifest and runtime before any npm install command runs, lists global packages with `/opt/hagiscript/node/bin/npm list -g --depth=0 --json`, plans no-op, install, upgrade, downgrade, or sync actions, and then runs `npm install -g <package>@<selector>` only for packages that need changes.
+
+Example output:
+
+```text
+Manifest validated: ./manifest.json (2 packages)
+Runtime validated: /opt/hagiscript/node
+node: /opt/hagiscript/node/bin/node (v22.12.0)
+npm: /opt/hagiscript/node/bin/npm (10.9.0)
+Detected global packages: 4
+Plan: @openspec/cli noop installed=1.0.2 required=^1.0.0 selector=@openspec/cli@^1.0.0
+Skip: @openspec/cli already satisfies range
+Plan: @hagicode/skills upgrade installed=0.4.0 required=>=0.5.0 <1.0.0 selector=@hagicode/skills@0.5.4
+Install: @hagicode/skills using @hagicode/skills@0.5.4
+Synced: @hagicode/skills (upgrade)
+npm-sync complete.
+Runtime: /opt/hagiscript/node
+Manifest: ./manifest.json
+Packages: 2
+No-op: 1
+Changed: 1
 ```
 
 Use the library API from ESM consumers:
 
 ```ts
-import { createRuntimeInfo, getPackageMetadata } from "hagiscript";
+import { createRuntimeInfo, getPackageMetadata } from "@hagicode/hagiscript";
 
 console.log(getPackageMetadata());
 console.log(createRuntimeInfo());
@@ -69,7 +197,7 @@ npm run publish:verify-release -- v0.1.0
 - `dist/cli.d.ts`
 - `dist/cli.js.map`
 
-The package `exports` field points consumers to `dist/index.js` and `dist/index.d.ts`. The `bin.hagiscript` entry points to `dist/cli.js`.
+The package `exports` field points consumers to `dist/index.js` and `dist/index.d.ts`. The published package name is `@hagicode/hagiscript`, and the `bin.hagiscript` entry points to `dist/cli.js`.
 
 ## Package Verification
 
@@ -84,4 +212,4 @@ GitHub Actions provide three automation paths:
 - `npm-publish.yml` also publishes stable GitHub releases tagged as `vX.Y.Z` to the `latest` dist-tag after validating the tag against `package.json`.
 - `release-drafter.yml` keeps a categorized release draft using `.github/release-drafter.yml`.
 
-Before the first publish, configure npm trusted publishing or provide repository secrets required by the package registry policy.
+Before the first publish, make sure the npm organization `hagicode` exists and grant publish access for `@hagicode/hagiscript`. For GitHub Actions releases, configure npm trusted publishing. For local manual releases, run plain `npm publish`.
