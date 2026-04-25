@@ -1,4 +1,11 @@
 import { Command, InvalidArgumentError } from "commander";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  getDefaultManagedNodeRuntimeDirectory,
+  resolveManagedNodeRuntime
+} from "../runtime/node-installer.js";
 import {
   NpmManifestValidationError,
   NpmSyncCommandError,
@@ -10,19 +17,67 @@ import {
 interface NpmSyncCommandOptions {
   runtime?: string;
   manifest?: string;
+  managedRuntime?: string;
+  selectedAgentCli?: string[];
+  customAgentCli?: string[];
 }
 
 export function registerNpmSyncCommand(program: Command): void {
   program
     .command("npm-sync")
-    .description("sync npm global packages in an explicit Node.js runtime")
-    .requiredOption("--runtime <path>", "target Node.js runtime directory")
-    .requiredOption("--manifest <path>", "npm-sync manifest JSON file")
+    .description(
+      "sync managed npm tools using HagiScript's Node.js runtime, or an explicit runtime for compatibility"
+    )
+    .option("--runtime <path>", "explicit Node.js runtime directory")
+    .option(
+      "--managed-runtime <path>",
+      "HagiScript-managed runtime directory to verify or install before sync"
+    )
+    .option("--manifest <path>", "npm-sync manifest JSON file")
+    .option(
+      "--selected-agent-cli <id>",
+      "selected optional agent CLI ID for product-managed tool sync",
+      collectValues,
+      []
+    )
+    .option(
+      "--custom-agent-cli <package[@version]>",
+      "custom npm-installable agent CLI for product-managed tool sync",
+      collectValues,
+      []
+    )
     .action(async (options: NpmSyncCommandOptions, command: Command) => {
-      const runtimePath = validatePathOption(options.runtime, "--runtime");
-      const manifestPath = validatePathOption(options.manifest, "--manifest");
+      const explicitRuntime = options.runtime
+        ? validatePathOption(options.runtime, "--runtime")
+        : undefined;
+      const selectedAgentCliIds = options.selectedAgentCli ?? [];
+      const customAgentCliSelectors = options.customAgentCli ?? [];
+      const hasInlineToolSelection =
+        selectedAgentCliIds.length > 0 || customAgentCliSelectors.length > 0;
+      const manifestPath = options.manifest
+        ? validatePathOption(options.manifest, "--manifest")
+        : hasInlineToolSelection
+          ? await writeInlineToolManifest(
+              selectedAgentCliIds,
+              customAgentCliSelectors
+            )
+          : undefined;
+
+      if (!manifestPath) {
+        throw new InvalidArgumentError(
+          "--manifest is required unless --selected-agent-cli or --custom-agent-cli is provided."
+        );
+      }
+
+      const managedRuntimePath = options.managedRuntime
+        ? validatePathOption(options.managedRuntime, "--managed-runtime")
+        : getDefaultManagedNodeRuntimeDirectory();
 
       try {
+        const runtimePath = explicitRuntime ?? (await resolveManagedNodeRuntime({
+          targetDirectory: managedRuntimePath
+        })).targetDirectory;
+
         await syncNpmGlobals({
           runtimePath,
           manifestPath,
@@ -32,6 +87,56 @@ export function registerNpmSyncCommand(program: Command): void {
         command.error(formatNpmSyncError(error), { exitCode: 1 });
       }
     });
+}
+
+function collectValues(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+async function writeInlineToolManifest(
+  selectedAgentCliIds: readonly string[],
+  customAgentCliSelectors: readonly string[]
+): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "hagiscript-tool-sync-"));
+  const manifestPath = join(directory, "manifest.json");
+  await writeFile(
+    manifestPath,
+    JSON.stringify(
+      {
+        tools: {
+          optionalAgentCliSyncEnabled: true,
+          selectedOptionalAgentCliIds: selectedAgentCliIds,
+          customAgentClis: customAgentCliSelectors.map(parseCustomAgentCli)
+        }
+      },
+      null,
+      2
+    )
+  );
+  return manifestPath;
+}
+
+function parseCustomAgentCli(selector: string): {
+  packageName: string;
+  version?: string;
+  target?: string;
+} {
+  const trimmed = selector.trim();
+  const versionSeparator = trimmed.startsWith("@")
+    ? trimmed.indexOf("@", 1)
+    : trimmed.indexOf("@");
+
+  if (versionSeparator <= 0) {
+    return { packageName: trimmed };
+  }
+
+  const packageName = trimmed.slice(0, versionSeparator);
+  const version = trimmed.slice(versionSeparator + 1);
+  return {
+    packageName,
+    version,
+    target: version
+  };
 }
 
 function validatePathOption(
@@ -56,7 +161,7 @@ function printNpmSyncLog(event: NpmSyncLogEvent): void {
   switch (event.type) {
     case "manifest-loaded":
       process.stdout.write(
-        `Manifest validated: ${event.manifestPath} (${event.packageCount} packages)\n`
+        `Manifest validated: ${event.manifestPath} (${event.packageCount} packages, mode=${event.syncMode})\n`
       );
       break;
     case "runtime-valid":
@@ -77,7 +182,7 @@ function printNpmSyncLog(event: NpmSyncLogEvent): void {
       break;
     case "planned-action":
       process.stdout.write(
-        `Plan: ${event.action.packageName} ${event.action.action} installed=${event.action.installedVersion ?? "missing"} required=${event.action.requiredRange} selector=${event.action.selectedInstallSelector}\n`
+        `Plan: ${event.action.packageName} ${event.action.action} installed=${event.action.installedVersion ?? "missing"} required=${event.action.requiredRange} selector=${event.action.selectedInstallSelector}${formatToolMetadata(event.action)}\n`
       );
       break;
     case "skip":
@@ -105,9 +210,21 @@ function printSummary(summary: NpmSyncSummary): void {
   process.stdout.write(`npm-sync complete.\n`);
   process.stdout.write(`Runtime: ${summary.runtime.targetDirectory}\n`);
   process.stdout.write(`Manifest: ${summary.manifestPath}\n`);
+  process.stdout.write(`Mode: ${summary.syncMode}\n`);
   process.stdout.write(`Packages: ${summary.packageCount}\n`);
   process.stdout.write(`No-op: ${summary.noopCount}\n`);
   process.stdout.write(`Changed: ${summary.changedCount}\n`);
+}
+
+function formatToolMetadata(action: {
+  toolId?: string;
+  toolGroup?: string;
+}): string {
+  if (!action.toolId) {
+    return "";
+  }
+
+  return ` tool=${action.toolId} group=${action.toolGroup ?? "unknown"}`;
 }
 
 function formatNpmSyncError(error: unknown): string {

@@ -9,14 +9,37 @@ import {
   type NpmGlobalCommandOptions
 } from "./npm-global.js";
 import { verifyNodeRuntime } from "./node-verify.js";
+import {
+  buildToolSyncPackageSet,
+  ToolSyncCatalogValidationError,
+  type CustomAgentCliToolInput,
+  type ToolSyncGroupId,
+  type ToolSyncPackageConstraint,
+  type ToolSyncRequirement
+} from "./tool-sync-catalog.js";
 
 export interface NpmSyncManifestEntry {
   version: string;
   target?: string;
+  toolId?: string;
+  toolDisplayName?: string;
+  toolGroup?: ToolSyncGroupId;
+  toolRequirement?: ToolSyncRequirement;
 }
 
 export interface NpmSyncManifest {
   packages: Record<string, NpmSyncManifestEntry>;
+  syncMode: "packages" | "tools";
+}
+
+export interface NpmSyncToolManifestSelection {
+  optionalAgentCliSyncEnabled?: boolean;
+  selectedOptionalAgentCliIds?: string[];
+  customAgentClis?: CustomAgentCliToolInput[];
+}
+
+export interface NpmSyncToolManifest {
+  tools: NpmSyncToolManifestSelection;
 }
 
 export type InstalledGlobalPackages = Record<string, string>;
@@ -35,6 +58,10 @@ export interface NpmSyncPlannedAction {
   selectedInstallSelector: string;
   installedVersion?: string;
   action: NpmSyncActionKind;
+  toolId?: string;
+  toolDisplayName?: string;
+  toolGroup?: ToolSyncGroupId;
+  toolRequirement?: ToolSyncRequirement;
 }
 
 export interface NpmSyncActionResult extends NpmSyncPlannedAction {
@@ -57,6 +84,7 @@ export interface NpmSyncSummary {
   runtime: NpmSyncRuntimeMetadata;
   manifestPath: string;
   packageCount: number;
+  syncMode: NpmSyncManifest["syncMode"];
   noopCount: number;
   changedCount: number;
   actions: NpmSyncActionResult[];
@@ -71,7 +99,12 @@ export interface NpmSyncOptions {
 }
 
 export type NpmSyncLogEvent =
-  | { type: "manifest-loaded"; manifestPath: string; packageCount: number }
+  | {
+      type: "manifest-loaded";
+      manifestPath: string;
+      packageCount: number;
+      syncMode: NpmSyncManifest["syncMode"];
+    }
   | { type: "runtime-valid"; runtime: NpmSyncRuntimeMetadata }
   | { type: "inventory"; packages: InstalledGlobalPackages }
   | { type: "planned-action"; action: NpmSyncPlannedAction }
@@ -139,9 +172,13 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
     throw new NpmManifestValidationError(["manifest must be a JSON object"]);
   }
 
+  if (isRecord(value.tools) && !Array.isArray(value.tools)) {
+    return validateToolSyncManifest(value.tools);
+  }
+
   if (!isRecord(value.packages) || Array.isArray(value.packages)) {
     throw new NpmManifestValidationError([
-      "manifest must contain a top-level packages object"
+      "manifest must contain a top-level packages object or tools object"
     ]);
   }
 
@@ -193,7 +230,7 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
     throw new NpmManifestValidationError(errors);
   }
 
-  return { packages };
+  return { packages, syncMode: "packages" };
 }
 
 export function normalizeGlobalInventory(
@@ -235,6 +272,7 @@ export function createNpmSyncPlan(
       const installedVersion = installed[packageName];
       const targetSelector = entry.target ?? entry.version;
       const selectedInstallSelector = `${packageName}@${targetSelector}`;
+      const metadata = createActionMetadata(entry);
 
       if (!installedVersion) {
         return {
@@ -242,7 +280,8 @@ export function createNpmSyncPlan(
           requiredRange: entry.version,
           targetSelector,
           selectedInstallSelector,
-          action: "install"
+          action: "install",
+          ...metadata
         };
       }
 
@@ -257,7 +296,8 @@ export function createNpmSyncPlan(
           targetSelector,
           selectedInstallSelector,
           installedVersion,
-          action: "noop"
+          action: "noop",
+          ...metadata
         };
       }
 
@@ -267,7 +307,8 @@ export function createNpmSyncPlan(
         targetSelector,
         selectedInstallSelector,
         installedVersion,
-        action: classifyOutOfRangeVersion(installedVersion, entry.version)
+        action: classifyOutOfRangeVersion(installedVersion, entry.version),
+        ...metadata
       };
     });
 }
@@ -279,7 +320,8 @@ export async function syncNpmGlobals(
   options.onLog?.({
     type: "manifest-loaded",
     manifestPath: options.manifestPath,
-    packageCount: Object.keys(manifest.packages).length
+    packageCount: Object.keys(manifest.packages).length,
+    syncMode: manifest.syncMode
   });
 
   const verifyRuntime = options.verifyRuntime ?? verifyNodeRuntime;
@@ -369,6 +411,7 @@ export async function syncNpmGlobals(
     runtime,
     manifestPath: options.manifestPath,
     packageCount: plan.length,
+    syncMode: manifest.syncMode,
     noopCount: actions.filter((action) => !action.changed).length,
     changedCount: actions.filter((action) => action.changed).length,
     actions
@@ -376,6 +419,144 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "summary", summary });
 
   return summary;
+}
+
+function validateToolSyncManifest(value: Record<string, unknown>): NpmSyncManifest {
+  try {
+    const selection = normalizeToolSelection(value);
+    const packageSet = buildToolSyncPackageSet(selection);
+    return {
+      packages: normalizeToolPackageSet(packageSet),
+      syncMode: "tools"
+    };
+  } catch (error) {
+    if (error instanceof ToolSyncCatalogValidationError) {
+      throw new NpmManifestValidationError(error.errors);
+    }
+    throw error;
+  }
+}
+
+function normalizeToolSelection(
+  value: Record<string, unknown>
+): NpmSyncToolManifestSelection {
+  const errors: string[] = [];
+  const optionalAgentCliSyncEnabled = Boolean(
+    value.optionalAgentCliSyncEnabled
+  );
+  const selectedOptionalAgentCliIds = normalizeStringArray(
+    value.selectedOptionalAgentCliIds,
+    "tools.selectedOptionalAgentCliIds",
+    errors
+  );
+  const customAgentClis = normalizeCustomAgentCliArray(
+    value.customAgentClis,
+    errors
+  );
+
+  if (errors.length > 0) {
+    throw new NpmManifestValidationError(errors);
+  }
+
+  return {
+    optionalAgentCliSyncEnabled,
+    selectedOptionalAgentCliIds,
+    customAgentClis
+  };
+}
+
+function normalizeStringArray(
+  value: unknown,
+  path: string,
+  errors: string[]
+): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array of strings`);
+    return [];
+  }
+
+  return value.flatMap((item, index) => {
+    if (typeof item !== "string") {
+      errors.push(`${path}[${index}] must be a string`);
+      return [];
+    }
+
+    return [item];
+  });
+}
+
+function normalizeCustomAgentCliArray(
+  value: unknown,
+  errors: string[]
+): CustomAgentCliToolInput[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    errors.push("tools.customAgentClis must be an array");
+    return [];
+  }
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`tools.customAgentClis[${index}] must be an object`);
+      return [];
+    }
+
+    const input: CustomAgentCliToolInput = {
+      packageName: typeof item.packageName === "string" ? item.packageName : ""
+    };
+
+    if (typeof item.id === "string") {
+      input.id = item.id;
+    }
+    if (typeof item.displayName === "string") {
+      input.displayName = item.displayName;
+    }
+    if (typeof item.version === "string") {
+      input.version = item.version;
+    }
+    if (typeof item.target === "string") {
+      input.target = item.target;
+    }
+
+    return [input];
+  });
+}
+
+function normalizeToolPackageSet(
+  packageSet: Record<string, ToolSyncPackageConstraint>
+): Record<string, NpmSyncManifestEntry> {
+  return Object.fromEntries(
+    Object.entries(packageSet).map(([packageName, entry]) => [
+      packageName,
+      {
+        version: entry.version,
+        target: entry.target,
+        toolId: entry.toolId,
+        toolDisplayName: entry.toolDisplayName,
+        toolGroup: entry.toolGroup,
+        toolRequirement: entry.toolRequirement
+      }
+    ])
+  );
+}
+
+function createActionMetadata(entry: NpmSyncManifestEntry): Pick<
+  NpmSyncPlannedAction,
+  "toolId" | "toolDisplayName" | "toolGroup" | "toolRequirement"
+> {
+  return {
+    toolId: entry.toolId,
+    toolDisplayName: entry.toolDisplayName,
+    toolGroup: entry.toolGroup,
+    toolRequirement: entry.toolRequirement
+  };
 }
 
 function createRuntimeNpmEnv(
