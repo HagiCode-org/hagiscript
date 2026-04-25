@@ -21,6 +21,21 @@ describe("tool sync catalog", () => {
     expect(catalog.filter((entry) => entry.group === "optional-agent-cli")).toHaveLength(3);
   });
 
+  it("loads pinned package versions from the internal catalog config", () => {
+    expect(
+      Object.fromEntries(
+        builtInToolSyncCatalog.map((entry) => [entry.id, entry.target])
+      )
+    ).toEqual({
+      "openspec-skills": "1.5.1",
+      omniroute: "3.6.9",
+      "code-server": "4.117.0",
+      codex: "0.125.0",
+      qoder: "0.1.48",
+      opencode: "1.14.24"
+    });
+  });
+
   it("always includes mandatory tools without user selection", () => {
     expect(Object.keys(buildToolSyncPackageSet())).toEqual([
       "code-server",

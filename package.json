@@ -24,7 +24,8 @@
   "files": [
     "dist",
     "README.md",
-    "README_cn.md"
+    "README_cn.md",
+    "src/runtime/tool-sync-catalog.config.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
