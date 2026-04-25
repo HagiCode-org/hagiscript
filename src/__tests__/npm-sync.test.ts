@@ -240,6 +240,9 @@ describe("npm-sync execution", () => {
     expect(summary.noopCount).toBe(1);
     expect(summary.syncMode).toBe("packages");
     expect(summary.changedCount).toBe(0);
+    expect(summary.fallbackPolicy).toBe("auto");
+    expect(summary.fallbackUsed).toBe(false);
+    expect(summary.fallbackEvents).toEqual([]);
     expect(summary.registryMirror).toBeUndefined();
     expect(runner).toHaveBeenCalledOnce();
     expect(runner.mock.calls[0][1]).toEqual(["list", "-g", "--depth=0", "--json"]);
@@ -278,6 +281,8 @@ describe("npm-sync execution", () => {
     });
 
     expect(summary.registryMirror).toBe("https://registry.npmmirror.com/");
+    expect(summary.fallbackPolicy).toBe("auto");
+    expect(summary.fallbackUsed).toBe(false);
     expect(runner).toHaveBeenNthCalledWith(
       1,
       "/runtime/bin/npm",
@@ -303,6 +308,279 @@ describe("npm-sync execution", () => {
       ],
       120_000
     );
+  });
+
+  it("retries inventory against the official registry after a mirror failure", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://registry.npmmirror.com/",
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (
+        args[0] === "list" &&
+        args.includes("https://registry.npmmirror.com/")
+      ) {
+        throw new NpmCommandError("mirror list failed", {
+          command,
+          args,
+          stdout: "",
+          stderr: "mirror inventory error",
+          exitCode: 1
+        });
+      }
+
+      return commandResult(command, args, {
+        dependencies: { openspec: { version: "1.1.0" } }
+      });
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { runCommand: runner }
+    });
+
+    expect(summary.noopCount).toBe(1);
+    expect(summary.fallbackUsed).toBe(true);
+    expect(summary.fallbackEvents).toEqual([
+      {
+        commandKind: "inventory",
+        mirrorRegistry: "https://registry.npmmirror.com/",
+        fallbackRegistry: "https://registry.npmjs.org/",
+        retrySucceeded: true
+      }
+    ]);
+    expect(runner).toHaveBeenNthCalledWith(
+      1,
+      "/runtime/bin/npm",
+      [
+        "list",
+        "-g",
+        "--depth=0",
+        "--json",
+        "--registry",
+        "https://registry.npmmirror.com/"
+      ],
+      120_000
+    );
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      [
+        "list",
+        "-g",
+        "--depth=0",
+        "--json",
+        "--registry",
+        "https://registry.npmjs.org/"
+      ],
+      120_000
+    );
+  });
+
+  it("retries installs against the official registry after a mirror failure", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://registry.npmmirror.com/",
+        packages: { openspec: { version: "^1.0.0", target: "1.2.3" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === "list") {
+        return commandResult(command, args, { dependencies: {} });
+      }
+      if (args.includes("https://registry.npmmirror.com/")) {
+        throw new NpmCommandError("mirror install failed", {
+          command,
+          args,
+          stdout: "",
+          stderr: "mirror install error",
+          exitCode: 1
+        });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { runCommand: runner }
+    });
+
+    expect(summary.changedCount).toBe(1);
+    expect(summary.fallbackUsed).toBe(true);
+    expect(summary.actions[0]).toMatchObject({
+      packageName: "openspec",
+      fallback: {
+        commandKind: "install",
+        packageName: "openspec",
+        mirrorRegistry: "https://registry.npmmirror.com/",
+        fallbackRegistry: "https://registry.npmjs.org/",
+        retrySucceeded: true
+      }
+    });
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "openspec@1.2.3",
+        "--registry",
+        "https://registry.npmmirror.com/"
+      ],
+      120_000
+    );
+    expect(runner).toHaveBeenNthCalledWith(
+      3,
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "openspec@1.2.3",
+        "--registry",
+        "https://registry.npmjs.org/"
+      ],
+      120_000
+    );
+  });
+
+  it("disables official fallback when mirror-only mode is requested", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://registry.npmmirror.com/",
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      throw new NpmCommandError("mirror list failed", {
+        command,
+        args,
+        stdout: "",
+        stderr: "mirror-only inventory error",
+        exitCode: 1
+      });
+    });
+
+    await expect(
+      syncNpmGlobals({
+        runtimePath: "/runtime",
+        manifestPath,
+        fallbackPolicy: "mirror-only",
+        verifyRuntime: createVerifyRuntime(),
+        npmOptions: { runCommand: runner }
+      })
+    ).rejects.toMatchObject({
+      fallbackPolicy: "mirror-only",
+      fallbackAttempted: false,
+      registryMirror: "https://registry.npmmirror.com/",
+      mirrorContext: expect.objectContaining({
+        stderr: "mirror-only inventory error"
+      }),
+      officialContext: undefined
+    });
+    expect(runner).toHaveBeenCalledOnce();
+  });
+
+  it("keeps single-attempt behavior when no mirror is configured", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ packages: { openspec: { version: "^1.0.0" } } })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      throw new NpmCommandError("default registry list failed", {
+        command,
+        args,
+        stdout: "",
+        stderr: "default inventory error",
+        exitCode: 1
+      });
+    });
+
+    await expect(
+      syncNpmGlobals({
+        runtimePath: "/runtime",
+        manifestPath,
+        verifyRuntime: createVerifyRuntime(),
+        npmOptions: { runCommand: runner }
+      })
+    ).rejects.toMatchObject({
+      fallbackAttempted: false,
+      registryMirror: undefined,
+      stderr: "default inventory error"
+    });
+    expect(runner).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces both mirror and official failure contexts after retry exhaustion", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        registryMirror: "https://registry.npmmirror.com/",
+        packages: { openspec: { version: "^1.0.0" } }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args.includes("https://registry.npmmirror.com/")) {
+        throw new NpmCommandError("mirror list failed", {
+          command,
+          args,
+          stdout: "mirror stdout",
+          stderr: "mirror stderr",
+          exitCode: 1
+        });
+      }
+
+      throw new NpmCommandError("official list failed", {
+        command,
+        args,
+        stdout: "official stdout",
+        stderr: "official stderr",
+        exitCode: 1
+      });
+    });
+
+    await expect(
+      syncNpmGlobals({
+        runtimePath: "/runtime",
+        manifestPath,
+        verifyRuntime: createVerifyRuntime(),
+        npmOptions: { runCommand: runner }
+      })
+    ).rejects.toMatchObject({
+      fallbackPolicy: "auto",
+      fallbackAttempted: true,
+      registryMirror: "https://registry.npmmirror.com/",
+      fallbackRegistry: "https://registry.npmjs.org/",
+      stderr: "official stderr",
+      mirrorContext: expect.objectContaining({
+        stderr: "mirror stderr",
+        stdout: "mirror stdout"
+      }),
+      officialContext: expect.objectContaining({
+        stderr: "official stderr",
+        stdout: "official stdout"
+      })
+    });
+    expect(runner).toHaveBeenCalledTimes(2);
   });
 
   it("lets CLI registry mirror options take precedence over manifest state", async () => {
@@ -356,14 +634,7 @@ describe("npm-sync execution", () => {
       syncNpmGlobals({
         runtimePath: "/runtime",
         manifestPath,
-        verifyRuntime: vi.fn(async () => ({
-          valid: true,
-          targetDirectory: "/runtime",
-          nodePath: "/runtime/bin/node",
-          npmPath: "/runtime/bin/npm",
-          nodeVersion: "v22.0.0",
-          npmVersion: "10.0.0"
-        })),
+        verifyRuntime: createVerifyRuntime(),
         npmOptions: { runCommand: runner }
       })
     ).rejects.toThrow("registryMirror");
@@ -395,14 +666,7 @@ describe("npm-sync execution", () => {
       syncNpmGlobals({
         runtimePath: "/runtime",
         manifestPath,
-        verifyRuntime: vi.fn(async () => ({
-          valid: true,
-          targetDirectory: "/runtime",
-          nodePath: "/runtime/bin/node",
-          npmPath: "/runtime/bin/npm",
-          nodeVersion: "v22.0.0",
-          npmVersion: "10.0.0"
-        })),
+        verifyRuntime: createVerifyRuntime(),
         npmOptions: { runCommand: runner }
       })
     ).rejects.toMatchObject({
@@ -424,4 +688,15 @@ function commandResult(
     stdout: JSON.stringify(json),
     stderr: ""
   };
+}
+
+function createVerifyRuntime() {
+  return vi.fn(async () => ({
+    valid: true,
+    targetDirectory: "/runtime",
+    nodePath: "/runtime/bin/node",
+    npmPath: "/runtime/bin/npm",
+    nodeVersion: "v22.0.0",
+    npmVersion: "10.0.0"
+  }));
 }

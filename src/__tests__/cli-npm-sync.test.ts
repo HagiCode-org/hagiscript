@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCli, runCli } from "../cli.js";
+import { NpmCommandError } from "../runtime/npm-global.js";
+import { NpmSyncCommandError } from "../runtime/npm-sync.js";
 
 const { syncNpmGlobals } = vi.hoisted(() => ({
-  syncNpmGlobals: vi.fn(async ({ onLog, registryMirror }) => {
+  syncNpmGlobals: vi.fn(async ({ onLog, registryMirror, fallbackPolicy }) => {
     onLog?.({
       type: "manifest-loaded",
       manifestPath: "/tmp/manifest.json",
@@ -10,6 +12,20 @@ const { syncNpmGlobals } = vi.hoisted(() => ({
       syncMode: "packages",
       registryMirror
     });
+    if (registryMirror) {
+      onLog?.({
+        type: "fallback-policy",
+        fallbackPolicy,
+        registryMirror,
+        fallbackRegistry: "https://registry.npmjs.org/"
+      });
+      if (fallbackPolicy === "mirror-only") {
+        onLog?.({
+          type: "mirror-only",
+          registryMirror
+        });
+      }
+    }
     onLog?.({
       type: "runtime-valid",
       runtime: {
@@ -57,6 +73,9 @@ const { syncNpmGlobals } = vi.hoisted(() => ({
         packageCount: 2,
         syncMode: "packages",
         registryMirror,
+        fallbackPolicy,
+        fallbackUsed: false,
+        fallbackEvents: [],
         noopCount: 1,
         changedCount: 1,
         actions: []
@@ -128,7 +147,8 @@ describe("npm-sync CLI command", () => {
       expect.objectContaining({
         runtimePath: "/tmp/runtime",
         manifestPath: "/tmp/manifest.json",
-        registryMirror: "https://registry.npmmirror.com/"
+        registryMirror: "https://registry.npmmirror.com/",
+        fallbackPolicy: "auto"
       })
     );
     expect(output).toContain(
@@ -136,6 +156,8 @@ describe("npm-sync CLI command", () => {
     );
     expect(output).toContain("Plan: openspec noop installed=1.0.0");
     expect(output).toContain("Registry mirror: https://registry.npmmirror.com/");
+    expect(output).toContain("Fallback policy: auto");
+    expect(output).toContain("Fallback used: no");
     expect(output).toContain("npm-sync complete.");
 
     stdout.mockRestore();
@@ -162,7 +184,8 @@ describe("npm-sync CLI command", () => {
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
         runtimePath: "/tmp/managed-runtime",
-        manifestPath: "/tmp/manifest.json"
+        manifestPath: "/tmp/manifest.json",
+        fallbackPolicy: "auto"
       })
     );
 
@@ -186,10 +209,132 @@ describe("npm-sync CLI command", () => {
     ]);
 
     expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({ fallbackPolicy: "auto" })
+    );
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.not.objectContaining({ registryMirror: expect.any(String) })
     );
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
     expect(output).not.toContain("Registry mirror:");
+    expect(output).not.toContain("Fallback policy:");
+
+    stdout.mockRestore();
+  });
+
+  it("prints fallback-visible output when the official retry succeeds", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    syncNpmGlobals.mockImplementationOnce(async ({ onLog, registryMirror, fallbackPolicy }) => {
+      onLog?.({
+        type: "manifest-loaded",
+        manifestPath: "/tmp/manifest.json",
+        packageCount: 1,
+        syncMode: "packages",
+        registryMirror
+      });
+      onLog?.({
+        type: "fallback-policy",
+        fallbackPolicy,
+        registryMirror,
+        fallbackRegistry: "https://registry.npmjs.org/"
+      });
+      onLog?.({
+        type: "fallback-used",
+        fallback: {
+          commandKind: "inventory",
+          mirrorRegistry: "https://registry.npmmirror.com/",
+          fallbackRegistry: "https://registry.npmjs.org/",
+          retrySucceeded: true
+        }
+      });
+      onLog?.({
+        type: "summary",
+        summary: {
+          runtime: {
+            targetDirectory: "/tmp/runtime",
+            nodePath: "/tmp/runtime/bin/node",
+            npmPath: "/tmp/runtime/bin/npm",
+            nodeVersion: "v22.0.0",
+            npmVersion: "10.0.0"
+          },
+          manifestPath: "/tmp/manifest.json",
+          packageCount: 1,
+          syncMode: "packages",
+          registryMirror,
+          fallbackPolicy,
+          fallbackUsed: true,
+          fallbackEvents: [
+            {
+              commandKind: "inventory",
+              mirrorRegistry: "https://registry.npmmirror.com/",
+              fallbackRegistry: "https://registry.npmjs.org/",
+              retrySucceeded: true
+            }
+          ],
+          noopCount: 1,
+          changedCount: 0,
+          actions: []
+        }
+      });
+    });
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json",
+      "--registry-mirror",
+      "https://registry.npmmirror.com/"
+    ]);
+
+    const output = stdout.mock.calls.map(([value]) => String(value)).join("");
+    expect(output).toContain(
+      "Fallback used: inventory mirror=https://registry.npmmirror.com/ fallback=https://registry.npmjs.org/ success=true"
+    );
+    expect(output).toContain("Fallback detail: inventory mirror=https://registry.npmmirror.com/ fallback=https://registry.npmjs.org/ success=true");
+
+    stdout.mockRestore();
+  });
+
+  it("supports mirror-only mode and prints deterministic mirror-only output", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json",
+      "--registry-mirror",
+      "https://registry.npmmirror.com/",
+      "--mirror-only"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/runtime",
+        manifestPath: "/tmp/manifest.json",
+        registryMirror: "https://registry.npmmirror.com/",
+        fallbackPolicy: "mirror-only"
+      })
+    );
+    const output = stdout.mock.calls.map(([value]) => String(value)).join("");
+    expect(output).toContain("Fallback policy: mirror-only");
+    expect(output).toContain(
+      "Mirror-only: official registry fallback disabled for https://registry.npmmirror.com/"
+    );
+    expect(output).toContain("Fallback used: no");
 
     stdout.mockRestore();
   });
@@ -214,7 +359,8 @@ describe("npm-sync CLI command", () => {
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
         runtimePath: "/tmp/managed-runtime",
-        manifestPath: expect.stringContaining("hagiscript-tool-sync-")
+        manifestPath: expect.stringContaining("hagiscript-tool-sync-"),
+        fallbackPolicy: "auto"
       })
     );
 
@@ -263,6 +409,90 @@ describe("npm-sync CLI command", () => {
       ])
     ).rejects.toThrow();
     expect(syncNpmGlobals).not.toHaveBeenCalled();
+
+    stderr.mockRestore();
+  });
+
+  it("prints enriched retry diagnostics for terminal double-failure errors", async () => {
+    syncNpmGlobals.mockClear();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    syncNpmGlobals.mockRejectedValueOnce(
+      new NpmSyncCommandError(
+        "Failed to list npm global packages",
+        new NpmCommandError("official failed", {
+          command: "/tmp/runtime/bin/npm",
+          args: [
+            "list",
+            "-g",
+            "--depth=0",
+            "--json",
+            "--registry",
+            "https://registry.npmjs.org/"
+          ],
+          stdout: "official stdout",
+          stderr: "official stderr",
+          exitCode: 1
+        }),
+        {
+          fallbackPolicy: "auto",
+          registryMirror: "https://registry.npmmirror.com/",
+          fallbackRegistry: "https://registry.npmjs.org/",
+          mirrorError: new NpmCommandError("mirror failed", {
+            command: "/tmp/runtime/bin/npm",
+            args: [
+              "list",
+              "-g",
+              "--depth=0",
+              "--json",
+              "--registry",
+              "https://registry.npmmirror.com/"
+            ],
+            stdout: "mirror stdout",
+            stderr: "mirror stderr",
+            exitCode: 1
+          }),
+          officialError: new NpmCommandError("official failed", {
+            command: "/tmp/runtime/bin/npm",
+            args: [
+              "list",
+              "-g",
+              "--depth=0",
+              "--json",
+              "--registry",
+              "https://registry.npmjs.org/"
+            ],
+            stdout: "official stdout",
+            stderr: "official stderr",
+            exitCode: 1
+          })
+        }
+      )
+    );
+
+    await expect(
+      runCli([
+        "node",
+        "hagiscript",
+        "npm-sync",
+        "--runtime",
+        "/tmp/runtime",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--registry-mirror",
+        "https://registry.npmmirror.com/"
+      ])
+    ).rejects.toThrow();
+
+    const output = stderr.mock.calls.map(([value]) => String(value)).join("");
+    expect(output).toContain("Registry mirror: https://registry.npmmirror.com/");
+    expect(output).toContain("Fallback registry: https://registry.npmjs.org/");
+    expect(output).toContain("Mirror command: /tmp/runtime/bin/npm list -g --depth=0 --json --registry https://registry.npmmirror.com/");
+    expect(output).toContain("Official retry command: /tmp/runtime/bin/npm list -g --depth=0 --json --registry https://registry.npmjs.org/");
+    expect(output).toContain("mirror stderr: mirror stderr");
+    expect(output).toContain("official stderr: official stderr");
 
     stderr.mockRestore();
   });
