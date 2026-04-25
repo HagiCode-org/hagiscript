@@ -25,13 +25,13 @@ runNpm(["ping", "--registry", "https://registry.npmjs.org"], {
 
 const scopeExists = npmView(`@${scope}`);
 if (!scopeExists) {
-  throw new Error(
+  process.stdout.write(
     [
-      `npm scope @${scope} is not visible on https://registry.npmjs.org.`,
-      `Create the npm organization/user scope '${scope}' before publishing ${packageName}.`,
-      "If the intended npm scope is different, update package.json name and README references before release.",
-      "The npm publish error for a missing or inaccessible scope is usually E404 Not Found on PUT."
-    ].join("\n")
+      `npm scope @${scope} is not visible via npm view on https://registry.npmjs.org.`,
+      "This can be normal before the first package exists because npm scopes are not package documents.",
+      `Publish will still require an npm organization/user scope named '${scope}' with trusted publisher access for ${packageName}.`,
+      "If the scope is missing or inaccessible, npm publish usually fails with E404 Not Found on PUT."
+    ].join("\n") + "\n"
   );
 }
 
