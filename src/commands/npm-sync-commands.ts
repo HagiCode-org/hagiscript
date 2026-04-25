@@ -10,6 +10,7 @@ import {
   NpmManifestValidationError,
   NpmSyncCommandError,
   syncNpmGlobals,
+  validateRegistryMirror,
   type NpmSyncLogEvent,
   type NpmSyncSummary
 } from "../runtime/npm-sync.js";
@@ -18,6 +19,7 @@ interface NpmSyncCommandOptions {
   runtime?: string;
   manifest?: string;
   managedRuntime?: string;
+  registryMirror?: string;
   selectedAgentCli?: string[];
   customAgentCli?: string[];
 }
@@ -35,6 +37,10 @@ export function registerNpmSyncCommand(program: Command): void {
     )
     .option("--manifest <path>", "npm-sync manifest JSON file")
     .option(
+      "--registry-mirror <url>",
+      "npm registry mirror URL to use for this sync run"
+    )
+    .option(
       "--selected-agent-cli <id>",
       "selected optional agent CLI ID for product-managed tool sync",
       collectValues,
@@ -50,6 +56,10 @@ export function registerNpmSyncCommand(program: Command): void {
       const explicitRuntime = options.runtime
         ? validatePathOption(options.runtime, "--runtime")
         : undefined;
+      const registryMirror = validateRegistryMirror(
+        options.registryMirror,
+        "--registry-mirror"
+      );
       const selectedAgentCliIds = options.selectedAgentCli ?? [];
       const customAgentCliSelectors = options.customAgentCli ?? [];
       const hasInlineToolSelection =
@@ -81,6 +91,7 @@ export function registerNpmSyncCommand(program: Command): void {
         await syncNpmGlobals({
           runtimePath,
           manifestPath,
+          registryMirror,
           onLog: printNpmSyncLog
         });
       } catch (error) {
@@ -163,6 +174,9 @@ function printNpmSyncLog(event: NpmSyncLogEvent): void {
       process.stdout.write(
         `Manifest validated: ${event.manifestPath} (${event.packageCount} packages, mode=${event.syncMode})\n`
       );
+      if (event.registryMirror) {
+        process.stdout.write(`Registry mirror: ${event.registryMirror}\n`);
+      }
       break;
     case "runtime-valid":
       process.stdout.write(
@@ -211,6 +225,9 @@ function printSummary(summary: NpmSyncSummary): void {
   process.stdout.write(`Runtime: ${summary.runtime.targetDirectory}\n`);
   process.stdout.write(`Manifest: ${summary.manifestPath}\n`);
   process.stdout.write(`Mode: ${summary.syncMode}\n`);
+  if (summary.registryMirror) {
+    process.stdout.write(`Registry mirror: ${summary.registryMirror}\n`);
+  }
   process.stdout.write(`Packages: ${summary.packageCount}\n`);
   process.stdout.write(`No-op: ${summary.noopCount}\n`);
   process.stdout.write(`Changed: ${summary.changedCount}\n`);
