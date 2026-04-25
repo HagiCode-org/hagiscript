@@ -11,6 +11,7 @@ import {
   NpmSyncCommandError,
   syncNpmGlobals,
   validateRegistryMirror,
+  type NpmSyncFallbackEvent,
   type NpmSyncLogEvent,
   type NpmSyncSummary
 } from "../runtime/npm-sync.js";
@@ -20,6 +21,7 @@ interface NpmSyncCommandOptions {
   manifest?: string;
   managedRuntime?: string;
   registryMirror?: string;
+  mirrorOnly?: boolean;
   selectedAgentCli?: string[];
   customAgentCli?: string[];
 }
@@ -39,6 +41,10 @@ export function registerNpmSyncCommand(program: Command): void {
     .option(
       "--registry-mirror <url>",
       "npm registry mirror URL to use for this sync run"
+    )
+    .option(
+      "--mirror-only",
+      "disable automatic retry against https://registry.npmjs.org/ when a registry mirror is configured"
     )
     .option(
       "--selected-agent-cli <id>",
@@ -87,11 +93,13 @@ export function registerNpmSyncCommand(program: Command): void {
         const runtimePath = explicitRuntime ?? (await resolveManagedNodeRuntime({
           targetDirectory: managedRuntimePath
         })).targetDirectory;
+        const fallbackPolicy = options.mirrorOnly ? "mirror-only" : "auto";
 
         await syncNpmGlobals({
           runtimePath,
           manifestPath,
           registryMirror,
+          fallbackPolicy,
           onLog: printNpmSyncLog
         });
       } catch (error) {
@@ -178,6 +186,19 @@ function printNpmSyncLog(event: NpmSyncLogEvent): void {
         process.stdout.write(`Registry mirror: ${event.registryMirror}\n`);
       }
       break;
+    case "fallback-policy":
+      process.stdout.write(`Fallback policy: ${event.fallbackPolicy}\n`);
+      break;
+    case "fallback-used":
+      process.stdout.write(
+        `Fallback used: ${formatFallbackEvent(event.fallback)}\n`
+      );
+      break;
+    case "mirror-only":
+      process.stdout.write(
+        `Mirror-only: official registry fallback disabled for ${event.registryMirror}\n`
+      );
+      break;
     case "runtime-valid":
       process.stdout.write(
         `Runtime validated: ${event.runtime.targetDirectory}\n`
@@ -227,10 +248,22 @@ function printSummary(summary: NpmSyncSummary): void {
   process.stdout.write(`Mode: ${summary.syncMode}\n`);
   if (summary.registryMirror) {
     process.stdout.write(`Registry mirror: ${summary.registryMirror}\n`);
+    process.stdout.write(`Fallback policy: ${summary.fallbackPolicy}\n`);
+    process.stdout.write(`Fallback used: ${summary.fallbackUsed ? "yes" : "no"}\n`);
+    for (const fallback of summary.fallbackEvents) {
+      process.stdout.write(`Fallback detail: ${formatFallbackEvent(fallback)}\n`);
+    }
   }
   process.stdout.write(`Packages: ${summary.packageCount}\n`);
   process.stdout.write(`No-op: ${summary.noopCount}\n`);
   process.stdout.write(`Changed: ${summary.changedCount}\n`);
+}
+
+function formatFallbackEvent(fallback: NpmSyncFallbackEvent): string {
+  const packageSegment = fallback.packageName
+    ? ` package=${fallback.packageName}`
+    : "";
+  return `${fallback.commandKind}${packageSegment} mirror=${fallback.mirrorRegistry} fallback=${fallback.fallbackRegistry} success=${fallback.retrySucceeded}`;
 }
 
 function formatToolMetadata(action: {
@@ -254,12 +287,49 @@ function formatNpmSyncError(error: unknown): string {
     if (error.packageName) {
       lines.push(`Package: ${error.packageName}`);
     }
-    lines.push(`Command: ${error.command} ${error.args.join(" ")}`);
-    if (error.stderr.trim().length > 0) {
-      lines.push(`stderr: ${error.stderr.trim()}`);
+    if (error.registryMirror) {
+      lines.push(`Registry mirror: ${error.registryMirror}`);
+      lines.push(`Fallback policy: ${error.fallbackPolicy}`);
+      if (error.fallbackPolicy === "mirror-only") {
+        lines.push("Mirror-only: official registry fallback disabled.");
+      }
     }
-    if (error.stdout.trim().length > 0) {
-      lines.push(`stdout: ${error.stdout.trim()}`);
+    if (error.fallbackAttempted && error.fallbackRegistry) {
+      lines.push(`Fallback registry: ${error.fallbackRegistry}`);
+    }
+
+    if (error.mirrorContext) {
+      lines.push(
+        `Mirror command: ${error.mirrorContext.command} ${error.mirrorContext.args.join(" ")}`
+      );
+      if (error.mirrorContext.stderr.trim().length > 0) {
+        lines.push(`mirror stderr: ${error.mirrorContext.stderr.trim()}`);
+      }
+      if (error.mirrorContext.stdout.trim().length > 0) {
+        lines.push(`mirror stdout: ${error.mirrorContext.stdout.trim()}`);
+      }
+    }
+
+    if (error.officialContext) {
+      lines.push(
+        `Official retry command: ${error.officialContext.command} ${error.officialContext.args.join(" ")}`
+      );
+      if (error.officialContext.stderr.trim().length > 0) {
+        lines.push(`official stderr: ${error.officialContext.stderr.trim()}`);
+      }
+      if (error.officialContext.stdout.trim().length > 0) {
+        lines.push(`official stdout: ${error.officialContext.stdout.trim()}`);
+      }
+    }
+
+    if (!error.mirrorContext && !error.officialContext) {
+      lines.push(`Command: ${error.command} ${error.args.join(" ")}`);
+      if (error.stderr.trim().length > 0) {
+        lines.push(`stderr: ${error.stderr.trim()}`);
+      }
+      if (error.stdout.trim().length > 0) {
+        lines.push(`stdout: ${error.stdout.trim()}`);
+      }
     }
     return lines.join("\n");
   }

@@ -39,11 +39,7 @@ export async function listGlobalPackages(
   npmPath: string,
   options: NpmGlobalCommandOptions = {}
 ): Promise<NpmCommandResult> {
-  return runNpmCommand(
-    npmPath,
-    appendRegistryMirror(["list", "-g", "--depth=0", "--json"], options),
-    options
-  );
+  return runNpmCommand(npmPath, buildListGlobalPackagesArgs(options), options);
 }
 
 export async function installGlobalPackage(
@@ -53,9 +49,22 @@ export async function installGlobalPackage(
 ): Promise<NpmCommandResult> {
   return runNpmCommand(
     npmPath,
-    appendRegistryMirror(["install", "-g", selector], options),
+    buildInstallGlobalPackageArgs(selector, options),
     options
   );
+}
+
+export function buildListGlobalPackagesArgs(
+  options: NpmGlobalCommandOptions = {}
+): string[] {
+  return appendRegistryMirror(["list", "-g", "--depth=0", "--json"], options);
+}
+
+export function buildInstallGlobalPackageArgs(
+  selector: string,
+  options: NpmGlobalCommandOptions = {}
+): string[] {
+  return appendRegistryMirror(["install", "-g", selector], options);
 }
 
 function appendRegistryMirror(

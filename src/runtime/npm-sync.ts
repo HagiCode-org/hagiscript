@@ -5,6 +5,7 @@ import {
   installGlobalPackage,
   listGlobalPackages,
   NpmCommandError,
+  type NpmCommandFailureContext,
   type NpmCommandResult,
   type NpmGlobalCommandOptions
 } from "./npm-global.js";
@@ -72,6 +73,7 @@ export interface NpmSyncActionResult extends NpmSyncPlannedAction {
   args?: string[];
   stdout?: string;
   stderr?: string;
+  fallback?: NpmSyncFallbackEvent;
 }
 
 export interface NpmSyncRuntimeMetadata {
@@ -82,12 +84,27 @@ export interface NpmSyncRuntimeMetadata {
   npmVersion: string;
 }
 
+export type NpmSyncFallbackPolicy = "auto" | "mirror-only";
+
+export type NpmSyncCommandKind = "inventory" | "install";
+
+export interface NpmSyncFallbackEvent {
+  commandKind: NpmSyncCommandKind;
+  packageName?: string;
+  mirrorRegistry: string;
+  fallbackRegistry: string;
+  retrySucceeded: boolean;
+}
+
 export interface NpmSyncSummary {
   runtime: NpmSyncRuntimeMetadata;
   manifestPath: string;
   packageCount: number;
   syncMode: NpmSyncManifest["syncMode"];
   registryMirror?: string;
+  fallbackPolicy: NpmSyncFallbackPolicy;
+  fallbackUsed: boolean;
+  fallbackEvents: NpmSyncFallbackEvent[];
   noopCount: number;
   changedCount: number;
   actions: NpmSyncActionResult[];
@@ -97,6 +114,7 @@ export interface NpmSyncOptions {
   runtimePath: string;
   manifestPath: string;
   registryMirror?: string;
+  fallbackPolicy?: NpmSyncFallbackPolicy;
   npmOptions?: NpmGlobalCommandOptions;
   verifyRuntime?: typeof verifyNodeRuntime;
   onLog?: (event: NpmSyncLogEvent) => void;
@@ -110,6 +128,14 @@ export type NpmSyncLogEvent =
       syncMode: NpmSyncManifest["syncMode"];
       registryMirror?: string;
     }
+  | {
+      type: "fallback-policy";
+      fallbackPolicy: NpmSyncFallbackPolicy;
+      registryMirror: string;
+      fallbackRegistry?: string;
+    }
+  | { type: "fallback-used"; fallback: NpmSyncFallbackEvent }
+  | { type: "mirror-only"; registryMirror: string }
   | { type: "runtime-valid"; runtime: NpmSyncRuntimeMetadata }
   | { type: "inventory"; packages: InstalledGlobalPackages }
   | { type: "planned-action"; action: NpmSyncPlannedAction }
@@ -137,19 +163,42 @@ export class NpmManifestValidationError extends NpmSyncError {
 
 export class NpmSyncCommandError extends NpmSyncError {
   readonly packageName?: string;
+  readonly fallbackPolicy: NpmSyncFallbackPolicy;
+  readonly registryMirror?: string;
+  readonly fallbackRegistry?: string;
+  readonly fallbackAttempted: boolean;
   readonly command: string;
   readonly args: string[];
   readonly stdout: string;
   readonly stderr: string;
+  readonly mirrorContext?: NpmCommandFailureContext;
+  readonly officialContext?: NpmCommandFailureContext;
 
-  constructor(message: string, error: NpmCommandError, packageName?: string) {
+  constructor(
+    message: string,
+    error: NpmCommandError,
+    options: {
+      packageName?: string;
+      fallbackPolicy?: NpmSyncFallbackPolicy;
+      registryMirror?: string;
+      fallbackRegistry?: string;
+      mirrorError?: NpmCommandError;
+      officialError?: NpmCommandError;
+    } = {}
+  ) {
     super(message);
     this.name = "NpmSyncCommandError";
-    this.packageName = packageName;
+    this.packageName = options.packageName;
+    this.fallbackPolicy = options.fallbackPolicy ?? "auto";
+    this.registryMirror = options.registryMirror;
+    this.fallbackRegistry = options.fallbackRegistry;
+    this.fallbackAttempted = Boolean(options.officialError);
     this.command = error.context.command;
     this.args = error.context.args;
     this.stdout = error.context.stdout;
     this.stderr = error.context.stderr;
+    this.mirrorContext = options.mirrorError?.context;
+    this.officialContext = options.officialError?.context;
   }
 }
 
@@ -337,6 +386,13 @@ export function createNpmSyncPlan(
     });
 }
 
+const OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/";
+
+interface MirrorAwareCommandExecution {
+  result: NpmCommandResult;
+  fallback?: NpmSyncFallbackEvent;
+}
+
 export async function syncNpmGlobals(
   options: NpmSyncOptions
 ): Promise<NpmSyncSummary> {
@@ -346,6 +402,7 @@ export async function syncNpmGlobals(
     "--registry-mirror"
   );
   const registryMirror = registryMirrorOverride ?? manifest.registryMirror;
+  const fallbackPolicy = normalizeFallbackPolicy(options.fallbackPolicy);
   options.onLog?.({
     type: "manifest-loaded",
     manifestPath: options.manifestPath,
@@ -353,6 +410,17 @@ export async function syncNpmGlobals(
     syncMode: manifest.syncMode,
     registryMirror
   });
+  if (registryMirror) {
+    options.onLog?.({
+      type: "fallback-policy",
+      fallbackPolicy,
+      registryMirror,
+      fallbackRegistry: OFFICIAL_NPM_REGISTRY
+    });
+    if (fallbackPolicy === "mirror-only") {
+      options.onLog?.({ type: "mirror-only", registryMirror });
+    }
+  }
 
   const verifyRuntime = options.verifyRuntime ?? verifyNodeRuntime;
   const runtimeResult = await verifyRuntime(options.runtimePath);
@@ -376,20 +444,27 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "runtime-valid", runtime });
   const npmOptions = {
     ...options.npmOptions,
-    registryMirror,
     env: createRuntimeNpmEnv(runtime.targetDirectory, options.npmOptions?.env)
   };
+  const fallbackEvents: NpmSyncFallbackEvent[] = [];
 
   let inventoryResult: NpmCommandResult;
   try {
-    inventoryResult = await listGlobalPackages(runtime.npmPath, npmOptions);
-  } catch (error) {
-    if (error instanceof NpmCommandError) {
-      throw new NpmSyncCommandError(
-        "Failed to list npm global packages",
-        error
-      );
+    const execution = await executeMirrorAwareNpmCommand({
+      commandKind: "inventory",
+      message: "Failed to list npm global packages",
+      npmOptions,
+      registryMirror,
+      fallbackPolicy,
+      onLog: options.onLog,
+      execute: (commandOptions) =>
+        listGlobalPackages(runtime.npmPath, commandOptions)
+    });
+    inventoryResult = execution.result;
+    if (execution.fallback) {
+      fallbackEvents.push(execution.fallback);
     }
+  } catch (error) {
     throw error;
   }
 
@@ -411,29 +486,37 @@ export async function syncNpmGlobals(
 
     options.onLog?.({ type: "install-start", action });
     try {
-      const installResult = await installGlobalPackage(
-        runtime.npmPath,
-        action.selectedInstallSelector,
-        npmOptions
-      );
+      const execution = await executeMirrorAwareNpmCommand({
+        commandKind: "install",
+        message: `Failed to sync package ${action.packageName}`,
+        packageName: action.packageName,
+        npmOptions,
+        registryMirror,
+        fallbackPolicy,
+        onLog: options.onLog,
+        execute: (commandOptions) =>
+          installGlobalPackage(
+            runtime.npmPath,
+            action.selectedInstallSelector,
+            commandOptions
+          )
+      });
+      const installResult = execution.result;
       const result: NpmSyncActionResult = {
         ...action,
         changed: true,
         command: installResult.command,
         args: installResult.args,
         stdout: installResult.stdout,
-        stderr: installResult.stderr
+        stderr: installResult.stderr,
+        fallback: execution.fallback
       };
       actions.push(result);
+      if (execution.fallback) {
+        fallbackEvents.push(execution.fallback);
+      }
       options.onLog?.({ type: "install-complete", action: result });
     } catch (error) {
-      if (error instanceof NpmCommandError) {
-        throw new NpmSyncCommandError(
-          `Failed to sync package ${action.packageName}`,
-          error,
-          action.packageName
-        );
-      }
       throw error;
     }
   }
@@ -444,6 +527,9 @@ export async function syncNpmGlobals(
     packageCount: plan.length,
     syncMode: manifest.syncMode,
     registryMirror,
+    fallbackPolicy,
+    fallbackUsed: fallbackEvents.length > 0,
+    fallbackEvents,
     noopCount: actions.filter((action) => !action.changed).length,
     changedCount: actions.filter((action) => action.changed).length,
     actions
@@ -451,6 +537,101 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "summary", summary });
 
   return summary;
+}
+
+async function executeMirrorAwareNpmCommand(options: {
+  commandKind: NpmSyncCommandKind;
+  message: string;
+  packageName?: string;
+  npmOptions: NpmGlobalCommandOptions;
+  registryMirror?: string;
+  fallbackPolicy: NpmSyncFallbackPolicy;
+  onLog?: (event: NpmSyncLogEvent) => void;
+  execute: (
+    commandOptions: NpmGlobalCommandOptions
+  ) => Promise<NpmCommandResult>;
+}): Promise<MirrorAwareCommandExecution> {
+  const {
+    commandKind,
+    message,
+    packageName,
+    npmOptions,
+    registryMirror,
+    fallbackPolicy,
+    onLog,
+    execute
+  } = options;
+
+  try {
+    return {
+      result: await execute(withRegistryMirror(npmOptions, registryMirror))
+    };
+  } catch (error) {
+    if (!(error instanceof NpmCommandError)) {
+      throw error;
+    }
+
+    if (!registryMirror) {
+      throw new NpmSyncCommandError(message, error, {
+        packageName,
+        fallbackPolicy
+      });
+    }
+
+    if (fallbackPolicy === "mirror-only") {
+      throw new NpmSyncCommandError(message, error, {
+        packageName,
+        fallbackPolicy,
+        registryMirror,
+        mirrorError: error
+      });
+    }
+
+    try {
+      const result = await execute(
+        withRegistryMirror(npmOptions, OFFICIAL_NPM_REGISTRY)
+      );
+      const fallback: NpmSyncFallbackEvent = {
+        commandKind,
+        packageName,
+        mirrorRegistry: registryMirror,
+        fallbackRegistry: OFFICIAL_NPM_REGISTRY,
+        retrySucceeded: true
+      };
+      onLog?.({ type: "fallback-used", fallback });
+      return { result, fallback };
+    } catch (fallbackError) {
+      if (!(fallbackError instanceof NpmCommandError)) {
+        throw fallbackError;
+      }
+
+      throw new NpmSyncCommandError(message, fallbackError, {
+        packageName,
+        fallbackPolicy,
+        registryMirror,
+        fallbackRegistry: OFFICIAL_NPM_REGISTRY,
+        mirrorError: error,
+        officialError: fallbackError
+      });
+    }
+  }
+}
+
+function withRegistryMirror(
+  options: NpmGlobalCommandOptions,
+  registryMirror?: string
+): NpmGlobalCommandOptions {
+  if (!registryMirror) {
+    return { ...options };
+  }
+
+  return { ...options, registryMirror };
+}
+
+function normalizeFallbackPolicy(
+  value: NpmSyncOptions["fallbackPolicy"]
+): NpmSyncFallbackPolicy {
+  return value === "mirror-only" ? "mirror-only" : "auto";
 }
 
 function validateToolSyncManifest(
