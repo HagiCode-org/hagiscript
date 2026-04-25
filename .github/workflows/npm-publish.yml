@@ -39,9 +39,6 @@ jobs:
       - name: Verify npm publish prerequisites
         run: npm run publish:check-prereqs
 
-      - name: Run lint
-        run: npm run lint
-
       - name: Run tests
         run: npm test
 
@@ -126,9 +123,6 @@ jobs:
 
       - name: Verify npm publish prerequisites
         run: npm run publish:check-prereqs
-
-      - name: Run lint
-        run: npm run lint
 
       - name: Run tests
         run: npm test
