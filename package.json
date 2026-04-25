@@ -1,0 +1,69 @@
+{
+  "name": "hagiscript",
+  "version": "0.1.0",
+  "description": "TypeScript package foundation for Hagiscript language tooling.",
+  "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
+  "bugs": {
+    "url": "https://github.com/HagiCode-org/hagiscript/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HagiCode-org/hagiscript.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "hagiscript": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README_cn.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist .vitest-temp .tmp coverage",
+    "dev": "tsx src/cli.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "pack:check": "node scripts/verify-package.mjs",
+    "publish:prepare-dev-version": "node scripts/prepare-dev-version.mjs",
+    "publish:verify-release": "node scripts/verify-release-version.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "hagiscript",
+    "scripting",
+    "language",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/node": "^24.5.2",
+    "eslint": "^9.38.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^3.2.4"
+  }
+}
