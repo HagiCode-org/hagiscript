@@ -47,7 +47,7 @@ describe("Node.js runtime installer", () => {
         return Response.json([
           {
             version: "v22.12.0",
-            files: [platform.nodeFileKey],
+            files: [platform.releaseFileKey],
             npm: "10.9.0",
             lts: "Jod"
           }
