@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { execa } from "execa";
 import {
   binCommand,
   collectPlatformDiagnostics,
@@ -15,6 +14,7 @@ import {
   runtimeNodeCommand,
   runtimeNpmCommand
 } from "./integration-platform-helpers.mjs";
+import { runProcess } from "./process-runner.mjs";
 
 const repoRoot = path.resolve(process.argv[2] ?? ".");
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hagiscript-it-"));
@@ -35,14 +35,18 @@ try {
   fs.mkdirSync(packageInstallRoot, { recursive: true });
 
   diagnostics = await tracker.run("platform diagnostics", async () => {
-    const collected = await collectPlatformDiagnostics({ execa, repoRoot, tempRoot });
+    const collected = await collectPlatformDiagnostics({
+      runProcess,
+      repoRoot,
+      tempRoot
+    });
     log(formatDiagnostics(collected));
     return collected;
   });
 
   const tarballPath = await tracker.run("package packing", async () => {
     log("Packing current build artifact");
-    const { stdout: packOutput } = await execa(
+    const { stdout: packOutput } = await runProcess(
       npmCommand,
       ["pack", "--json", "--pack-destination", tempRoot],
       { cwd: repoRoot, stdout: "pipe" }
@@ -53,12 +57,12 @@ try {
 
   await tracker.run("dependency setup", async () => {
     log(`Installing packed package into ${packageInstallRoot}`);
-    await execa(npmCommand, ["init", "-y"], {
+    await runProcess(npmCommand, ["init", "-y"], {
       cwd: packageInstallRoot,
       stdout: "ignore",
       stderr: "ignore"
     });
-    await execa(npmCommand, ["install", tarballPath], {
+    await runProcess(npmCommand, ["install", tarballPath], {
       cwd: packageInstallRoot,
       stdout: "inherit",
       stderr: "inherit"
@@ -75,12 +79,20 @@ try {
   });
 
   await tracker.run("shell command execution", async () => {
-    const { stdout } = await execa(process.execPath, ["-e", "console.log(process.argv[1])", "hagiscript-shell-check"], {
-      cwd: packageInstallRoot,
-      stdout: "pipe",
-      env: integrationEnv()
-    });
-    assertIncludes(stdout, "hagiscript-shell-check", "shell-safe argument execution output");
+    const { stdout } = await runProcess(
+      process.execPath,
+      ["-e", "console.log(process.argv[1])", "hagiscript-shell-check"],
+      {
+        cwd: packageInstallRoot,
+        stdout: "pipe",
+        env: integrationEnv()
+      }
+    );
+    assertIncludes(
+      stdout,
+      "hagiscript-shell-check",
+      "shell-safe argument execution output"
+    );
   });
 
   await tracker.run("runtime install", async () => {
@@ -114,16 +126,25 @@ try {
     const resolvedRuntimeNpm = extractRuntimeNpmPath(checkNodeOutput);
     assertExecutableResolution(runtimeNodeCommand(runtimePath), "managed node");
     assertExecutableResolution(resolvedRuntimeNpm, "managed npm");
-    assertExpectedRuntimeNpmPath(resolvedRuntimeNpm, runtimeNpmCommand(runtimePath));
+    assertExpectedRuntimeNpmPath(
+      resolvedRuntimeNpm,
+      runtimeNpmCommand(runtimePath)
+    );
 
-    const { stdout: runtimeGlobalRootOutput } = await execa(resolvedRuntimeNpm, ["root", "-g"], {
-      cwd: packageInstallRoot,
-      stdout: "pipe",
-      env: integrationEnv(runtimePath)
-    });
+    const { stdout: runtimeGlobalRootOutput } = await runProcess(
+      resolvedRuntimeNpm,
+      ["root", "-g"],
+      {
+        cwd: packageInstallRoot,
+        stdout: "pipe",
+        env: integrationEnv(runtimePath)
+      }
+    );
     const runtimeGlobalRoot = runtimeGlobalRootOutput.trim();
 
-    if (!path.resolve(runtimeGlobalRoot).startsWith(path.resolve(runtimePath))) {
+    if (
+      !path.resolve(runtimeGlobalRoot).startsWith(path.resolve(runtimePath))
+    ) {
       throw new Error(
         `Expected npm global root to be inside custom runtime. Root: ${runtimeGlobalRoot}`
       );
@@ -191,7 +212,7 @@ try {
     );
     assertIncludes(npmSyncOutput, "Changed: 1", "npm-sync summary output");
 
-    const { stdout: inventoryOutput } = await execa(
+    const { stdout: inventoryOutput } = await runProcess(
       runtimeNpm,
       ["list", "-g", "--depth=0", "--json"],
       {
@@ -276,10 +297,16 @@ try {
   }
 
   if (process.env.HAGISCRIPT_INTEGRATION_SUMMARY_PATH) {
-    fs.mkdirSync(path.dirname(process.env.HAGISCRIPT_INTEGRATION_SUMMARY_PATH), {
-      recursive: true
-    });
-    fs.copyFileSync(summaryPath, process.env.HAGISCRIPT_INTEGRATION_SUMMARY_PATH);
+    fs.mkdirSync(
+      path.dirname(process.env.HAGISCRIPT_INTEGRATION_SUMMARY_PATH),
+      {
+        recursive: true
+      }
+    );
+    fs.copyFileSync(
+      summaryPath,
+      process.env.HAGISCRIPT_INTEGRATION_SUMMARY_PATH
+    );
   }
 
   if (process.env.HAGISCRIPT_KEEP_INTEGRATION_TEMP !== "1") {
@@ -290,7 +317,7 @@ try {
 }
 
 async function run(command, args, cwd) {
-  await execa(command, args, {
+  await runProcess(command, args, {
     cwd,
     stdout: "inherit",
     stderr: "inherit",
@@ -299,7 +326,7 @@ async function run(command, args, cwd) {
 }
 
 async function runCapture(command, args, cwd) {
-  const { stdout } = await execa(command, args, {
+  const { stdout } = await runProcess(command, args, {
     cwd,
     stdout: "pipe",
     env: integrationEnv()
@@ -310,7 +337,7 @@ async function runCapture(command, args, cwd) {
 
 async function runExpectFailure(command, args, cwd) {
   try {
-    await execa(command, args, {
+    await runProcess(command, args, {
       cwd,
       env: integrationEnv(),
       stdout: "pipe",
@@ -382,7 +409,9 @@ function assertExecutableResolution(command, label) {
   }
 
   if (basename.endsWith(".cmd") || basename.endsWith(".exe")) {
-    throw new Error(`Expected ${label} to resolve without Windows suffix: ${command}`);
+    throw new Error(
+      `Expected ${label} to resolve without Windows suffix: ${command}`
+    );
   }
 }
 
@@ -414,7 +443,9 @@ async function verifyPermissionBehavior(root, stageTracker) {
   const mode = fs.statSync(target).mode & 0o777;
 
   if (mode !== 0o600) {
-    throw new Error(`Expected chmod 0600 to be preserved, got ${mode.toString(8)}`);
+    throw new Error(
+      `Expected chmod 0600 to be preserved, got ${mode.toString(8)}`
+    );
   }
 
   fs.chmodSync(target, 0o700);
@@ -447,7 +478,9 @@ async function verifySymlinkBehavior(root, stageTracker) {
   const resolved = fs.realpathSync(link);
 
   if (resolved !== fs.realpathSync(target)) {
-    throw new Error(`Expected symlink ${link} to resolve to ${target}, got ${resolved}`);
+    throw new Error(
+      `Expected symlink ${link} to resolve to ${target}, got ${resolved}`
+    );
   }
 }
 

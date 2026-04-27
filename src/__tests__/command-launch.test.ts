@@ -1,4 +1,4 @@
-import { chmod, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,10 +40,7 @@ describe("command runner", () => {
 
     expect(result).toMatchObject({
       command: process.execPath,
-      args: [
-        "-e",
-        "process.stdout.write('out'); process.stderr.write('err')"
-      ],
+      args: ["-e", "process.stdout.write('out'); process.stderr.write('err')"],
       stdout: "out",
       stderr: "err",
       exitCode: 0,
@@ -97,11 +94,9 @@ describe("command runner", () => {
 
   it("normalizes timeout failures", async () => {
     try {
-      await runCommand(
-        process.execPath,
-        ["-e", "setTimeout(() => {}, 1000)"],
-        { timeoutMs: 50 }
-      );
+      await runCommand(process.execPath, ["-e", "setTimeout(() => {}, 1000)"], {
+        timeoutMs: 50
+      });
       throw new Error("Expected timeout");
     } catch (error) {
       expect(error).toBeInstanceOf(CommandExecutionError);
@@ -132,11 +127,15 @@ describe("command launch compatibility helpers", () => {
     expect(normalizeCommandPath('"C:/Program Files/node/npm.cmd"')).toBe(
       "C:/Program Files/node/npm.cmd"
     );
-    expect(requiresShellLaunch('"C:/Program Files/node/npm.cmd"', "win32")).toBe(
-      true
-    );
+    expect(
+      requiresShellLaunch('"C:/Program Files/node/npm.cmd"', "win32")
+    ).toBe(true);
     expect(requiresShellLaunch("'C:/runtime/npm.bat'", "win32")).toBe(true);
-    expect(getCommandLaunchOptions("C:/runtime/node.exe", { platform: "win32" })).toEqual({});
-    expect(getCommandLaunchOptions("/runtime/bin/npm", { platform: "linux" })).toEqual({});
+    expect(
+      getCommandLaunchOptions("C:/runtime/node.exe", { platform: "win32" })
+    ).toEqual({});
+    expect(
+      getCommandLaunchOptions("/runtime/bin/npm", { platform: "linux" })
+    ).toEqual({});
   });
 });

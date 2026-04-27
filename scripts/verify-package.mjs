@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { execa } from "execa";
+import { runProcess } from "./process-runner.mjs";
 
 const repoRoot = path.resolve(process.argv[2] ?? ".");
 const packageJsonPath = path.join(repoRoot, "package.json");
@@ -20,10 +20,14 @@ if (!fs.existsSync(resolvedBinPath)) {
 }
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const { stdout: output } = await execa(npmCommand, ["pack", "--dry-run", "--json"], {
-  cwd: repoRoot,
-  stdout: "pipe"
-});
+const { stdout: output } = await runProcess(
+  npmCommand,
+  ["pack", "--dry-run", "--json"],
+  {
+    cwd: repoRoot,
+    stdout: "pipe"
+  }
+);
 const [packSummary] = JSON.parse(output);
 const packedFiles = new Set(
   (packSummary?.files ?? []).map((file) => file.path)

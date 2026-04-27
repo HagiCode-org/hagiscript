@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { execa } from "execa";
+import { runProcess } from "./process-runner.mjs";
 
 const packageJsonPath = path.resolve(process.argv[2] ?? "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -90,7 +90,7 @@ process.stdout.write(
 
 async function npmView(name) {
   try {
-    await execa(
+    await runProcess(
       npmCommand,
       ["view", name, "name", "--registry", "https://registry.npmjs.org"],
       {
@@ -106,7 +106,10 @@ async function npmView(name) {
 
 async function runNpm(args, options) {
   try {
-    await execa(npmCommand, args, { stdout: "inherit", stderr: "inherit" });
+    await runProcess(npmCommand, args, {
+      stdout: "inherit",
+      stderr: "inherit"
+    });
   } catch (error) {
     throw new Error(
       `${options.failureMessage}\n${error instanceof Error ? error.message : String(error)}`

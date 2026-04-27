@@ -448,24 +448,19 @@ export async function syncNpmGlobals(
   };
   const fallbackEvents: NpmSyncFallbackEvent[] = [];
 
-  let inventoryResult: NpmCommandResult;
-  try {
-    const execution = await executeMirrorAwareNpmCommand({
-      commandKind: "inventory",
-      message: "Failed to list npm global packages",
-      npmOptions,
-      registryMirror,
-      fallbackPolicy,
-      onLog: options.onLog,
-      execute: (commandOptions) =>
-        listGlobalPackages(runtime.npmPath, commandOptions)
-    });
-    inventoryResult = execution.result;
-    if (execution.fallback) {
-      fallbackEvents.push(execution.fallback);
-    }
-  } catch (error) {
-    throw error;
+  const inventoryExecution = await executeMirrorAwareNpmCommand({
+    commandKind: "inventory",
+    message: "Failed to list npm global packages",
+    npmOptions,
+    registryMirror,
+    fallbackPolicy,
+    onLog: options.onLog,
+    execute: (commandOptions) =>
+      listGlobalPackages(runtime.npmPath, commandOptions)
+  });
+  const inventoryResult = inventoryExecution.result;
+  if (inventoryExecution.fallback) {
+    fallbackEvents.push(inventoryExecution.fallback);
   }
 
   const installed = normalizeGlobalInventory(inventoryResult.stdout);
@@ -485,40 +480,36 @@ export async function syncNpmGlobals(
     }
 
     options.onLog?.({ type: "install-start", action });
-    try {
-      const execution = await executeMirrorAwareNpmCommand({
-        commandKind: "install",
-        message: `Failed to sync package ${action.packageName}`,
-        packageName: action.packageName,
-        npmOptions,
-        registryMirror,
-        fallbackPolicy,
-        onLog: options.onLog,
-        execute: (commandOptions) =>
-          installGlobalPackage(
-            runtime.npmPath,
-            action.selectedInstallSelector,
-            commandOptions
-          )
-      });
-      const installResult = execution.result;
-      const result: NpmSyncActionResult = {
-        ...action,
-        changed: true,
-        command: installResult.command,
-        args: installResult.args,
-        stdout: installResult.stdout,
-        stderr: installResult.stderr,
-        fallback: execution.fallback
-      };
-      actions.push(result);
-      if (execution.fallback) {
-        fallbackEvents.push(execution.fallback);
-      }
-      options.onLog?.({ type: "install-complete", action: result });
-    } catch (error) {
-      throw error;
+    const execution = await executeMirrorAwareNpmCommand({
+      commandKind: "install",
+      message: `Failed to sync package ${action.packageName}`,
+      packageName: action.packageName,
+      npmOptions,
+      registryMirror,
+      fallbackPolicy,
+      onLog: options.onLog,
+      execute: (commandOptions) =>
+        installGlobalPackage(
+          runtime.npmPath,
+          action.selectedInstallSelector,
+          commandOptions
+        )
+    });
+    const installResult = execution.result;
+    const result: NpmSyncActionResult = {
+      ...action,
+      changed: true,
+      command: installResult.command,
+      args: installResult.args,
+      stdout: installResult.stdout,
+      stderr: installResult.stderr,
+      fallback: execution.fallback
+    };
+    actions.push(result);
+    if (execution.fallback) {
+      fallbackEvents.push(execution.fallback);
     }
+    options.onLog?.({ type: "install-complete", action: result });
   }
 
   const summary: NpmSyncSummary = {
@@ -805,7 +796,9 @@ function normalizeToolPackageSet(
   );
 }
 
-function createActionMetadata(entry: NpmSyncManifestEntry): Pick<
+function createActionMetadata(
+  entry: NpmSyncManifestEntry
+): Pick<
   NpmSyncPlannedAction,
   "toolId" | "toolDisplayName" | "toolGroup" | "toolRequirement"
 > {

@@ -8,12 +8,21 @@ export function executableName(name, platform = process.platform) {
 }
 
 export function binCommand(root, name, platform = process.platform) {
-  return path.join(root, "node_modules", ".bin", executableName(name, platform));
+  return path.join(
+    root,
+    "node_modules",
+    ".bin",
+    executableName(name, platform)
+  );
 }
 
 export function runtimeNodeCommand(runtimePath, platform = process.platform) {
   const folder = platform === "win32" ? "" : "bin";
-  return path.join(runtimePath, folder, platform === "win32" ? "node.exe" : "node");
+  return path.join(
+    runtimePath,
+    folder,
+    platform === "win32" ? "node.exe" : "node"
+  );
 }
 
 export function runtimeNpmCommand(runtimePath, platform = process.platform) {
@@ -52,13 +61,18 @@ export function createStageTracker() {
 }
 
 export async function collectPlatformDiagnostics({
-  execa,
+  runProcess,
   repoRoot,
   tempRoot,
   packageJsonPath = path.join(repoRoot, "package.json")
 }) {
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-  const npmVersion = await commandVersion(execa, executableName("npm"), ["--version"], repoRoot);
+  const npmVersion = await commandVersion(
+    runProcess,
+    executableName("npm"),
+    ["--version"],
+    repoRoot
+  );
 
   return {
     platform: process.platform,
@@ -92,7 +106,12 @@ export function formatDiagnostics(diagnostics) {
   ].join("\n");
 }
 
-export function formatIntegrationSummary({ diagnostics, stages, skipped, finalResult }) {
+export function formatIntegrationSummary({
+  diagnostics,
+  stages,
+  skipped,
+  finalResult
+}) {
   const lines = [
     "# Hagiscript Installed Runtime Integration Summary",
     "",
@@ -111,7 +130,9 @@ export function formatIntegrationSummary({ diagnostics, stages, skipped, finalRe
 
   for (const stage of stages) {
     const suffix = stage.error ? ` - ${stage.error}` : "";
-    lines.push(`- ${stage.name}: ${stage.status} (${stage.durationMs}ms)${suffix}`);
+    lines.push(
+      `- ${stage.name}: ${stage.status} (${stage.durationMs}ms)${suffix}`
+    );
   }
 
   lines.push("", "## Skipped Checks", "");
@@ -127,7 +148,7 @@ export function formatIntegrationSummary({ diagnostics, stages, skipped, finalRe
   return `${lines.join("\n")}\n`;
 }
 
-async function commandVersion(execa, command, args, cwd) {
-  const { stdout } = await execa(command, args, { cwd, stdout: "pipe" });
+async function commandVersion(runProcess, command, args, cwd) {
+  const { stdout } = await runProcess(command, args, { cwd, stdout: "pipe" });
   return stdout.trim();
 }
