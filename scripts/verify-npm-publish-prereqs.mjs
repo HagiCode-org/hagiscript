@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { execa } from "execa";
 
 const packageJsonPath = path.resolve(process.argv[2] ?? "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -50,11 +50,11 @@ if (
   );
 }
 
-runNpm(["ping", "--registry", "https://registry.npmjs.org"], {
+await runNpm(["ping", "--registry", "https://registry.npmjs.org"], {
   failureMessage: "Unable to reach https://registry.npmjs.org."
 });
 
-const scopeExists = npmView(`@${scope}`);
+const scopeExists = await npmView(`@${scope}`);
 if (!scopeExists) {
   process.stdout.write(
     [
@@ -66,7 +66,7 @@ if (!scopeExists) {
   );
 }
 
-const packageExists = npmView(packageName);
+const packageExists = await npmView(packageName);
 if (!packageExists) {
   process.stdout.write(
     [
@@ -88,13 +88,14 @@ process.stdout.write(
   `npm publish prerequisites look valid for ${packageName}.\n`
 );
 
-function npmView(name) {
+async function npmView(name) {
   try {
-    execFileSync(
+    await execa(
       npmCommand,
       ["view", name, "name", "--registry", "https://registry.npmjs.org"],
       {
-        stdio: "ignore"
+        stdout: "ignore",
+        stderr: "ignore"
       }
     );
     return true;
@@ -103,9 +104,9 @@ function npmView(name) {
   }
 }
 
-function runNpm(args, options) {
+async function runNpm(args, options) {
   try {
-    execFileSync(npmCommand, args, { stdio: "inherit" });
+    await execa(npmCommand, args, { stdout: "inherit", stderr: "inherit" });
   } catch (error) {
     throw new Error(
       `${options.failureMessage}\n${error instanceof Error ? error.message : String(error)}`
