@@ -1,4 +1,4 @@
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,9 +17,10 @@ async function makeTempRoot(): Promise<string> {
     tmpdir(),
     `hagiscript-command-${Date.now()}-${Math.random()}`
   );
-  tempRoots.push(root);
   await mkdir(root, { recursive: true });
-  return root;
+  const resolvedRoot = await realpath(root);
+  tempRoots.push(resolvedRoot);
+  return resolvedRoot;
 }
 
 afterEach(async () => {
