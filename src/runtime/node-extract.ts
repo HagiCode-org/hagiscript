@@ -9,10 +9,10 @@ import {
   writeFile
 } from "node:fs/promises";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { spawn } from "node:child_process";
 import { createGunzip, gunzipSync } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { createReadStream } from "node:fs";
+import { CommandExecutionError, runCommand } from "./command-launch.js";
 
 export class NodeRuntimeExtractionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -24,17 +24,22 @@ export class NodeRuntimeExtractionError extends Error {
 export async function extractNodeArchive(
   archivePath: string,
   stagingDirectory: string,
-  archiveExtension: "zip" | "tar.xz"
+  archiveExtension: "zip" | "tar.xz",
+  options: NodeArchiveExtractionOptions = {}
 ): Promise<string> {
   await mkdir(stagingDirectory, { recursive: true });
 
   if (archiveExtension === "zip") {
-    await extractZip(archivePath, stagingDirectory);
+    await extractZip(archivePath, stagingDirectory, options);
   } else {
-    await extractTar(archivePath, stagingDirectory);
+    await extractTar(archivePath, stagingDirectory, options);
   }
 
   return findExtractedRoot(stagingDirectory);
+}
+
+export interface NodeArchiveExtractionOptions {
+  runCommand?: typeof runCommand;
 }
 
 export async function moveExtractedRootToTarget(
@@ -79,7 +84,8 @@ export async function assertTargetIsEmptyOrMissing(
 
 async function extractZip(
   archivePath: string,
-  destination: string
+  destination: string,
+  options: NodeArchiveExtractionOptions
 ): Promise<void> {
   const extractors = ["unzip", "bsdtar"];
   let lastError: Error | undefined;
@@ -90,7 +96,7 @@ async function extractZip(
         extractor === "unzip"
           ? ["-q", archivePath, "-d", destination]
           : ["-xf", archivePath, "-C", destination];
-      await runExtractor(extractor, args);
+      await runExtractor(extractor, args, options);
       return;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -105,10 +111,11 @@ async function extractZip(
 
 async function extractTar(
   archivePath: string,
-  destination: string
+  destination: string,
+  options: NodeArchiveExtractionOptions
 ): Promise<void> {
   try {
-    await runExtractor("tar", ["-xJf", archivePath, "-C", destination]);
+    await runExtractor("tar", ["-xJf", archivePath, "-C", destination], options);
   } catch (error) {
     const directError =
       error instanceof Error ? error : new Error(String(error));
@@ -123,26 +130,22 @@ async function extractTar(
   }
 }
 
-async function runExtractor(command: string, args: string[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "ignore", "pipe"] });
-    const stderr: Buffer[] = [];
-
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(
-        new Error(
-          `${command} exited with code ${code ?? "unknown"}: ${Buffer.concat(stderr).toString("utf8").trim()}`
-        )
+async function runExtractor(
+  command: string,
+  args: string[],
+  options: NodeArchiveExtractionOptions
+): Promise<void> {
+  try {
+    await (options.runCommand ?? runCommand)(command, args);
+  } catch (error) {
+    if (error instanceof CommandExecutionError) {
+      throw new Error(
+        `${command} exited with code ${error.context.exitCode ?? "unknown"}: ${error.context.stderr.trim()}`
       );
-    });
-  });
+    }
+
+    throw error;
+  }
 }
 
 async function findExtractedRoot(stagingDirectory: string): Promise<string> {

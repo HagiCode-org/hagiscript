@@ -1,8 +1,8 @@
-import { execFile, type ExecFileException } from "node:child_process";
-import { promisify } from "node:util";
-import { getCommandLaunchOptions } from "./command-launch.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  CommandExecutionError,
+  getCommandLaunchOptions,
+  runCommand as defaultRunCommand
+} from "./command-launch.js";
 
 export interface NpmCommandResult {
   command: string;
@@ -117,11 +117,10 @@ async function execNpmCommand(
   launchOptions: { shell?: boolean } = {}
 ): Promise<NpmCommandResult> {
   try {
-    const { stdout, stderr } = await execFileAsync(command, args, {
-      timeout: timeoutMs,
-      windowsHide: true,
+    const { stdout, stderr } = await defaultRunCommand(command, args, {
+      timeoutMs,
       env,
-      ...launchOptions,
+      shell: launchOptions.shell,
       maxBuffer: 10 * 1024 * 1024
     });
 
@@ -132,18 +131,16 @@ async function execNpmCommand(
       stderr
     };
   } catch (error) {
-    const execError = error as ExecFileException;
-    const stdout = typeof execError.stdout === "string" ? execError.stdout : "";
-    const stderr = typeof execError.stderr === "string" ? execError.stderr : "";
+    const context = error instanceof CommandExecutionError ? error.context : undefined;
 
     throw new NpmCommandError(
       `npm command failed: ${command} ${args.join(" ")}`,
       {
         command,
         args,
-        stdout,
-        stderr,
-        exitCode: execError.code
+        stdout: context?.stdout ?? "",
+        stderr: context?.stderr ?? "",
+        exitCode: context?.exitCode
       }
     );
   }

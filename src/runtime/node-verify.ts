@@ -1,11 +1,11 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { constants } from "node:fs";
-import { execFile, type ExecFileException } from "node:child_process";
-import { promisify } from "node:util";
-import { getCommandLaunchOptions } from "./command-launch.js";
-
-const execFileAsync = promisify(execFile);
+import {
+  CommandExecutionError,
+  getCommandLaunchOptions,
+  runCommand as defaultRunCommand
+} from "./command-launch.js";
 
 export interface RuntimeExecutablePaths {
   nodePath: string;
@@ -97,18 +97,16 @@ async function runVersionCommand(
   launchOptions: { shell?: boolean } = {}
 ): Promise<string> {
   try {
-    const { stdout } = await execFileAsync(command, args, {
-      timeout: timeoutMs,
-      windowsHide: true,
-      ...launchOptions,
+    const { stdout } = await defaultRunCommand(command, args, {
+      timeoutMs,
+      shell: launchOptions.shell,
       maxBuffer: 1024 * 1024
     });
 
     return stdout;
   } catch (error) {
-    const execError = error as ExecFileException;
     const stderr =
-      typeof execError.stderr === "string" ? execError.stderr.trim() : "";
+      error instanceof CommandExecutionError ? error.context.stderr.trim() : "";
     throw new Error(
       stderr.length > 0
         ? stderr
