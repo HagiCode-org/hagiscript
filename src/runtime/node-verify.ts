@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { constants } from "node:fs";
 import { execFile, type ExecFileException } from "node:child_process";
 import { promisify } from "node:util";
+import { getCommandLaunchOptions } from "./command-launch.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +28,8 @@ export interface VerifyNodeRuntimeOptions {
   runCommand?: (
     command: string,
     args: string[],
-    timeoutMs: number
+    timeoutMs: number,
+    launchOptions?: { shell?: boolean }
   ) => Promise<string>;
 }
 
@@ -44,8 +46,12 @@ export async function verifyNodeRuntime(
     await access(paths.npmPath, constants.X_OK);
 
     const [nodeVersion, npmVersion] = await Promise.all([
-      runCommand(paths.nodePath, ["--version"], timeoutMs),
-      runCommand(paths.npmPath, ["--version"], timeoutMs)
+      runCommand(paths.nodePath, ["--version"], timeoutMs, {
+        ...getCommandLaunchOptions(paths.nodePath, { platform: options.platform })
+      }),
+      runCommand(paths.npmPath, ["--version"], timeoutMs, {
+        ...getCommandLaunchOptions(paths.npmPath, { platform: options.platform })
+      })
     ]);
 
     return {
@@ -87,12 +93,14 @@ export function getRuntimeExecutablePaths(
 async function runVersionCommand(
   command: string,
   args: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  launchOptions: { shell?: boolean } = {}
 ): Promise<string> {
   try {
     const { stdout } = await execFileAsync(command, args, {
       timeout: timeoutMs,
       windowsHide: true,
+      ...launchOptions,
       maxBuffer: 1024 * 1024
     });
 

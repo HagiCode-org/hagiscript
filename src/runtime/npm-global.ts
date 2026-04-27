@@ -1,5 +1,6 @@
 import { execFile, type ExecFileException } from "node:child_process";
 import { promisify } from "node:util";
+import { getCommandLaunchOptions } from "./command-launch.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,11 +28,13 @@ export class NpmCommandError extends Error {
 export interface NpmGlobalCommandOptions {
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
   registryMirror?: string;
   runCommand?: (
     command: string,
     args: string[],
-    timeoutMs: number
+    timeoutMs: number,
+    launchOptions?: { shell?: boolean }
   ) => Promise<NpmCommandResult>;
 }
 
@@ -84,23 +87,41 @@ async function runNpmCommand(
   const timeoutMs = options.timeoutMs ?? 120_000;
   const runner = options.runCommand
     ? options.runCommand
-    : (command: string, commandArgs: string[], commandTimeoutMs: number) =>
-        execNpmCommand(command, commandArgs, commandTimeoutMs, options.env);
+    : (
+        command: string,
+        commandArgs: string[],
+        commandTimeoutMs: number,
+        launchOptions?: { shell?: boolean }
+      ) =>
+        execNpmCommand(
+          command,
+          commandArgs,
+          commandTimeoutMs,
+          options.env,
+          launchOptions
+        );
 
-  return runner(npmPath, args, timeoutMs);
+  return runner(
+    npmPath,
+    args,
+    timeoutMs,
+    getCommandLaunchOptions(npmPath, { platform: options.platform })
+  );
 }
 
 async function execNpmCommand(
   command: string,
   args: string[],
   timeoutMs: number,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  launchOptions: { shell?: boolean } = {}
 ): Promise<NpmCommandResult> {
   try {
     const { stdout, stderr } = await execFileAsync(command, args, {
       timeout: timeoutMs,
       windowsHide: true,
       env,
+      ...launchOptions,
       maxBuffer: 10 * 1024 * 1024
     });
 
