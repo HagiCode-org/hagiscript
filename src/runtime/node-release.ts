@@ -105,7 +105,7 @@ export function selectNodeArchive(
   assertOfficialNodeDistBaseUrl(baseUrl);
   const release = resolveNodeRelease(releases, selector, platform);
 
-  if (!release.files.includes(platform.nodeFileKey)) {
+  if (!release.files.includes(platform.releaseFileKey)) {
     throw new Error(
       `Node.js ${release.version} does not publish an archive for ${platform.nodeFileKey}.`
     );
@@ -188,7 +188,9 @@ function selectRelease(
   platform?: NodePlatformTarget
 ): NodeReleaseMetadata | undefined {
   const candidates = platform
-    ? releases.filter((release) => release.files.includes(platform.nodeFileKey))
+    ? releases.filter((release) =>
+        release.files.includes(platform.releaseFileKey)
+      )
     : releases;
 
   if (selector === "lts") {

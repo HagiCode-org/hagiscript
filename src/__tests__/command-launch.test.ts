@@ -117,7 +117,12 @@ describe("command runner", () => {
       throw new Error("Expected signal termination");
     } catch (error) {
       expect(error).toBeInstanceOf(CommandExecutionError);
-      expect((error as CommandExecutionError).context.signal).toBe("SIGTERM");
+      const context = (error as CommandExecutionError).context;
+      if (process.platform === "win32") {
+        expect(context.exitCode).not.toBe(0);
+      } else {
+        expect(context.signal).toBe("SIGTERM");
+      }
     }
   });
 });

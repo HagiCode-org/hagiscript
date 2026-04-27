@@ -66,7 +66,7 @@ describe("Node.js release resolution", () => {
     const selected = selectNodeArchive(
       [
         { version: "v22.22.2", files: ["linux-x64", "win-x64"] },
-        { version: "v22.21.1", files: ["linux-x64", "darwin-arm64"] }
+        { version: "v22.21.1", files: ["linux-x64", "osx-arm64-tar"] }
       ],
       "22",
       mapNodePlatform("darwin", "arm64")
@@ -92,6 +92,7 @@ describe("Node.js platform mapping", () => {
   it("maps Windows, Linux, and macOS x64/arm64 archive names", () => {
     expect(mapNodePlatform("win32", "x64")).toMatchObject({
       nodeFileKey: "win-x64",
+      releaseFileKey: "win-x64-zip",
       archiveExtension: "zip"
     });
     expect(mapNodePlatform("linux", "arm64")).toMatchObject({
@@ -100,6 +101,7 @@ describe("Node.js platform mapping", () => {
     });
     expect(mapNodePlatform("darwin", "arm64")).toMatchObject({
       nodeFileKey: "darwin-arm64",
+      releaseFileKey: "osx-arm64-tar",
       archiveExtension: "tar.xz"
     });
   });

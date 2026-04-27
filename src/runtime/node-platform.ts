@@ -5,6 +5,7 @@ export interface NodePlatformTarget {
   os: NodeOperatingSystem;
   arch: NodeArchitecture;
   nodeFileKey: `${NodeOperatingSystem}-${NodeArchitecture}`;
+  releaseFileKey: string;
   archiveExtension: "zip" | "tar.xz";
   executableName: "node.exe" | "node";
   npmExecutableName: "npm.cmd" | "npm";
@@ -28,10 +29,26 @@ export function mapNodePlatform(
     os,
     arch: nodeArch,
     nodeFileKey: `${os}-${nodeArch}`,
+    releaseFileKey: getReleaseFileKey(os, nodeArch),
     archiveExtension: os === "win" ? "zip" : "tar.xz",
     executableName: os === "win" ? "node.exe" : "node",
     npmExecutableName: os === "win" ? "npm.cmd" : "npm"
   };
+}
+
+function getReleaseFileKey(
+  os: NodeOperatingSystem,
+  arch: NodeArchitecture
+): string {
+  if (os === "darwin") {
+    return `osx-${arch}-tar`;
+  }
+
+  if (os === "win") {
+    return `win-${arch}-zip`;
+  }
+
+  return `${os}-${arch}`;
 }
 
 function mapOperatingSystem(platform: string): NodeOperatingSystem {

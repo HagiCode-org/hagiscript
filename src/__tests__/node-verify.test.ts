@@ -1,5 +1,5 @@
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -29,10 +29,15 @@ afterEach(async () => {
 
 describe("Node.js runtime verification", () => {
   it("discovers Unix-style node and npm executables", () => {
-    expect(getRuntimeExecutablePaths("/runtime", "linux")).toEqual({
-      nodePath: "/runtime/bin/node",
-      npmPath: "/runtime/bin/npm"
+    const paths = getRuntimeExecutablePaths("/runtime", "linux");
+
+    expect(paths).toEqual({
+      nodePath: join("/runtime", "bin", "node"),
+      npmPath: join("/runtime", "bin", "npm")
     });
+    expect(paths.nodePath.split("\\").join("/")).toBe(
+      posix.join("/runtime", "bin", "node")
+    );
   });
 
   it("discovers Windows node.exe and npm.cmd executables", () => {
@@ -83,7 +88,10 @@ describe("Node.js runtime verification", () => {
   it("returns invalid results when default command execution fails", async () => {
     const root = await makeTempRoot();
     await mkdir(join(root, "bin"), { recursive: true });
-    await writeFile(join(root, "bin", "node"), "#!/bin/sh\necho node failed >&2\nexit 2\n");
+    await writeFile(
+      join(root, "bin", "node"),
+      "#!/bin/sh\necho node failed >&2\nexit 2\n"
+    );
     await writeFile(join(root, "bin", "npm"), "#!/bin/sh\necho 10.9.0\n");
     await chmod(join(root, "bin", "node"), 0o755);
     await chmod(join(root, "bin", "npm"), 0o755);
@@ -139,7 +147,10 @@ describe("Node.js runtime verification", () => {
     await writeFile(join(root, "bin", "npm"), "#!/bin/sh\n");
     await chmod(join(root, "bin", "node"), 0o755);
     await chmod(join(root, "bin", "npm"), 0o755);
-    const calls: Array<{ command: string; launchOptions?: { shell?: boolean } }> = [];
+    const calls: Array<{
+      command: string;
+      launchOptions?: { shell?: boolean };
+    }> = [];
 
     await verifyNodeRuntime(root, {
       platform: "linux",
