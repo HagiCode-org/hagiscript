@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  getCommandLaunchOptions,
+  requiresShellLaunch
+} from "../runtime/command-launch.js";
+import {
   getRuntimeExecutablePaths,
   verifyNodeRuntime
 } from "../runtime/node-verify.js";
@@ -28,6 +32,13 @@ afterEach(async () => {
 });
 
 describe("Node.js runtime verification", () => {
+  it("detects Windows command shims after quote normalization", () => {
+    expect(requiresShellLaunch('"C:/runtime/npm.cmd"', "win32")).toBe(true);
+    expect(requiresShellLaunch("'C:/runtime/npm.bat'", "win32")).toBe(true);
+    expect(getCommandLaunchOptions("C:/runtime/node.exe", { platform: "win32" })).toEqual({});
+    expect(getCommandLaunchOptions("/runtime/bin/npm", { platform: "linux" })).toEqual({});
+  });
+
   it("discovers Unix-style node and npm executables", () => {
     expect(getRuntimeExecutablePaths("/runtime", "linux")).toEqual({
       nodePath: "/runtime/bin/node",
@@ -61,6 +72,67 @@ describe("Node.js runtime verification", () => {
       nodeVersion: "v22.12.0",
       npmVersion: "10.9.0"
     });
+  });
+
+  it("uses shell launch options for Windows npm.cmd verification only", async () => {
+    const root = await makeTempRoot();
+    await writeFile(join(root, "node.exe"), "");
+    await writeFile(join(root, "npm.cmd"), "");
+    await chmod(join(root, "node.exe"), 0o755);
+    await chmod(join(root, "npm.cmd"), 0o755);
+    const calls: Array<{
+      command: string;
+      args: string[];
+      timeoutMs: number;
+      launchOptions?: { shell?: boolean };
+    }> = [];
+
+    const result = await verifyNodeRuntime(root, {
+      platform: "win32",
+      runCommand: async (command, args, timeoutMs, launchOptions) => {
+        calls.push({ command, args, timeoutMs, launchOptions });
+        return command.endsWith("node.exe") ? "v22.12.0\n" : "10.9.0\n";
+      }
+    });
+
+    expect(result).toMatchObject({ valid: true, npmVersion: "10.9.0" });
+    expect(calls).toEqual([
+      {
+        command: join(root, "node.exe"),
+        args: ["--version"],
+        timeoutMs: 15_000,
+        launchOptions: {}
+      },
+      {
+        command: join(root, "npm.cmd"),
+        args: ["--version"],
+        timeoutMs: 15_000,
+        launchOptions: { shell: true }
+      }
+    ]);
+  });
+
+  it("keeps POSIX npm verification on direct execution", async () => {
+    const root = await makeTempRoot();
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(join(root, "bin", "node"), "#!/bin/sh\n");
+    await writeFile(join(root, "bin", "npm"), "#!/bin/sh\n");
+    await chmod(join(root, "bin", "node"), 0o755);
+    await chmod(join(root, "bin", "npm"), 0o755);
+    const calls: Array<{ command: string; launchOptions?: { shell?: boolean } }> = [];
+
+    await verifyNodeRuntime(root, {
+      platform: "linux",
+      runCommand: async (command, _args, _timeoutMs, launchOptions) => {
+        calls.push({ command, launchOptions });
+        return command.endsWith("node") ? "v22.12.0\n" : "10.9.0\n";
+      }
+    });
+
+    expect(calls).toEqual([
+      { command: join(root, "bin", "node"), launchOptions: {} },
+      { command: join(root, "bin", "npm"), launchOptions: {} }
+    ]);
   });
 
   it("returns structured failure results when executables are missing", async () => {

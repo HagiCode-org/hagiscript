@@ -294,7 +294,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmmirror.com/"
       ],
-      120_000
+      120_000,
+      {}
     );
     expect(runner).toHaveBeenNthCalledWith(
       2,
@@ -306,7 +307,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmmirror.com/"
       ],
-      120_000
+      120_000,
+      {}
     );
   });
 
@@ -367,7 +369,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmmirror.com/"
       ],
-      120_000
+      120_000,
+      {}
     );
     expect(runner).toHaveBeenNthCalledWith(
       2,
@@ -380,7 +383,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmjs.org/"
       ],
-      120_000
+      120_000,
+      {}
     );
   });
 
@@ -440,7 +444,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmmirror.com/"
       ],
-      120_000
+      120_000,
+      {}
     );
     expect(runner).toHaveBeenNthCalledWith(
       3,
@@ -452,7 +457,8 @@ describe("npm-sync execution", () => {
         "--registry",
         "https://registry.npmjs.org/"
       ],
-      120_000
+      120_000,
+      {}
     );
   });
 
