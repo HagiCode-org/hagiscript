@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "commander": "^14.0.1",
+    "execa": "^9.6.1",
     "semver": "^7.7.4"
   },
   "devDependencies": {
