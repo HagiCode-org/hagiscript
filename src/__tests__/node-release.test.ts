@@ -62,6 +62,20 @@ describe("Node.js release resolution", () => {
     );
   });
 
+  it("skips releases that do not publish the requested platform archive", () => {
+    const selected = selectNodeArchive(
+      [
+        { version: "v22.22.2", files: ["linux-x64", "win-x64"] },
+        { version: "v22.21.1", files: ["linux-x64", "darwin-arm64"] }
+      ],
+      "22",
+      mapNodePlatform("darwin", "arm64")
+    );
+
+    expect(selected.version).toBe("v22.21.1");
+    expect(selected.fileName).toBe("node-v22.21.1-darwin-arm64.tar.xz");
+  });
+
   it("rejects non-official distribution sources", () => {
     expect(() =>
       selectNodeArchive(

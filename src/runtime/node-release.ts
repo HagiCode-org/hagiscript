@@ -79,13 +79,14 @@ export async function fetchNodeReleaseMetadata(
 
 export function resolveNodeRelease(
   releases: NodeReleaseMetadata[],
-  selector?: string
+  selector?: string,
+  platform?: NodePlatformTarget
 ): NodeReleaseMetadata {
   validateVersionSelector(selector);
   const normalized = normalizeVersionSelector(selector);
   const sorted = [...releases].sort(compareReleaseDescending);
 
-  const selected = selectRelease(sorted, normalized);
+  const selected = selectRelease(sorted, normalized, platform);
   if (!selected) {
     throw new NodeVersionSelectorError(
       `No Node.js release matched version selector: ${selector ?? DEFAULT_NODE_MAJOR}`
@@ -102,7 +103,7 @@ export function selectNodeArchive(
   baseUrl = OFFICIAL_NODE_DIST_BASE_URL
 ): SelectedNodeArchive {
   assertOfficialNodeDistBaseUrl(baseUrl);
-  const release = resolveNodeRelease(releases, selector);
+  const release = resolveNodeRelease(releases, selector, platform);
 
   if (!release.files.includes(platform.nodeFileKey)) {
     throw new Error(
@@ -183,25 +184,30 @@ function parseReleaseMetadata(value: unknown): NodeReleaseMetadata {
 
 function selectRelease(
   releases: NodeReleaseMetadata[],
-  selector: string
+  selector: string,
+  platform?: NodePlatformTarget
 ): NodeReleaseMetadata | undefined {
+  const candidates = platform
+    ? releases.filter((release) => release.files.includes(platform.nodeFileKey))
+    : releases;
+
   if (selector === "lts") {
-    return releases.find((release) => Boolean(release.lts));
+    return candidates.find((release) => Boolean(release.lts));
   }
 
   if (selector === "latest" || selector === "current") {
-    return releases[0];
+    return candidates[0];
   }
 
   if (/^v?\d+$/.test(selector)) {
     const major = Number(selector.replace(/^v/, ""));
-    return releases.find(
+    return candidates.find(
       (release) => getMajorVersion(release.version) === major
     );
   }
 
   const exact = selector.startsWith("v") ? selector : `v${selector}`;
-  return releases.find((release) => release.version === exact);
+  return candidates.find((release) => release.version === exact);
 }
 
 function compareReleaseDescending(

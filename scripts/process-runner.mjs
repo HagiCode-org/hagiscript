@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { Buffer } from "node:buffer";
+import { extname } from "node:path";
 import process from "node:process";
 
 export class ProcessRunError extends Error {
@@ -20,7 +21,7 @@ export async function runProcess(command, args = [], options = {}) {
   const subprocess = spawn(command, args, {
     cwd: options.cwd,
     env: options.env,
-    shell: options.shell,
+    shell: options.shell ?? requiresShell(command),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -67,6 +68,15 @@ export async function runProcess(command, args = [], options = {}) {
   }
 
   return result;
+}
+
+function requiresShell(command) {
+  if (process.platform !== "win32") {
+    return false;
+  }
+
+  const extension = extname(command.replace(/^['"]|['"]$/g, "")).toLowerCase();
+  return extension === ".cmd" || extension === ".bat";
 }
 
 function waitForSubprocess(subprocess) {
