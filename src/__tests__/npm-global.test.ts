@@ -1,9 +1,32 @@
-import { describe, expect, it, vi } from "vitest";
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installGlobalPackage,
   listGlobalPackages,
   NpmCommandError
 } from "../runtime/npm-global.js";
+
+const tempRoots: string[] = [];
+
+async function makeTempRoot(): Promise<string> {
+  const root = join(
+    tmpdir(),
+    `hagiscript-npm-${Date.now()}-${Math.random()}`
+  );
+  tempRoots.push(root);
+  await mkdir(root, { recursive: true });
+  return root;
+}
+
+afterEach(async () => {
+  await Promise.all(
+    tempRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true }))
+  );
+});
 
 describe("npm global wrappers", () => {
   it("lists global package inventory with the target npm executable", async () => {
@@ -152,6 +175,25 @@ describe("npm global wrappers", () => {
       })
     ).rejects.toMatchObject({
       context: { stdout: "install output", stderr: "install failed" }
+    });
+  });
+
+  it("uses the default command runner when no runner is injected", async () => {
+    const root = await makeTempRoot();
+    const npmPath = join(root, "npm");
+    await writeFile(
+      npmPath,
+      "#!/bin/sh\nprintf '{\"dependencies\":{}}'\nprintf 'default-runner' >&2\n"
+    );
+    await chmod(npmPath, 0o755);
+
+    const result = await listGlobalPackages(npmPath, { platform: "linux" });
+
+    expect(result).toMatchObject({
+      command: npmPath,
+      args: ["list", "-g", "--depth=0", "--json"],
+      stdout: '{"dependencies":{}}',
+      stderr: "default-runner"
     });
   });
 });

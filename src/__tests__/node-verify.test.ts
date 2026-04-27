@@ -3,10 +3,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  getCommandLaunchOptions,
-  requiresShellLaunch
-} from "../runtime/command-launch.js";
-import {
   getRuntimeExecutablePaths,
   verifyNodeRuntime
 } from "../runtime/node-verify.js";
@@ -32,13 +28,6 @@ afterEach(async () => {
 });
 
 describe("Node.js runtime verification", () => {
-  it("detects Windows command shims after quote normalization", () => {
-    expect(requiresShellLaunch('"C:/runtime/npm.cmd"', "win32")).toBe(true);
-    expect(requiresShellLaunch("'C:/runtime/npm.bat'", "win32")).toBe(true);
-    expect(getCommandLaunchOptions("C:/runtime/node.exe", { platform: "win32" })).toEqual({});
-    expect(getCommandLaunchOptions("/runtime/bin/npm", { platform: "linux" })).toEqual({});
-  });
-
   it("discovers Unix-style node and npm executables", () => {
     expect(getRuntimeExecutablePaths("/runtime", "linux")).toEqual({
       nodePath: "/runtime/bin/node",
@@ -72,6 +61,37 @@ describe("Node.js runtime verification", () => {
       nodeVersion: "v22.12.0",
       npmVersion: "10.9.0"
     });
+  });
+
+  it("checks versions through the default command runner", async () => {
+    const root = await makeTempRoot();
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(join(root, "bin", "node"), "#!/bin/sh\necho v22.12.0\n");
+    await writeFile(join(root, "bin", "npm"), "#!/bin/sh\necho 10.9.0\n");
+    await chmod(join(root, "bin", "node"), 0o755);
+    await chmod(join(root, "bin", "npm"), 0o755);
+
+    const result = await verifyNodeRuntime(root, { platform: "linux" });
+
+    expect(result).toMatchObject({
+      valid: true,
+      nodeVersion: "v22.12.0",
+      npmVersion: "10.9.0"
+    });
+  });
+
+  it("returns invalid results when default command execution fails", async () => {
+    const root = await makeTempRoot();
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(join(root, "bin", "node"), "#!/bin/sh\necho node failed >&2\nexit 2\n");
+    await writeFile(join(root, "bin", "npm"), "#!/bin/sh\necho 10.9.0\n");
+    await chmod(join(root, "bin", "node"), 0o755);
+    await chmod(join(root, "bin", "npm"), 0o755);
+
+    const result = await verifyNodeRuntime(root, { platform: "linux" });
+
+    expect(result.valid).toBe(false);
+    expect(result.failureReason).toContain("node failed");
   });
 
   it("uses shell launch options for Windows npm.cmd verification only", async () => {

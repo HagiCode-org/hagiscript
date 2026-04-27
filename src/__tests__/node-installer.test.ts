@@ -1,13 +1,11 @@
-import { execFile } from "node:child_process";
 import { chmod, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
+import { execa } from "execa";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installNodeRuntime } from "../runtime/node-installer.js";
 import { mapNodePlatform } from "../runtime/node-platform.js";
 
-const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 
 async function makeTempRoot(): Promise<string> {
@@ -93,7 +91,7 @@ async function createUnixFixtureArchive(
   await chmod(join(bin, "npm"), 0o755);
 
   const archivePath = join(root, `node-v22.12.0-${nodeFileKey}.tar.xz`);
-  await execFileAsync("tar", [
+  await execa("tar", [
     "-cJf",
     archivePath,
     "-C",
