@@ -30,6 +30,7 @@ export interface NpmGlobalCommandOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   registryMirror?: string;
+  prefix?: string;
   runCommand?: (
     command: string,
     args: string[],
@@ -60,23 +61,25 @@ export async function installGlobalPackage(
 export function buildListGlobalPackagesArgs(
   options: NpmGlobalCommandOptions = {}
 ): string[] {
-  return appendRegistryMirror(["list", "-g", "--depth=0", "--json"], options);
+  return appendGlobalNpmOptions(["list", "-g", "--depth=0", "--json"], options);
 }
 
 export function buildInstallGlobalPackageArgs(
   selector: string,
   options: NpmGlobalCommandOptions = {}
 ): string[] {
-  return appendRegistryMirror(["install", "-g", selector], options);
+  return appendGlobalNpmOptions(["install", "-g", selector], options);
 }
 
-function appendRegistryMirror(
+function appendGlobalNpmOptions(
   args: string[],
   options: NpmGlobalCommandOptions
 ): string[] {
-  return options.registryMirror
+  const nextArgs = options.registryMirror
     ? [...args, "--registry", options.registryMirror]
-    : args;
+    : [...args];
+
+  return options.prefix ? [...nextArgs, "--prefix", options.prefix] : nextArgs;
 }
 
 async function runNpmCommand(

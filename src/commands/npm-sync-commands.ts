@@ -21,6 +21,7 @@ interface NpmSyncCommandOptions {
   manifest?: string;
   managedRuntime?: string;
   registryMirror?: string;
+  prefix?: string;
   mirrorOnly?: boolean;
   selectedAgentCli?: string[];
   customAgentCli?: string[];
@@ -41,6 +42,10 @@ export function registerNpmSyncCommand(program: Command): void {
     .option(
       "--registry-mirror <url>",
       "npm registry mirror URL to use for this sync run"
+    )
+    .option(
+      "--prefix <path>",
+      "npm global prefix directory for inventory and package installation"
     )
     .option(
       "--mirror-only",
@@ -66,6 +71,9 @@ export function registerNpmSyncCommand(program: Command): void {
         options.registryMirror,
         "--registry-mirror"
       );
+      const prefix = options.prefix
+        ? validatePathOption(options.prefix, "--prefix")
+        : undefined;
       const selectedAgentCliIds = options.selectedAgentCli ?? [];
       const customAgentCliSelectors = options.customAgentCli ?? [];
       const hasInlineToolSelection =
@@ -100,6 +108,7 @@ export function registerNpmSyncCommand(program: Command): void {
           manifestPath,
           registryMirror,
           fallbackPolicy,
+          npmOptions: prefix ? { prefix } : undefined,
           onLog: printNpmSyncLog
         });
       } catch (error) {

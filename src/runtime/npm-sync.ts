@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
+import { mkdir, readFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import semver from "semver";
 import {
   installGlobalPackage,
@@ -446,6 +446,7 @@ export async function syncNpmGlobals(
     ...options.npmOptions,
     env: createRuntimeNpmEnv(runtime.targetDirectory, options.npmOptions?.env)
   };
+  await prepareNpmGlobalPrefix(npmOptions.prefix, npmOptions.platform);
   const fallbackEvents: NpmSyncFallbackEvent[] = [];
 
   const inventoryExecution = await executeMirrorAwareNpmCommand({
@@ -623,6 +624,26 @@ function normalizeFallbackPolicy(
   value: NpmSyncOptions["fallbackPolicy"]
 ): NpmSyncFallbackPolicy {
   return value === "mirror-only" ? "mirror-only" : "auto";
+}
+
+async function prepareNpmGlobalPrefix(
+  prefix: string | undefined,
+  platform: NodeJS.Platform = process.platform
+): Promise<void> {
+  if (!prefix) {
+    return;
+  }
+
+  const requiredDirectories =
+    platform === "win32"
+      ? [join(prefix, "node_modules")]
+      : [join(prefix, "lib", "node_modules"), join(prefix, "bin")];
+
+  await Promise.all(
+    requiredDirectories.map((directory) =>
+      mkdir(directory, { recursive: true })
+    )
+  );
 }
 
 function validateToolSyncManifest(
