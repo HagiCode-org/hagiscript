@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { runProcess } from "../../scripts/process-runner.mjs";
+import {
+  requiresBootstrapShell,
+  runProcess
+} from "../../scripts/process-runner.mjs";
 
 describe("process runner", () => {
   it("preserves argument boundaries for direct process execution", async () => {
@@ -37,5 +40,14 @@ describe("process runner", () => {
     } finally {
       delete process.env.HAGISCRIPT_DISABLE_EXECA;
     }
+  });
+
+  it("only enables the bootstrap shell wrapper for Windows command shims", () => {
+    expect(requiresBootstrapShell("npm.cmd", "win32")).toBe(true);
+    expect(
+      requiresBootstrapShell('"C:/Program Files/node/npm.cmd"', "win32")
+    ).toBe(true);
+    expect(requiresBootstrapShell("C:/runtime/node.exe", "win32")).toBe(false);
+    expect(requiresBootstrapShell("/runtime/bin/npm", "linux")).toBe(false);
   });
 });

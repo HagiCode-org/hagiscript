@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { Buffer } from "node:buffer";
+import { extname } from "node:path";
 import process from "node:process";
 
 export class ProcessRunError extends Error {
@@ -104,7 +105,7 @@ async function runProcessBootstrap(command, args = [], options = {}) {
   const subprocess = spawn(command, args, {
     cwd: options.cwd,
     env: options.env,
-    shell: options.shell,
+    shell: options.shell ?? requiresBootstrapShell(command),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -153,6 +154,18 @@ async function runProcessBootstrap(command, args = [], options = {}) {
   return result;
 }
 
+export function requiresBootstrapShell(
+  command,
+  platform = process.platform
+) {
+  if (platform !== "win32") {
+    return false;
+  }
+
+  const extension = extname(normalizeCommandPath(command)).toLowerCase();
+  return extension === ".cmd" || extension === ".bat";
+}
+
 function normalizeProcessError(command, args, cwd, error) {
   const result = {
     command,
@@ -178,6 +191,21 @@ function formatFailureMessage({ command, args, exitCode, signal }) {
   }
 
   return `Command failed with exit code ${exitCode}: ${commandLine}`;
+}
+
+function normalizeCommandPath(command) {
+  const trimmed = String(command).trim();
+
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return trimmed.slice(1, -1);
+    }
+  }
+
+  return trimmed;
 }
 
 function waitForSubprocess(subprocess) {

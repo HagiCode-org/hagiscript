@@ -1,4 +1,3 @@
-import { extname } from "node:path";
 import { execa } from "execa";
 
 export interface CommandLaunchOptions {
@@ -69,15 +68,12 @@ export function normalizeCommandPath(commandPath: string): string {
 }
 
 export function requiresShellLaunch(
-  commandPath: string,
-  platform: NodeJS.Platform = process.platform
+  _commandPath: string,
+  _platform: NodeJS.Platform = process.platform
 ): boolean {
-  if (platform !== "win32") {
-    return false;
-  }
-
-  const extension = extname(normalizeCommandPath(commandPath)).toLowerCase();
-  return extension === ".cmd" || extension === ".bat";
+  // Execa already handles Windows command shims without a shell wrapper.
+  // Keeping direct execution preserves argv boundaries for paths with spaces.
+  return false;
 }
 
 export function getCommandLaunchOptions(

@@ -102,7 +102,7 @@ describe("Node.js runtime verification", () => {
     expect(result.failureReason).toContain("node failed");
   });
 
-  it("uses shell launch options for Windows npm.cmd verification only", async () => {
+  it("keeps Windows npm.cmd verification on direct execution", async () => {
     const root = await makeTempRoot();
     await writeFile(join(root, "node.exe"), "");
     await writeFile(join(root, "npm.cmd"), "");
@@ -135,7 +135,7 @@ describe("Node.js runtime verification", () => {
         command: join(root, "npm.cmd"),
         args: ["--version"],
         timeoutMs: 15_000,
-        launchOptions: { shell: true }
+        launchOptions: {}
       }
     ]);
   });

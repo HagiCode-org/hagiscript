@@ -128,14 +128,19 @@ describe("command runner", () => {
 });
 
 describe("command launch compatibility helpers", () => {
-  it("detects Windows command shims after quote normalization", () => {
+  it("keeps Windows command shims on direct execa execution", () => {
     expect(normalizeCommandPath('"C:/Program Files/node/npm.cmd"')).toBe(
       "C:/Program Files/node/npm.cmd"
     );
     expect(
       requiresShellLaunch('"C:/Program Files/node/npm.cmd"', "win32")
-    ).toBe(true);
-    expect(requiresShellLaunch("'C:/runtime/npm.bat'", "win32")).toBe(true);
+    ).toBe(false);
+    expect(requiresShellLaunch("'C:/runtime/npm.bat'", "win32")).toBe(false);
+    expect(
+      getCommandLaunchOptions('"C:/Program Files/node/npm.cmd"', {
+        platform: "win32"
+      })
+    ).toEqual({});
     expect(
       getCommandLaunchOptions("C:/runtime/node.exe", { platform: "win32" })
     ).toEqual({});

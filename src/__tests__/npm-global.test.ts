@@ -105,7 +105,7 @@ describe("npm global wrappers", () => {
     );
   });
 
-  it("lists Windows npm.cmd inventory with shell launch options", async () => {
+  it("lists Windows npm.cmd inventory on direct execution", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -122,7 +122,7 @@ describe("npm global wrappers", () => {
       "C:/runtime/npm.cmd",
       ["list", "-g", "--depth=0", "--json"],
       120_000,
-      { shell: true }
+      {}
     );
   });
 
@@ -167,7 +167,7 @@ describe("npm global wrappers", () => {
     );
   });
 
-  it("installs through Windows npm.cmd with shell launch options and registry mirrors", async () => {
+  it("installs through Windows npm.cmd directly with registry mirrors", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -191,7 +191,7 @@ describe("npm global wrappers", () => {
         "https://registry.example.test"
       ],
       120_000,
-      { shell: true }
+      {}
     );
   });
 
