@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
@@ -312,6 +312,102 @@ describe("npm-sync execution", () => {
     );
   });
 
+  it("passes a configured prefix to inventory and install commands", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        packages: { openspec: { version: "^1.0.0", target: "1.2.3" } }
+      })
+    );
+    const prefix = "/tmp/npm prefix with spaces";
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === "list") {
+        return commandResult(command, args, { dependencies: {} });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { prefix, runCommand: runner }
+    });
+
+    expect(summary.changedCount).toBe(1);
+    expect(runner).toHaveBeenNthCalledWith(
+      1,
+      "/runtime/bin/npm",
+      [
+        "list",
+        "-g",
+        "--depth=0",
+        "--json",
+        "--prefix",
+        prefix
+      ],
+      120_000,
+      {}
+    );
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "openspec@1.2.3",
+        "--prefix",
+        prefix
+      ],
+      120_000,
+      {}
+    );
+    expect(summary.actions[0].args).toEqual([
+      "install",
+      "-g",
+      "openspec@1.2.3",
+      "--prefix",
+      prefix
+    ]);
+  });
+
+  it("prepares a standalone prefix layout before inventory runs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ packages: { openspec: { version: "^1.0.0" } } })
+    );
+    const prefix = join(directory, "npm prefix with spaces");
+    const runner = vi.fn(async (command: string, args: string[]) =>
+      commandResult(command, args, {
+        dependencies: { openspec: { version: "1.1.0" } }
+      })
+    );
+
+    await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { prefix, runCommand: runner }
+    });
+
+    const requiredDirectories =
+      process.platform === "win32"
+        ? [join(prefix, "node_modules")]
+        : [join(prefix, "lib", "node_modules"), join(prefix, "bin")];
+
+    await Promise.all(
+      requiredDirectories.map(async (directoryPath) => {
+        await expect(access(directoryPath)).resolves.toBeUndefined();
+      })
+    );
+    expect(runner).toHaveBeenCalledOnce();
+  });
+
   it("retries inventory against the official registry after a mirror failure", async () => {
     const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
     const manifestPath = join(directory, "manifest.json");
@@ -322,6 +418,7 @@ describe("npm-sync execution", () => {
         packages: { openspec: { version: "^1.0.0" } }
       })
     );
+    const prefix = "/tmp/npm-prefix";
     const runner = vi.fn(async (command: string, args: string[]) => {
       if (
         args[0] === "list" &&
@@ -345,7 +442,7 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { runCommand: runner }
+      npmOptions: { prefix, runCommand: runner }
     });
 
     expect(summary.noopCount).toBe(1);
@@ -367,7 +464,9 @@ describe("npm-sync execution", () => {
         "--depth=0",
         "--json",
         "--registry",
-        "https://registry.npmmirror.com/"
+        "https://registry.npmmirror.com/",
+        "--prefix",
+        prefix
       ],
       120_000,
       {}
@@ -381,7 +480,9 @@ describe("npm-sync execution", () => {
         "--depth=0",
         "--json",
         "--registry",
-        "https://registry.npmjs.org/"
+        "https://registry.npmjs.org/",
+        "--prefix",
+        prefix
       ],
       120_000,
       {}
@@ -398,6 +499,7 @@ describe("npm-sync execution", () => {
         packages: { openspec: { version: "^1.0.0", target: "1.2.3" } }
       })
     );
+    const prefix = "/tmp/npm-prefix";
     const runner = vi.fn(async (command: string, args: string[]) => {
       if (args[0] === "list") {
         return commandResult(command, args, { dependencies: {} });
@@ -419,7 +521,7 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { runCommand: runner }
+      npmOptions: { prefix, runCommand: runner }
     });
 
     expect(summary.changedCount).toBe(1);
@@ -442,7 +544,9 @@ describe("npm-sync execution", () => {
         "-g",
         "openspec@1.2.3",
         "--registry",
-        "https://registry.npmmirror.com/"
+        "https://registry.npmmirror.com/",
+        "--prefix",
+        prefix
       ],
       120_000,
       {}
@@ -455,7 +559,9 @@ describe("npm-sync execution", () => {
         "-g",
         "openspec@1.2.3",
         "--registry",
-        "https://registry.npmjs.org/"
+        "https://registry.npmjs.org/",
+        "--prefix",
+        prefix
       ],
       120_000,
       {}

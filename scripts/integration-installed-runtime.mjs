@@ -20,6 +20,7 @@ const repoRoot = path.resolve(process.argv[2] ?? ".");
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hagiscript-it-"));
 const packageInstallRoot = path.join(tempRoot, "installed-package");
 const runtimePath = path.join(tempRoot, "custom-node-runtime");
+const npmPrefixPath = path.join(tempRoot, "npm prefix with spaces");
 const manifestPath = path.join(tempRoot, "manifest.json");
 const invalidManifestPath = path.join(tempRoot, "invalid-manifest.json");
 const summaryPath = path.join(tempRoot, "integration-summary.md");
@@ -175,7 +176,8 @@ try {
   );
 
   await tracker.run("npm-sync", async () => {
-    log("Running npm-sync against the custom runtime");
+    fs.mkdirSync(npmPrefixPath, { recursive: true });
+    log(`Running npm-sync against standalone prefix ${npmPrefixPath}`);
     const npmSyncOutput = await runCapture(
       hagiscriptCommand,
       [
@@ -184,6 +186,8 @@ try {
         runtimePath,
         "--manifest",
         manifestPath,
+        "--prefix",
+        npmPrefixPath,
         "--registry-mirror",
         registryMirror
       ],
@@ -214,7 +218,7 @@ try {
 
     const { stdout: inventoryOutput } = await runProcess(
       runtimeNpm,
-      ["list", "-g", "--depth=0", "--json"],
+      ["list", "-g", "--prefix", npmPrefixPath, "--depth=0", "--json"],
       {
         cwd: packageInstallRoot,
         stdout: "pipe",
@@ -227,6 +231,44 @@ try {
     if (!installedVersion) {
       throw new Error(
         "Expected custom runtime to contain @openai/codex installed by npm-sync."
+      );
+    }
+
+    const { stdout: prefixRootOutput } = await runProcess(
+      runtimeNpm,
+      ["root", "-g", "--prefix", npmPrefixPath],
+      {
+        cwd: packageInstallRoot,
+        stdout: "pipe",
+        env: integrationEnv(runtimePath)
+      }
+    );
+    const prefixGlobalRoot = prefixRootOutput.trim();
+
+    if (
+      !path.resolve(prefixGlobalRoot).startsWith(path.resolve(npmPrefixPath))
+    ) {
+      throw new Error(
+        `Expected npm global root to be inside standalone prefix. Root: ${prefixGlobalRoot}`
+      );
+    }
+
+    const { stdout: defaultInventoryOutput } = await runProcess(
+      runtimeNpm,
+      ["list", "-g", "--depth=0", "--json"],
+      {
+        cwd: packageInstallRoot,
+        stdout: "pipe",
+        env: integrationEnv(runtimePath)
+      }
+    );
+    const defaultInventory = JSON.parse(defaultInventoryOutput);
+    const defaultInstalledVersion =
+      defaultInventory.dependencies?.["@openai/codex"]?.version;
+
+    if (defaultInstalledVersion) {
+      throw new Error(
+        "Expected @openai/codex to install under the standalone prefix, not the default global npm prefix."
       );
     }
   });

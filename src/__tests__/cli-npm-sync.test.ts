@@ -163,6 +163,39 @@ describe("npm-sync CLI command", () => {
     stdout.mockRestore();
   });
 
+  it("passes a validated npm prefix into npm-sync runtime options", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json",
+      "--prefix",
+      " /tmp/npm prefix with spaces "
+    ]);
+
+    expect(resolveManagedNodeRuntime).not.toHaveBeenCalled();
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/runtime",
+        manifestPath: "/tmp/manifest.json",
+        npmOptions: {
+          prefix: "/tmp/npm prefix with spaces"
+        }
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
   it("defaults to the managed runtime when --runtime is omitted", async () => {
     syncNpmGlobals.mockClear();
     resolveManagedNodeRuntime.mockClear();
@@ -217,6 +250,29 @@ describe("npm-sync CLI command", () => {
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
     expect(output).not.toContain("Registry mirror:");
     expect(output).not.toContain("Fallback policy:");
+
+    stdout.mockRestore();
+  });
+
+  it("does not pass npm options when --prefix is omitted", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.not.objectContaining({ npmOptions: expect.any(Object) })
+    );
 
     stdout.mockRestore();
   });
@@ -384,6 +440,54 @@ describe("npm-sync CLI command", () => {
         "/tmp/manifest.json"
       ])
     ).rejects.toThrow();
+    expect(syncNpmGlobals).not.toHaveBeenCalled();
+
+    stderr.mockRestore();
+  });
+
+  it("fails before npm sync when --prefix is blank", async () => {
+    syncNpmGlobals.mockClear();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    await expect(
+      runCli([
+        "node",
+        "hagiscript",
+        "npm-sync",
+        "--runtime",
+        "/tmp/runtime",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--prefix",
+        " "
+      ])
+    ).rejects.toThrow("--prefix must be a non-empty path.");
+    expect(syncNpmGlobals).not.toHaveBeenCalled();
+
+    stderr.mockRestore();
+  });
+
+  it("fails before npm sync when --prefix contains a null byte", async () => {
+    syncNpmGlobals.mockClear();
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    await expect(
+      runCli([
+        "node",
+        "hagiscript",
+        "npm-sync",
+        "--runtime",
+        "/tmp/runtime",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--prefix",
+        "/tmp/npm\0prefix"
+      ])
+    ).rejects.toThrow("--prefix contains an invalid null byte.");
     expect(syncNpmGlobals).not.toHaveBeenCalled();
 
     stderr.mockRestore();

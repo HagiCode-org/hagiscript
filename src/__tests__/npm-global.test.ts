@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildInstallGlobalPackageArgs,
+  buildListGlobalPackagesArgs,
   installGlobalPackage,
   listGlobalPackages,
   NpmCommandError
@@ -29,6 +31,62 @@ afterEach(async () => {
 });
 
 describe("npm global wrappers", () => {
+  it("builds list and install arguments with a configured prefix", () => {
+    expect(
+      buildListGlobalPackagesArgs({ prefix: "/tmp/npm prefix with spaces" })
+    ).toEqual([
+      "list",
+      "-g",
+      "--depth=0",
+      "--json",
+      "--prefix",
+      "/tmp/npm prefix with spaces"
+    ]);
+    expect(
+      buildInstallGlobalPackageArgs("openspec@^1.0.0", {
+        prefix: "/tmp/npm-prefix"
+      })
+    ).toEqual([
+      "install",
+      "-g",
+      "openspec@^1.0.0",
+      "--prefix",
+      "/tmp/npm-prefix"
+    ]);
+  });
+
+  it("composes registry mirror and prefix arguments deterministically", () => {
+    expect(
+      buildListGlobalPackagesArgs({
+        registryMirror: "https://registry.example.test",
+        prefix: "/tmp/npm-prefix"
+      })
+    ).toEqual([
+      "list",
+      "-g",
+      "--depth=0",
+      "--json",
+      "--registry",
+      "https://registry.example.test",
+      "--prefix",
+      "/tmp/npm-prefix"
+    ]);
+    expect(
+      buildInstallGlobalPackageArgs("openspec@^1.0.0", {
+        registryMirror: "https://registry.example.test",
+        prefix: "/tmp/npm-prefix"
+      })
+    ).toEqual([
+      "install",
+      "-g",
+      "openspec@^1.0.0",
+      "--registry",
+      "https://registry.example.test",
+      "--prefix",
+      "/tmp/npm-prefix"
+    ]);
+  });
+
   it("lists global package inventory with the target npm executable", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
