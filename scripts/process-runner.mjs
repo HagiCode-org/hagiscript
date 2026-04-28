@@ -18,11 +18,13 @@ export class ProcessRunError extends Error {
 export async function runProcess(command, args = [], options = {}) {
   const stdoutMode = options.stdout ?? "pipe";
   const stderrMode = options.stderr ?? "pipe";
-  const subprocess = spawn(command, args, {
+  const spawnSpec = createSpawnSpec(command, args, options);
+  const subprocess = spawn(spawnSpec.command, spawnSpec.args, {
     cwd: options.cwd,
     env: options.env,
-    shell: options.shell ?? requiresShell(command),
+    shell: spawnSpec.shell,
     windowsHide: true,
+    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
     stdio: ["ignore", "pipe", "pipe"]
   });
   const stdoutChunks = [];
@@ -70,13 +72,55 @@ export async function runProcess(command, args = [], options = {}) {
   return result;
 }
 
-function requiresShell(command) {
-  if (process.platform !== "win32") {
+export function createSpawnSpec(
+  command,
+  args = [],
+  options = {},
+  platform = process.platform
+) {
+  const shell = options.shell ?? requiresShell(command, platform);
+
+  if (platform === "win32" && requiresShell(command, platform)) {
+    return {
+      command: process.env.ComSpec || process.env.COMSPEC || "cmd.exe",
+      args: ["/d", "/s", "/c", formatWindowsBatchCommand(command, args)],
+      shell: false,
+      windowsVerbatimArguments: true
+    };
+  }
+
+  return {
+    command,
+    args,
+    shell,
+    windowsVerbatimArguments: false
+  };
+}
+
+export function requiresShell(command, platform = process.platform) {
+  if (platform !== "win32") {
     return false;
   }
 
   const extension = extname(command.replace(/^['"]|['"]$/g, "")).toLowerCase();
   return extension === ".cmd" || extension === ".bat";
+}
+
+function formatWindowsBatchCommand(command, args) {
+  const quotedCommand = quoteWindowsBatchArgument(command);
+  const quotedArgs = args.map(quoteWindowsBatchArgument).join(" ");
+  return quotedArgs.length > 0
+    ? `"${quotedCommand} ${quotedArgs}"`
+    : `"${quotedCommand}"`;
+}
+
+function quoteWindowsBatchArgument(value) {
+  if (value.length === 0) {
+    return '""';
+  }
+
+  const escaped = value.replace(/(["^&|<>()%!])/g, "^$1");
+  return /[\s"]/u.test(value) ? `"${escaped}"` : escaped;
 }
 
 function waitForSubprocess(subprocess) {
