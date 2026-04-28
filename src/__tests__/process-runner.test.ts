@@ -23,4 +23,19 @@ describe("process runner", () => {
       runProcess("/definitely/missing/command")
     ).rejects.toThrow("/definitely/missing/command");
   });
+
+  it("falls back to the bootstrap runner when execa is disabled", async () => {
+    process.env.HAGISCRIPT_DISABLE_EXECA = "1";
+
+    try {
+      const result = await runProcess(process.execPath, [
+        "-e",
+        "process.stdout.write('bootstrap-ok')"
+      ]);
+
+      expect(result.stdout).toBe("bootstrap-ok");
+    } finally {
+      delete process.env.HAGISCRIPT_DISABLE_EXECA;
+    }
+  });
 });
