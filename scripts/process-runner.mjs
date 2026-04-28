@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
-import { Buffer } from "node:buffer";
-import { extname } from "node:path";
+import { execa } from "execa";
 import process from "node:process";
 
 export class ProcessRunError extends Error {
@@ -18,23 +16,18 @@ export class ProcessRunError extends Error {
 export async function runProcess(command, args = [], options = {}) {
   const stdoutMode = options.stdout ?? "pipe";
   const stderrMode = options.stderr ?? "pipe";
-  const spawnSpec = createSpawnSpec(command, args, options);
-  const subprocess = spawn(spawnSpec.command, spawnSpec.args, {
+  const subprocess = execa(command, args, {
     cwd: options.cwd,
     env: options.env,
-    shell: spawnSpec.shell,
+    shell: options.shell,
     windowsHide: true,
-    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
-    stdio: ["ignore", "pipe", "pipe"]
+    reject: false,
+    all: false,
+    lines: false,
+    buffer: true
   });
-  const stdoutChunks = [];
-  const stderrChunks = [];
 
   subprocess.stdout?.on("data", (chunk) => {
-    if (stdoutMode !== "ignore") {
-      stdoutChunks.push(Buffer.from(chunk));
-    }
-
     if (stdoutMode === "inherit") {
       process.stdout.write(chunk);
     }
@@ -43,10 +36,6 @@ export async function runProcess(command, args = [], options = {}) {
   });
 
   subprocess.stderr?.on("data", (chunk) => {
-    if (stderrMode !== "ignore") {
-      stderrChunks.push(Buffer.from(chunk));
-    }
-
     if (stderrMode === "inherit") {
       process.stderr.write(chunk);
     }
@@ -54,80 +43,45 @@ export async function runProcess(command, args = [], options = {}) {
     options.onStderr?.(chunk);
   });
 
-  const { code, signal } = await waitForSubprocess(subprocess);
+  let executionResult;
+  try {
+    executionResult = await subprocess;
+  } catch (error) {
+    throw normalizeProcessError(command, args, options.cwd, error);
+  }
+
   const result = {
     command,
     args,
-    cwd: options.cwd,
-    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
-    stderr: Buffer.concat(stderrChunks).toString("utf8"),
-    exitCode: code,
-    signal
+    cwd: options.cwd ?? executionResult.cwd,
+    stdout: stdoutMode === "ignore" ? "" : executionResult.stdout,
+    stderr: stderrMode === "ignore" ? "" : executionResult.stderr,
+    exitCode: executionResult.exitCode,
+    signal: executionResult.signal
   };
 
-  if (code !== 0 || signal) {
+  if (executionResult.exitCode !== 0 || executionResult.signal) {
     throw new ProcessRunError(formatFailureMessage(result), result);
   }
 
   return result;
 }
 
-export function createSpawnSpec(
-  command,
-  args = [],
-  options = {},
-  platform = process.platform
-) {
-  const shell = options.shell ?? requiresShell(command, platform);
-
-  if (platform === "win32" && requiresShell(command, platform)) {
-    return {
-      command: process.env.ComSpec || process.env.COMSPEC || "cmd.exe",
-      args: ["/d", "/s", "/c", formatWindowsBatchCommand(command, args)],
-      shell: false,
-      windowsVerbatimArguments: true
-    };
-  }
-
-  return {
+function normalizeProcessError(command, args, cwd, error) {
+  const result = {
     command,
     args,
-    shell,
-    windowsVerbatimArguments: false
+    cwd,
+    stdout: typeof error.stdout === "string" ? error.stdout : "",
+    stderr: typeof error.stderr === "string" ? error.stderr : "",
+    exitCode: error.exitCode,
+    signal: error.signal
   };
-}
 
-export function requiresShell(command, platform = process.platform) {
-  if (platform !== "win32") {
-    return false;
-  }
-
-  const extension = extname(command.replace(/^['"]|['"]$/g, "")).toLowerCase();
-  return extension === ".cmd" || extension === ".bat";
-}
-
-function formatWindowsBatchCommand(command, args) {
-  const quotedCommand = quoteWindowsBatchArgument(command);
-  const quotedArgs = args.map(quoteWindowsBatchArgument).join(" ");
-  return quotedArgs.length > 0
-    ? `"${quotedCommand} ${quotedArgs}"`
-    : `"${quotedCommand}"`;
-}
-
-function quoteWindowsBatchArgument(value) {
-  if (value.length === 0) {
-    return '""';
-  }
-
-  const escaped = value.replace(/(["^&|<>()%!])/g, "^$1");
-  return /[\s"]/u.test(value) ? `"${escaped}"` : escaped;
-}
-
-function waitForSubprocess(subprocess) {
-  return new Promise((resolve, reject) => {
-    subprocess.once("error", reject);
-    subprocess.once("close", (code, signal) => resolve({ code, signal }));
-  });
+  return new ProcessRunError(
+    error.shortMessage ?? error.message ?? formatFailureMessage(result),
+    result
+  );
 }
 
 function formatFailureMessage({ command, args, exitCode, signal }) {
