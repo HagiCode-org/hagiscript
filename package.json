@@ -2,6 +2,7 @@
   "name": "@hagicode/hagiscript",
   "version": "0.1.0",
   "description": "Scoped npm package foundation for Hagiscript language tooling.",
+  "license": "MIT",
   "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
   "bugs": {
     "url": "https://github.com/HagiCode-org/hagiscript/issues"

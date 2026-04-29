@@ -1,5 +1,9 @@
 # Hagiscript
 
+[![npm version](https://img.shields.io/npm/v/%40hagicode%2Fhagiscript?logo=npm&color=cb3837)](https://www.npmjs.com/package/@hagicode/hagiscript)
+[![npm downloads](https://img.shields.io/npm/dm/%40hagicode%2Fhagiscript?logo=npm&color=2d8cf0)](https://www.npmjs.com/package/@hagicode/hagiscript)
+[![license](https://img.shields.io/badge/license-MIT-ffd43b)](./LICENSE)
+
 `@hagicode/hagiscript` is the scoped npm package foundation for future Hagiscript language tooling. This initial package intentionally keeps runtime behavior small: it exposes version metadata, a baseline runtime-info API, and an executable CLI placeholder that can be built, tested, packed, and published safely.
 
 ## Installation Assumptions
@@ -266,3 +270,7 @@ npm run publish:check-prereqs
 ```
 
 For local manual releases, run plain `npm publish` after logging in with an npm account that can publish under `@hagicode`.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
