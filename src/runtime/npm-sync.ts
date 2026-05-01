@@ -115,9 +115,14 @@ export interface NpmSyncOptions {
   manifestPath: string;
   registryMirror?: string;
   fallbackPolicy?: NpmSyncFallbackPolicy;
+  force?: boolean;
   npmOptions?: NpmGlobalCommandOptions;
   verifyRuntime?: typeof verifyNodeRuntime;
   onLog?: (event: NpmSyncLogEvent) => void;
+}
+
+export interface NpmSyncPlanOptions {
+  force?: boolean;
 }
 
 export type NpmSyncLogEvent =
@@ -337,8 +342,11 @@ export function normalizeGlobalInventory(
 
 export function createNpmSyncPlan(
   manifest: NpmSyncManifest,
-  installed: InstalledGlobalPackages
+  installed: InstalledGlobalPackages,
+  options: NpmSyncPlanOptions = {}
 ): NpmSyncPlannedAction[] {
+  const force = options.force ?? false;
+
   return Object.entries(manifest.packages)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([packageName, entry]) => {
@@ -369,7 +377,7 @@ export function createNpmSyncPlan(
           targetSelector,
           selectedInstallSelector,
           installedVersion,
-          action: "noop",
+          action: force ? "sync" : "noop",
           ...metadata
         };
       }
@@ -467,7 +475,9 @@ export async function syncNpmGlobals(
   const installed = normalizeGlobalInventory(inventoryResult.stdout);
   options.onLog?.({ type: "inventory", packages: installed });
 
-  const plan = createNpmSyncPlan(manifest, installed);
+  const plan = createNpmSyncPlan(manifest, installed, {
+    force: options.force ?? false
+  });
   const actions: NpmSyncActionResult[] = [];
 
   for (const action of plan) {

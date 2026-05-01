@@ -171,6 +171,31 @@ describe("npm-sync planning", () => {
     ).toBe("ambiguous@3.0.0");
   });
 
+  it("reclassifies satisfied packages to sync when force mode is enabled", () => {
+    const plan = createNpmSyncPlan(
+      manifest,
+      {
+        noop: "2.4.0",
+        upgrade: "2.9.9",
+        downgrade: "6.0.0",
+        ambiguous: "2.0.0"
+      },
+      { force: true }
+    );
+
+    expect(
+      Object.fromEntries(
+        plan.map((action) => [action.packageName, action.action])
+      )
+    ).toEqual({
+      ambiguous: "sync",
+      downgrade: "downgrade",
+      missing: "install",
+      noop: "sync",
+      upgrade: "upgrade"
+    });
+  });
+
   it("retains originating tool metadata on planned actions", () => {
     const toolManifest = validateNpmSyncManifest({
       tools: {
@@ -189,6 +214,37 @@ describe("npm-sync planning", () => {
     });
     expect(plan.find((action) => action.packageName === "@openai/codex")).toMatchObject({
       selectedInstallSelector: "@openai/codex@0.125.0",
+      toolId: "codex",
+      toolGroup: "optional-agent-cli"
+    });
+  });
+
+  it("applies force planning to tool-sync manifests without losing metadata", () => {
+    const toolManifest = validateNpmSyncManifest({
+      tools: {
+        optionalAgentCliSyncEnabled: true,
+        selectedOptionalAgentCliIds: ["codex"]
+      }
+    });
+
+    const plan = createNpmSyncPlan(
+      toolManifest,
+      {
+        skills: "1.5.1",
+        omniroute: "3.6.9",
+        "code-server": "4.117.0",
+        "@openai/codex": "0.125.0"
+      },
+      { force: true }
+    );
+
+    expect(plan.find((action) => action.packageName === "skills")).toMatchObject({
+      action: "sync",
+      toolId: "openspec-skills",
+      toolRequirement: "mandatory"
+    });
+    expect(plan.find((action) => action.packageName === "@openai/codex")).toMatchObject({
+      action: "sync",
       toolId: "codex",
       toolGroup: "optional-agent-cli"
     });
@@ -246,6 +302,52 @@ describe("npm-sync execution", () => {
     expect(summary.registryMirror).toBeUndefined();
     expect(runner).toHaveBeenCalledOnce();
     expect(runner.mock.calls[0][1]).toEqual(["list", "-g", "--depth=0", "--json"]);
+  });
+
+  it("re-syncs already satisfied packages when force mode is enabled", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({ packages: { openspec: { version: "^1.0.0" } } })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === "list") {
+        return commandResult(command, args, {
+          dependencies: { openspec: { version: "1.1.0" } }
+        });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      force: true,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { runCommand: runner }
+    });
+
+    expect(summary.noopCount).toBe(0);
+    expect(summary.changedCount).toBe(1);
+    expect(summary.actions).toMatchObject([
+      {
+        packageName: "openspec",
+        installedVersion: "1.1.0",
+        action: "sync",
+        changed: true,
+        args: ["install", "-g", "openspec@^1.0.0"]
+      }
+    ]);
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      ["install", "-g", "openspec@^1.0.0"],
+      120_000,
+      {}
+    );
   });
 
   it("passes manifest registry mirror to inventory and install commands", async () => {

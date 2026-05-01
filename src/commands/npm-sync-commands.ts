@@ -23,6 +23,7 @@ interface NpmSyncCommandOptions {
   registryMirror?: string;
   prefix?: string;
   mirrorOnly?: boolean;
+  force?: boolean;
   selectedAgentCli?: string[];
   customAgentCli?: string[];
 }
@@ -50,6 +51,10 @@ export function registerNpmSyncCommand(program: Command): void {
     .option(
       "--mirror-only",
       "disable automatic retry against https://registry.npmjs.org/ when a registry mirror is configured"
+    )
+    .option(
+      "--force",
+      "skip installed-package satisfaction checks and re-sync packages that already match the requested range"
     )
     .option(
       "--selected-agent-cli <id>",
@@ -108,6 +113,7 @@ export function registerNpmSyncCommand(program: Command): void {
           manifestPath,
           registryMirror,
           fallbackPolicy,
+          force: options.force ?? false,
           npmOptions: prefix ? { prefix } : undefined,
           onLog: printNpmSyncLog
         });

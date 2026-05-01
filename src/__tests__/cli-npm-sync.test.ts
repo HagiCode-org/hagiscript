@@ -163,6 +163,59 @@ describe("npm-sync CLI command", () => {
     stdout.mockRestore();
   });
 
+  it("passes force mode through to npm-sync runtime options", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json",
+      "--force"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/runtime",
+        manifestPath: "/tmp/manifest.json",
+        force: true,
+        fallbackPolicy: "auto"
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("defaults force mode to false when the CLI option is omitted", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--manifest",
+      "/tmp/manifest.json"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({ force: false })
+    );
+
+    stdout.mockRestore();
+  });
+
   it("passes a validated npm prefix into npm-sync runtime options", async () => {
     syncNpmGlobals.mockClear();
     resolveManagedNodeRuntime.mockClear();
