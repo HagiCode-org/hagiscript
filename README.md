@@ -103,6 +103,7 @@ Reason: missing executable
 ```bash
 hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
+hagiscript npm-sync --manifest ./manifest.json --force
 hagiscript npm-sync --manifest ./manifest.json --registry-mirror https://registry.npmmirror.com/
 hagiscript npm-sync --manifest ./manifest.json --registry-mirror https://registry.npmmirror.com/ --mirror-only
 ```
@@ -122,6 +123,8 @@ Compatibility manifest schema:
 ```
 
 The required `version` field accepts package.json-style semver ranges such as `^1.2.0`, `>=1.0.0 <2.0.0`, or `1.0.0 || 2.0.0`. The optional `target` field controls the selector used for `npm install -g`; when omitted, Hagiscript installs `<package>@<version>`.
+
+By default, `npm-sync` plans installed packages that already satisfy the requested range as `noop` and skips `npm install -g` for them. Use `--force` to skip that installed-package satisfaction check and re-run sync for matching packages. `--force` does not upgrade packages to the latest version and does not change semver selection; it only turns an otherwise skipped `noop` action into an executable `sync` action.
 
 The optional top-level `registryMirror` field configures the npm registry used for both inventory and install commands. It must be a non-empty absolute `http:` or `https:` URL. When present, HagiScript first appends `--registry <registryMirror>` to `npm list -g --depth=0 --json` and `npm install -g <package>@<selector>` without changing package selection. If that mirror-backed npm command fails, HagiScript automatically retries the same inventory or install command once against the official npm registry `https://registry.npmjs.org/`. This mirror-first retry scope is intentionally limited to npm inventory and package mutation commands; runtime validation, manifest validation, and package planning do not retry. This is useful for public mirrors such as `https://registry.npmmirror.com/` or enterprise registries such as `https://npm.company.example/repository/npm/`.
 
@@ -172,7 +175,7 @@ Example manifest for openspec and skills tooling:
 }
 ```
 
-During execution, Hagiscript validates the manifest and runtime before any npm install command runs, lists global packages with `/opt/hagiscript/node/bin/npm list -g --depth=0 --json`, plans no-op, install, upgrade, downgrade, or sync actions, and then runs `npm install -g <package>@<selector>` only for packages that need changes.
+During execution, Hagiscript validates the manifest and runtime before any npm install command runs, lists global packages with `/opt/hagiscript/node/bin/npm list -g --depth=0 --json`, plans no-op, install, upgrade, downgrade, or sync actions, and then runs `npm install -g <package>@<selector>` only for packages that need changes. With `--force`, packages that already satisfy the requested range are replanned from `noop` to `sync`, so the same selector is installed again to re-sync the existing target.
 
 Example output:
 
@@ -199,6 +202,15 @@ Fallback used: no
 Packages: 2
 No-op: 1
 Changed: 1
+```
+
+Forced re-sync example:
+
+```text
+$ hagiscript npm-sync --manifest ./manifest.json --force
+Plan: @openspec/cli sync installed=1.0.2 required=^1.0.0 selector=@openspec/cli@^1.0.0
+Install: @openspec/cli using @openspec/cli@^1.0.0
+Synced: @openspec/cli (sync)
 ```
 
 When fallback is triggered, HagiScript logs `Fallback used: ...` during execution and records `Fallback detail: ...` in the final summary so CI or desktop automation can see which mirror failed, which official registry retry was used, and whether that retry succeeded.
