@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
+import { getManagedNpmBinDirectory } from "../runtime/runtime-executor.js"
 import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
 import {
   resolveManagedPm2ServiceDefinition,
@@ -180,12 +181,13 @@ describe("pm2 manager", () => {
       )
       const runtimePath =
         runner.mock.calls[0]?.[2]?.env?.Path ?? runner.mock.calls[0]?.[2]?.env?.PATH
+      const expectedPathPrefix = [
+        path.dirname(getFixtureNodePath(setup.runtimeRoot)),
+        getManagedNpmBinDirectory(path.join(setup.runtimeRoot, "program", "npm")),
+        path.join(setup.runtimeRoot, "program", "bin")
+      ].join(process.platform === "win32" ? ";" : ":")
       expect(runtimePath?.startsWith(
-        [
-          path.join(setup.runtimeRoot, "program", "components", "node", "bin"),
-          path.join(setup.runtimeRoot, "program", "npm", "bin"),
-          path.join(setup.runtimeRoot, "program", "bin")
-        ].join(process.platform === "win32" ? ";" : ":")
+        expectedPathPrefix
       )).toBe(true)
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
