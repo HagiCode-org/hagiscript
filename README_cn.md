@@ -197,6 +197,61 @@ Changed: 1
 
 如果触发了回退，Hagiscript 会在执行期间输出 `Fallback used: ...`，并在最终摘要中记录 `Fallback detail: ...`，这样 CI 或桌面端自动化就能明确知道哪个镜像失败了、是否切到了官方源，以及官方源重试是否成功。
 
+### Runtime 包管理
+
+`hagiscript runtime` 提供了面向 `hagicode-runtime` 的 manifest 驱动包管理能力。默认情况下，它会加载安装包内置的 `runtime/manifest.yaml`，把托管运行时根目录解析为 `~/.hagicode/runtime`，然后在该根目录下拆分出只读程序目录和可写运行时数据目录；如果某次部署或自动化需要独立路径，可通过 `--runtime-root <path>` 覆盖基础位置。
+
+```bash
+hagiscript runtime install
+hagiscript runtime install --components node,npm-packages --dry-run
+hagiscript runtime update --runtime-root /opt/hagicode/runtime --check-only
+hagiscript runtime remove --components code-server --purge
+hagiscript runtime state --json
+```
+
+默认运行时布局如下：
+
+```text
+<runtime-root>/
+  program/
+    bin/
+    npm/
+    components/
+  runtime-data/
+    config/
+    logs/
+    data/
+    components/
+    state.json
+```
+
+`hagiscript runtime state --json` 是安装、更新、删除与下游诊断的标准状态接口。它会输出解析后的运行时程序目录、运行时数据根目录、组件级 `HAGICODE_RUNTIME_DATA_HOME`，以及派生出的 `PM2_HOME`，下游工具不需要再自己探测文件系统。
+
+运行时脚本和 PM2 托管服务会共享同一套公开环境变量约定：
+
+- `HAGICODE_RUNTIME_HOME`：运行时程序目录
+- `HAGICODE_RUNTIME_DATA_HOME`：当前组件的可写运行时数据目录
+- `PM2_HOME`：默认位于 `HAGICODE_RUNTIME_DATA_HOME` 下的独立子目录
+- `PATH`：优先注入托管 Node 运行时、托管 npm 前缀和托管 wrapper，再继承当前 shell 的 PATH
+
+### PM2 托管服务命令
+
+`hagiscript pm2` 用于管理运行时作用域内的 `omniroute` 和 `code-server` 服务，底层始终调用 `hagiscript runtime install` 安装到托管 npm 前缀中的 PM2。
+
+```bash
+hagiscript pm2 omniroute start
+hagiscript pm2 omniroute status
+hagiscript pm2 code-server stop
+```
+
+每次 PM2 命令都会先解析运行时 manifest，计算规范化的运行时目录和组件数据目录，再以组件级 `PM2_HOME` 和托管 Node-first PATH 调用 `<runtime-home>/npm` 下的 PM2；它不会依赖系统预装的 PM2 或系统 Node。
+
+`runtime/manifest.yaml` 现在支持以下覆盖项：
+
+- 运行时级别：`paths.runtimeHome`、`paths.runtimeDataRoot`、`paths.componentDataRoot`、`paths.defaultPm2Home`
+- 组件级别：`runtimeDataDir`
+- 服务级别：`pm2.appName`、`pm2.cwd`、`pm2.script`、`pm2.args`、`pm2.env`、`pm2.pm2Home`
+
 在 ESM 项目中使用库 API：
 
 ```ts

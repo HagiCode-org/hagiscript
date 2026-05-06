@@ -4,13 +4,17 @@ runtime:
 
 paths:
   runtimeRoot: "~/.hagicode/runtime"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
   bin: "bin"
   config: "config"
   logs: "logs"
   data: "data"
   stateFile: "state.json"
   componentsRoot: "components"
-  npmPrefix: "data/npm"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
   nodeRuntime: "components/node/runtime"
   dotnetRuntime: "components/dotnet/runtime"
   vendoredRoot: "components/bundled"
@@ -88,15 +92,25 @@ components:
     type: "bundled-runtime"
     source: "desktop-vendored-runtime"
     version: "3.6.9"
+    runtimeDataDir: "services/omniroute"
     installScript: "scripts/install-omniroute.mjs"
     configureScript: "scripts/configure-omniroute.mjs"
+    pm2:
+      appName: "hagicode-omniroute"
+      cwd: "."
+      script: "current/omniroute-launcher.mjs"
 
   - name: "code-server"
     type: "bundled-runtime"
     source: "desktop-vendored-runtime"
     version: "4.117.0"
+    runtimeDataDir: "services/code-server"
     installScript: "scripts/install-code-server.mjs"
     configureScript: "scripts/configure-code-server.mjs"
+    pm2:
+      appName: "hagicode-code-server"
+      cwd: "."
+      script: "current/code-server-launcher.mjs"
 
 phases:
   install:

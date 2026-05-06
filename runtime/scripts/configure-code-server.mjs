@@ -9,6 +9,6 @@ import {
 const context = readRuntimeScriptContext()
 const configPath = path.join(context.componentConfigDir, "config.yaml")
 await materializeTemplate("code-server-config.yaml", configPath, {
-  DATA_DIR: context.dataDir
+  DATA_DIR: context.runtimeDataHome
 })
 process.stdout.write(`Configured code-server template at ${configPath}\n`)

@@ -6,6 +6,7 @@ import { Command } from "commander";
 import { createRuntimeInfo, packageVersion } from "./index.js";
 import { registerNpmSyncCommand } from "./commands/npm-sync-commands.js";
 import { registerNodeRuntimeCommands } from "./commands/node-runtime-commands.js";
+import { registerPm2Commands } from "./commands/pm2-commands.js";
 import { registerRuntimeCommands } from "./commands/runtime-commands.js";
 
 export function createCli(): Command {
@@ -26,6 +27,7 @@ export function createCli(): Command {
 
   registerNodeRuntimeCommands(program);
   registerNpmSyncCommand(program);
+  registerPm2Commands(program);
   registerRuntimeCommands(program);
 
   program.action(() => {

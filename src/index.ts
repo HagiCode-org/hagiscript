@@ -73,7 +73,10 @@ export {
 export {
   defaultRuntimeRoot,
   getComponentConfigDirectory,
+  getComponentLogsDirectory,
   getComponentManagedRoot,
+  getComponentPm2Home,
+  getComponentRuntimeDataHome,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime/runtime-paths.js";
@@ -86,6 +89,24 @@ export {
   type RuntimeOperationState,
   type RuntimeState
 } from "./runtime/runtime-state.js";
+export {
+  renderManagedPm2StatusText,
+  resolveManagedPm2ServiceDefinition,
+  runManagedPm2Command,
+  supportedPm2Services,
+  type ManagedPm2Action,
+  type ManagedPm2CommandResult,
+  type ManagedPm2CommandOptions,
+  type ManagedPm2ServiceName,
+  type ManagedPm2Status,
+  type ResolvedManagedPm2ServiceDefinition
+} from "./runtime/pm2-manager.js";
+export {
+  buildManagedRuntimeEnvironment,
+  getManagedNpmBinDirectory,
+  getManagedRuntimePathEntries,
+  prependPathEntries
+} from "./runtime/runtime-executor.js";
 export {
   installRuntime,
   planRuntimeLifecycle,

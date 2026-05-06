@@ -4,6 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import process from "node:process"
+import { parse, stringify } from "yaml"
 import {
   collectPlatformDiagnostics,
   createStageTracker,
@@ -23,10 +24,12 @@ const failingManifestPath = path.join(
   "fixtures",
   "runtime-manifest-failure.yaml"
 )
-const managedRoot = path.join(tempRoot, "managed runtime")
-const failingRoot = path.join(tempRoot, "managed runtime failure")
+const managedRoot = path.join(tempRoot, "managed-runtime")
+const failingRoot = path.join(tempRoot, "managed-runtime-failure")
+const pm2ManifestPath = path.join(tempRoot, "runtime-manifest-pm2.yaml")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
 let installedTreeLines = []
+let pm2LifecycleLines = []
 let diagnostics
 let finalResult = "failed"
 
@@ -39,6 +42,56 @@ try {
     })
     log(formatDiagnostics(collected))
     return collected
+  })
+
+  await tracker.run("prepare PM2 integration manifest", async () => {
+    const manifest = parse(fs.readFileSync(manifestPath, "utf8"))
+    const manifestDirectory = path.dirname(manifestPath)
+    fs.cpSync(
+      path.join(manifestDirectory, "templates"),
+      path.join(tempRoot, "templates"),
+      { recursive: true }
+    )
+    const componentNames = new Set(["node", "npm-packages", "omniroute", "code-server"])
+    manifest.components = manifest.components
+      .filter((component) => componentNames.has(component.name))
+      .map((component) => {
+        const normalizedComponent = {
+          ...component,
+          installScript: path.resolve(manifestDirectory, component.installScript),
+          ...(component.verifyScript
+            ? { verifyScript: path.resolve(manifestDirectory, component.verifyScript) }
+            : {}),
+          ...(component.configureScript
+            ? { configureScript: path.resolve(manifestDirectory, component.configureScript) }
+            : {}),
+          ...(component.updateScript
+            ? { updateScript: path.resolve(manifestDirectory, component.updateScript) }
+            : {}),
+          ...(component.removeScript
+            ? { removeScript: path.resolve(manifestDirectory, component.removeScript) }
+            : {})
+        }
+
+        if (component.name !== "npm-packages") {
+          return normalizedComponent
+        }
+
+        return {
+          ...normalizedComponent,
+          packageCatalog: (component.packageCatalog ?? []).filter(
+            (entry) => entry.id === "pm2"
+          )
+        }
+      })
+
+    for (const phaseName of ["install", "remove", "update"]) {
+      manifest.phases[phaseName].order = manifest.phases[phaseName].order.filter((name) =>
+        componentNames.has(name)
+      )
+    }
+
+    fs.writeFileSync(pm2ManifestPath, stringify(manifest), "utf8")
   })
 
   await tracker.run("runtime install", async () => {
@@ -93,15 +146,22 @@ try {
     assert(report.layout?.separated === true, `Expected separated runtime layout. Output:\n${stdout}`)
     assertArrayEquals(
       report.layout?.programRoots ?? [],
-      [path.join(managedRoot, "bin"), path.join(managedRoot, "components")],
+      [
+        path.join(managedRoot, "program"),
+        path.join(managedRoot, "program", "bin"),
+        path.join(managedRoot, "program", "components"),
+        path.join(managedRoot, "program", "npm")
+      ],
       "runtime program roots"
     )
     assertArrayEquals(
       report.layout?.externalDataRoots ?? [],
       [
-        path.join(managedRoot, "config"),
-        path.join(managedRoot, "logs"),
-        path.join(managedRoot, "data")
+        path.join(managedRoot, "runtime-data"),
+        path.join(managedRoot, "runtime-data", "config"),
+        path.join(managedRoot, "runtime-data", "logs"),
+        path.join(managedRoot, "runtime-data", "data"),
+        path.join(managedRoot, "runtime-data", "components")
       ],
       "runtime external data roots"
     )
@@ -129,21 +189,40 @@ try {
 
     const dotnetManifest = path.join(
       managedRoot,
+      "program",
       "components",
       "dotnet",
       "runtime",
       "current",
       "runtime-manifest.json"
     )
-    const omnirouteConfig = path.join(managedRoot, "config", "omniroute", "config.yaml")
-    const codeServerConfig = path.join(managedRoot, "config", "code-server", "config.yaml")
+    const omnirouteConfig = path.join(
+      managedRoot,
+      "runtime-data",
+      "components",
+      "services",
+      "omniroute",
+      "config",
+      "config.yaml"
+    )
+    const codeServerConfig = path.join(
+      managedRoot,
+      "runtime-data",
+      "components",
+      "services",
+      "code-server",
+      "config",
+      "config.yaml"
+    )
     const omnirouteBin = path.join(
       managedRoot,
+      "program",
       "bin",
       process.platform === "win32" ? "omniroute.cmd" : "omniroute"
     )
     const codeServerBin = path.join(
       managedRoot,
+      "program",
       "bin",
       process.platform === "win32" ? "code-server.cmd" : "code-server"
     )
@@ -155,7 +234,7 @@ try {
     assertFile(codeServerBin)
     assertIncludes(
       fs.readFileSync(omnirouteConfig, "utf8"),
-      `runtimeRoot: "${managedRoot}"`,
+      `runtimeHome: "${path.join(managedRoot, "program")}"`,
       "omniroute config output"
     )
     assertIncludes(
@@ -165,6 +244,99 @@ try {
     )
 
     installedTreeLines = renderDirectoryTree(managedRoot)
+  })
+
+  await tracker.run("pm2 service lifecycle", async () => {
+    const installOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "runtime",
+        "install",
+        "--from-manifest",
+        pm2ManifestPath,
+        "--runtime-root",
+        managedRoot,
+        "--components",
+        "npm-packages"
+      ],
+      repoRoot
+    )
+    assertIncludes(installOutput, "Runtime install complete.", "pm2 runtime install output")
+
+    const services = ["omniroute", "code-server"]
+    for (const service of services) {
+      const missingOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          service,
+          "status",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(missingOutput, "Status: missing", `${service} missing status`)
+
+      const startOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          service,
+          "start",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(startOutput, "Status: online", `${service} start status`)
+
+      const statusOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          service,
+          "status",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(statusOutput, "Status: online", `${service} queried status`)
+
+      const stopOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          service,
+          "stop",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(stopOutput, "Status: stopped", `${service} stop status`)
+
+      pm2LifecycleLines.push(`- ${service}: start -> online, status -> online, stop -> stopped`)
+    }
+
+    await Promise.all([
+      killManagedPm2(managedRoot, "omniroute"),
+      killManagedPm2(managedRoot, "code-server")
+    ])
   })
 
   await tracker.run("runtime remove purge", async () => {
@@ -190,7 +362,17 @@ try {
     )
 
     assertIncludes(stdout, "Runtime remove complete.", "runtime remove output")
-    if (fs.existsSync(path.join(managedRoot, "config", "code-server"))) {
+    if (
+      fs.existsSync(
+        path.join(
+          managedRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "code-server"
+        )
+      )
+    ) {
       throw new Error("Expected purge removal to clean code-server config directory.")
     }
   })
@@ -279,10 +461,16 @@ try {
       {
         title: "Runtime Separation Checks",
         lines: [
-          `- Program roots: ${path.join(managedRoot, "bin")}, ${path.join(managedRoot, "components")}`,
-          `- External data roots: ${path.join(managedRoot, "config")}, ${path.join(managedRoot, "logs")}, ${path.join(managedRoot, "data")}`,
+          `- Runtime home: ${path.join(managedRoot, "program")}`,
+          `- Runtime data root: ${path.join(managedRoot, "runtime-data")}`,
+          `- Program roots: ${path.join(managedRoot, "program")}, ${path.join(managedRoot, "program", "bin")}, ${path.join(managedRoot, "program", "components")}, ${path.join(managedRoot, "program", "npm")}`,
+          `- External data roots: ${path.join(managedRoot, "runtime-data")}, ${path.join(managedRoot, "runtime-data", "config")}, ${path.join(managedRoot, "runtime-data", "logs")}, ${path.join(managedRoot, "runtime-data", "data")}, ${path.join(managedRoot, "runtime-data", "components")}`,
           "- Verified that program paths and external data paths remain separated in runtime state output"
         ]
+      },
+      {
+        title: "Managed PM2 Lifecycle Checks",
+        lines: pm2LifecycleLines.length > 0 ? pm2LifecycleLines : ["- Not captured"]
       }
     ]
   })
@@ -319,6 +507,16 @@ async function runExpectFailure(command, args, cwd) {
   }
 
   throw new Error(`Expected command to fail: ${command} ${args.join(" ")}`)
+}
+
+async function runCapture(command, args, cwd) {
+  const { stdout } = await runProcess(command, args, {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe"
+  })
+
+  return stdout
 }
 
 function assertIncludes(output, expected, label) {
@@ -387,5 +585,56 @@ function walkDirectory(currentPath, prefix, depth, maxDepth, lines) {
 function log(message) {
   for (const line of message.split(/\r?\n/u)) {
     process.stdout.write(`[runtime-management-integration] ${line}\n`)
+  }
+}
+
+async function killManagedPm2(runtimeRoot, serviceName) {
+  const pm2Home = path.join(
+    runtimeRoot,
+    "runtime-data",
+    "components",
+    "services",
+    serviceName,
+    "pm2"
+  )
+  const pm2Binary = path.join(
+    runtimeRoot,
+    "program",
+    "npm",
+    "bin",
+    process.platform === "win32" ? "pm2.cmd" : "pm2"
+  )
+  const pathKey = process.platform === "win32" ? "Path" : "PATH"
+  const pathEntries = [
+    path.join(
+      runtimeRoot,
+      "program",
+      "components",
+      "node",
+      ...(process.platform === "win32" ? [] : ["bin"])
+    ),
+    path.join(
+      runtimeRoot,
+      "program",
+      "npm",
+      ...(process.platform === "win32" ? [] : ["bin"])
+    ),
+    path.join(runtimeRoot, "program", "bin"),
+    process.env[pathKey] ?? process.env.PATH ?? ""
+  ].filter(Boolean)
+
+  try {
+    await runProcess(pm2Binary, ["kill"], {
+      cwd: path.join(runtimeRoot, "program"),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        PM2_HOME: pm2Home,
+        [pathKey]: pathEntries.join(process.platform === "win32" ? ";" : ":")
+      }
+    })
+  } catch {
+    // Best-effort cleanup for the integration daemon.
   }
 }

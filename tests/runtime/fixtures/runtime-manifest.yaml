@@ -4,13 +4,17 @@ runtime:
 
 paths:
   runtimeRoot: "~/.hagicode/runtime-fixture"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
   bin: "bin"
   config: "config"
   logs: "logs"
   data: "data"
   stateFile: "state.json"
   componentsRoot: "components"
-  npmPrefix: "data/npm"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
   nodeRuntime: "components/node"
   dotnetRuntime: "components/dotnet"
   vendoredRoot: "components/services"
@@ -18,12 +22,14 @@ paths:
 components:
   - name: "alpha"
     type: "bundled-runtime"
+    runtimeDataDir: "alpha-data"
     installScript: "scripts/install-component.mjs"
     verifyScript: "scripts/verify-component.mjs"
     version: "1.0.0"
 
   - name: "beta"
     type: "bundled-runtime"
+    runtimeDataDir: "beta-data"
     installScript: "scripts/install-component.mjs"
     verifyScript: "scripts/verify-component.mjs"
     version: "1.0.0"

@@ -217,7 +217,7 @@ When fallback is triggered, HagiScript logs `Fallback used: ...` during executio
 
 ### Runtime Package Management
 
-`hagiscript runtime` adds a manifest-driven package manager for the broader `hagicode-runtime` contract. By default it loads `runtime/manifest.yaml` from the installed package, resolves the managed runtime root to `~/.hagicode/runtime`, and keeps all mutable state under that root unless `--runtime-root <path>` overrides it for a specific install, deployment mode, or automation run.
+`hagiscript runtime` adds a manifest-driven package manager for the broader `hagicode-runtime` contract. By default it loads `runtime/manifest.yaml` from the installed package, resolves the managed runtime root to `~/.hagicode/runtime`, then splits that managed runtime into a program home and a mutable runtime-data home unless `--runtime-root <path>` overrides the base location for a specific install, deployment mode, or automation run.
 
 ```bash
 hagiscript runtime install
@@ -231,21 +231,51 @@ The packaged runtime manifest aligns its default component boundaries with HagiC
 
 - Node is governed as a Desktop-aligned Node 22 toolchain component.
 - `.NET` is modeled as a Desktop-aligned 10.0 runtime component.
-- Mutable npm packages are installed into a managed prefix under the selected runtime root instead of the immutable Node payload or host-global npm locations.
+- Mutable npm packages, including the managed `pm2` binary, are installed into a managed prefix under the runtime program home instead of the immutable Node payload or host-global npm locations.
 - `code-server` and `omniroute` stay grouped as vendored bundled-runtime components rather than npm-managed packages.
 
 The runtime layout is explicit and stable for downstream consumers:
 
 ```text
 <runtime-root>/
-  bin/
-  config/
-  logs/
-  data/
-  state.json
+  program/
+    bin/
+    npm/
+    components/
+  runtime-data/
+    config/
+    logs/
+    data/
+    components/
+    state.json
 ```
 
-`state.json` is the canonical contract for install, update, remove, and downstream inspection. Use `hagiscript runtime state --json` instead of probing files directly when Desktop, local bootstrap flows, or automation needs to know which components are installed, which managed paths are active, and whether the last lifecycle run succeeded.
+`hagiscript runtime state --json` is the canonical contract for install, update, remove, and downstream inspection. It reports the resolved runtime home, runtime data root, per-component runtime data homes, and derived PM2 homes so Desktop, local bootstrap flows, or automation does not need to probe files directly.
+
+Runtime lifecycle scripts and managed PM2 services receive the same public runtime environment contract:
+
+- `HAGICODE_RUNTIME_HOME` points to the runtime program home.
+- `HAGICODE_RUNTIME_DATA_HOME` points to the current component's writable runtime data home.
+- `PM2_HOME` defaults to a child directory beneath `HAGICODE_RUNTIME_DATA_HOME`.
+- `PATH` is rebuilt so the managed Node runtime, managed npm prefix, and managed wrappers take precedence over the ambient shell environment.
+
+### Managed PM2 Service Commands
+
+`hagiscript pm2` manages the runtime-scoped `omniroute` and `code-server` services through the PM2 binary installed by `hagiscript runtime install`.
+
+```bash
+hagiscript pm2 omniroute start
+hagiscript pm2 omniroute status
+hagiscript pm2 code-server stop
+```
+
+Each PM2 command resolves the runtime manifest first, loads the canonical runtime homes, derives a component-scoped `PM2_HOME`, and executes the managed PM2 binary from `<runtime-home>/npm`. It does not rely on a system PM2 or a system Node on the ambient shell `PATH`.
+
+The packaged `runtime/manifest.yaml` can override:
+
+- runtime-level `paths.runtimeHome`, `paths.runtimeDataRoot`, `paths.componentDataRoot`, and `paths.defaultPm2Home`
+- component-level `runtimeDataDir`
+- service-level `pm2.appName`, `pm2.cwd`, `pm2.script`, `pm2.args`, `pm2.env`, and `pm2.pm2Home`
 
 The package also ships a thin `hagicode-runtime` wrapper binary that delegates to `hagiscript runtime ...` for automation that prefers a runtime-oriented entrypoint:
 

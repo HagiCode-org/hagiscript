@@ -1,10 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
 
 export function readRuntimeScriptContext() {
   return {
     runtimeRoot: requiredEnv("HAGISCRIPT_RUNTIME_ROOT"),
+    runtimeHome: requiredEnv("HAGICODE_RUNTIME_HOME"),
+    runtimeDataHome: requiredEnv("HAGICODE_RUNTIME_DATA_HOME"),
     binDir: requiredEnv("HAGISCRIPT_RUNTIME_BIN_DIR"),
     configDir: requiredEnv("HAGISCRIPT_RUNTIME_CONFIG_DIR"),
     logsDir: requiredEnv("HAGISCRIPT_RUNTIME_LOGS_DIR"),
@@ -14,6 +16,9 @@ export function readRuntimeScriptContext() {
     componentType: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_TYPE"),
     componentRoot: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_ROOT"),
     componentConfigDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_CONFIG_DIR"),
+    componentDataDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR"),
+    componentLogsDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR"),
+    componentPm2Home: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME"),
     templateDir: requiredEnv("HAGISCRIPT_RUNTIME_TEMPLATE_DIR"),
     componentVersion: process.env.HAGISCRIPT_RUNTIME_COMPONENT_VERSION?.trim() || null,
     phase: process.env.HAGISCRIPT_RUNTIME_PHASE?.trim() || "install",
@@ -65,6 +70,31 @@ export async function writeNodeEntrypoint(filePath, message) {
     `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(message)} + "\\n")\n`,
     "utf8"
   )
+  await makeExecutable(filePath)
+  return filePath
+}
+
+export async function writeManagedServiceEntrypoint(filePath, serviceName) {
+  await ensureDirectory(path.dirname(filePath))
+  await writeFile(
+    filePath,
+    `#!/usr/bin/env node
+const serviceName = ${JSON.stringify(serviceName)}
+process.stdout.write(serviceName + " ready\\n")
+const timer = setInterval(() => {
+  process.stdout.write("")
+}, 60_000)
+const shutdown = (signal) => {
+  clearInterval(timer)
+  process.stdout.write(serviceName + " shutting down via " + signal + "\\n")
+  process.exit(0)
+}
+process.on("SIGINT", () => shutdown("SIGINT"))
+process.on("SIGTERM", () => shutdown("SIGTERM"))
+`,
+    "utf8"
+  )
+  await makeExecutable(filePath)
   return filePath
 }
 
@@ -89,6 +119,7 @@ export async function writeCommandWrapper(binDir, commandName, scriptPath) {
     `#!/usr/bin/env sh\nexec node "$(dirname "$0")/${relativeTarget}" "$@"\n`,
     "utf8"
   )
+  await makeExecutable(wrapperPath)
   return wrapperPath
 }
 
@@ -100,4 +131,12 @@ function requiredEnv(name) {
   }
 
   return value
+}
+
+async function makeExecutable(filePath) {
+  if (process.platform === "win32") {
+    return
+  }
+
+  await chmod(filePath, 0o755)
 }

@@ -19,7 +19,9 @@ export interface RuntimeComponentDefinition {
   source?: string
   version?: string
   channelVersion?: string
+  runtimeDataDir?: string
   packageCatalog: RuntimePackageCatalogEntry[]
+  pm2?: RuntimePm2ServiceDefinition
   scripts: {
     install: string
     verify?: string
@@ -36,16 +38,29 @@ export interface RuntimePhaseDefinition {
 
 export interface RuntimeManifestPaths {
   runtimeRoot: string
+  runtimeHome: string
+  runtimeDataRoot: string
   bin: string
   config: string
   logs: string
   data: string
   stateFile: string
   componentsRoot: string
+  componentDataRoot: string
+  defaultPm2Home: string
   npmPrefix: string
   nodeRuntime: string
   dotnetRuntime: string
   vendoredRoot: string
+}
+
+export interface RuntimePm2ServiceDefinition {
+  appName?: string
+  cwd?: string
+  script?: string
+  args?: string[]
+  env?: Record<string, string>
+  pm2Home?: string
 }
 
 export interface LoadedRuntimeManifest {
@@ -156,12 +171,21 @@ function validateRuntimeManifest(
   }
   const paths = {
     runtimeRoot: readRequiredString(pathsObject.runtimeRoot, "paths.runtimeRoot", errors),
+    runtimeHome: readOptionalString(pathsObject.runtimeHome, "paths.runtimeHome", errors) ?? "program",
+    runtimeDataRoot:
+      readOptionalString(pathsObject.runtimeDataRoot, "paths.runtimeDataRoot", errors) ??
+      "runtime-data",
     bin: readRequiredString(pathsObject.bin, "paths.bin", errors),
     config: readRequiredString(pathsObject.config, "paths.config", errors),
     logs: readRequiredString(pathsObject.logs, "paths.logs", errors),
     data: readRequiredString(pathsObject.data, "paths.data", errors),
     stateFile: readRequiredString(pathsObject.stateFile, "paths.stateFile", errors),
     componentsRoot: readRequiredString(pathsObject.componentsRoot, "paths.componentsRoot", errors),
+    componentDataRoot:
+      readOptionalString(pathsObject.componentDataRoot, "paths.componentDataRoot", errors) ??
+      "components",
+    defaultPm2Home:
+      readOptionalString(pathsObject.defaultPm2Home, "paths.defaultPm2Home", errors) ?? "pm2",
     npmPrefix: readRequiredString(pathsObject.npmPrefix, "paths.npmPrefix", errors),
     nodeRuntime: readRequiredString(pathsObject.nodeRuntime, "paths.nodeRuntime", errors),
     dotnetRuntime: readRequiredString(pathsObject.dotnetRuntime, "paths.dotnetRuntime", errors),
@@ -316,7 +340,17 @@ function validateRuntimeComponents(
         `components[${index}].channelVersion`,
         errors
       ),
+      runtimeDataDir: readOptionalString(
+        componentObject.runtimeDataDir,
+        `components[${index}].runtimeDataDir`,
+        errors
+      ),
       packageCatalog,
+      pm2: validateRuntimePm2Definition(
+        componentObject.pm2,
+        `components[${index}].pm2`,
+        errors
+      ),
       scripts: {
         install: installScript,
         verify: verifyScript,
@@ -355,6 +389,53 @@ function validateRuntimePackageCatalogEntry(
       binName: readOptionalString(entryObject.binName, `${label}.binName`, errors)
     }
   ]
+}
+
+function validateRuntimePm2Definition(
+  value: unknown,
+  label: string,
+  errors: string[]
+): RuntimePm2ServiceDefinition | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  const pm2Object = toRecord(value, label, errors)
+  const argsValue = pm2Object.args
+  const envValue = pm2Object.env
+  const args = Array.isArray(argsValue)
+    ? argsValue.filter((item): item is string => typeof item === "string")
+    : undefined
+
+  if (argsValue !== undefined && (!Array.isArray(argsValue) || args?.length !== argsValue.length)) {
+    errors.push(`${label}.args must be a string array when provided`)
+  }
+
+  let env: Record<string, string> | undefined
+  if (envValue !== undefined) {
+    if (!isRecord(envValue)) {
+      errors.push(`${label}.env must be an object when provided`)
+    } else {
+      env = {}
+      for (const [key, entryValue] of Object.entries(envValue)) {
+        if (typeof entryValue !== "string") {
+          errors.push(`${label}.env.${key} must be a string`)
+          continue
+        }
+
+        env[key] = entryValue
+      }
+    }
+  }
+
+  return {
+    appName: readOptionalString(pm2Object.appName, `${label}.appName`, errors),
+    cwd: readOptionalString(pm2Object.cwd, `${label}.cwd`, errors),
+    script: readOptionalString(pm2Object.script, `${label}.script`, errors),
+    args,
+    env,
+    pm2Home: readOptionalString(pm2Object.pm2Home, `${label}.pm2Home`, errors)
+  }
 }
 
 function toRecord(

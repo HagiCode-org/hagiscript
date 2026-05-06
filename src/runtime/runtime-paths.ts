@@ -6,12 +6,16 @@ export const defaultRuntimeRoot = "~/.hagicode/runtime"
 
 export interface ResolvedRuntimePaths {
   root: string
+  runtimeHome: string
+  runtimeDataRoot: string
   bin: string
   config: string
   logs: string
   data: string
   stateFile: string
   componentsRoot: string
+  componentDataRoot: string
+  defaultPm2Home: string
   npmPrefix: string
   nodeRuntime: string
   dotnetRuntime: string
@@ -29,19 +33,25 @@ export function resolveRuntimePaths(
   const root = normalizeManagedRoot(
     options.runtimeRoot ?? manifest.paths.runtimeRoot ?? defaultRuntimeRoot
   )
+  const runtimeHome = resolveManagedPath(manifest.paths.runtimeHome, root)
+  const runtimeDataRoot = resolveManagedPath(manifest.paths.runtimeDataRoot, root)
 
   return {
     root,
-    bin: resolveManagedPath(manifest.paths.bin, root),
-    config: resolveManagedPath(manifest.paths.config, root),
-    logs: resolveManagedPath(manifest.paths.logs, root),
-    data: resolveManagedPath(manifest.paths.data, root),
-    stateFile: resolveManagedPath(manifest.paths.stateFile, root),
-    componentsRoot: resolveManagedPath(manifest.paths.componentsRoot, root),
-    npmPrefix: resolveManagedPath(manifest.paths.npmPrefix, root),
-    nodeRuntime: resolveManagedPath(manifest.paths.nodeRuntime, root),
-    dotnetRuntime: resolveManagedPath(manifest.paths.dotnetRuntime, root),
-    vendoredRoot: resolveManagedPath(manifest.paths.vendoredRoot, root)
+    runtimeHome,
+    runtimeDataRoot,
+    bin: resolveManagedPath(manifest.paths.bin, runtimeHome),
+    config: resolveManagedPath(manifest.paths.config, runtimeDataRoot),
+    logs: resolveManagedPath(manifest.paths.logs, runtimeDataRoot),
+    data: resolveManagedPath(manifest.paths.data, runtimeDataRoot),
+    stateFile: resolveManagedPath(manifest.paths.stateFile, runtimeDataRoot),
+    componentsRoot: resolveManagedPath(manifest.paths.componentsRoot, runtimeHome),
+    componentDataRoot: resolveManagedPath(manifest.paths.componentDataRoot, runtimeDataRoot),
+    defaultPm2Home: manifest.paths.defaultPm2Home,
+    npmPrefix: resolveManagedPath(manifest.paths.npmPrefix, runtimeHome),
+    nodeRuntime: resolveManagedPath(manifest.paths.nodeRuntime, runtimeHome),
+    dotnetRuntime: resolveManagedPath(manifest.paths.dotnetRuntime, runtimeHome),
+    vendoredRoot: resolveManagedPath(manifest.paths.vendoredRoot, runtimeHome)
   }
 }
 
@@ -80,9 +90,38 @@ export function getComponentManagedRoot(
 
 export function getComponentConfigDirectory(
   paths: ResolvedRuntimePaths,
-  componentName: string
+  componentName: string,
+  runtimeDataDir?: string
 ): string {
-  return join(paths.config, componentName)
+  return join(getComponentRuntimeDataHome(paths, componentName, runtimeDataDir), "config")
+}
+
+export function getComponentLogsDirectory(
+  paths: ResolvedRuntimePaths,
+  componentName: string,
+  runtimeDataDir?: string
+): string {
+  return join(getComponentRuntimeDataHome(paths, componentName, runtimeDataDir), "logs")
+}
+
+export function getComponentRuntimeDataHome(
+  paths: ResolvedRuntimePaths,
+  componentName: string,
+  runtimeDataDir?: string
+): string {
+  return resolveManagedPath(runtimeDataDir ?? componentName, paths.componentDataRoot)
+}
+
+export function getComponentPm2Home(
+  paths: ResolvedRuntimePaths,
+  componentName: string,
+  runtimeDataDir?: string,
+  pm2Home?: string
+): string {
+  return resolveManagedPath(
+    pm2Home ?? paths.defaultPm2Home,
+    getComponentRuntimeDataHome(paths, componentName, runtimeDataDir)
+  )
 }
 
 export function isPathInsideRuntimeRoot(

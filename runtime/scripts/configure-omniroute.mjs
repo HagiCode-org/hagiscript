@@ -9,8 +9,8 @@ import {
 const context = readRuntimeScriptContext()
 const configPath = path.join(context.componentConfigDir, "config.yaml")
 await materializeTemplate("omniroute-config.yaml", configPath, {
-  RUNTIME_ROOT: context.runtimeRoot,
-  DATA_DIR: context.dataDir,
-  LOGS_DIR: context.logsDir
+  RUNTIME_ROOT: context.runtimeHome,
+  DATA_DIR: context.runtimeDataHome,
+  LOGS_DIR: context.componentLogsDir
 })
 process.stdout.write(`Configured omniroute template at ${configPath}\n`)

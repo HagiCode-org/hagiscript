@@ -3,12 +3,18 @@ import { basename, dirname, extname } from "node:path"
 import process from "node:process"
 import type { CommandRunner } from "./command-launch.js"
 import { runCommand } from "./command-launch.js"
+import { getRuntimeExecutablePaths } from "./node-verify.js"
 import type {
   LoadedRuntimeManifest,
   RuntimeComponentDefinition,
   RuntimeLifecyclePhase
 } from "./runtime-manifest.js"
 import type { ResolvedRuntimePaths } from "./runtime-paths.js"
+import {
+  getComponentLogsDirectory,
+  getComponentPm2Home,
+  getComponentRuntimeDataHome
+} from "./runtime-paths.js"
 
 export interface RuntimeScriptExecutionContext {
   component: RuntimeComponentDefinition
@@ -21,6 +27,21 @@ export interface RuntimeScriptExecutionContext {
   purge?: boolean
   verbose?: boolean
   runner?: CommandRunner
+}
+
+export interface ManagedRuntimeEnvironmentContext {
+  component: Pick<RuntimeComponentDefinition, "name" | "type" | "version" | "runtimeDataDir">
+  manifest: Pick<LoadedRuntimeManifest, "manifestDir">
+  paths: ResolvedRuntimePaths
+  componentRoot: string
+  componentConfigDir: string
+  componentDataHome?: string
+  componentLogsDir?: string
+  pm2Home?: string
+  phase?: string
+  purge?: boolean
+  verbose?: boolean
+  scriptBasename?: string
 }
 
 export interface RuntimeScriptExecutionResult {
@@ -91,9 +112,68 @@ export function getRuntimeScriptLaunch(scriptPath: string): {
 function buildRuntimeScriptEnvironment(
   context: RuntimeScriptExecutionContext
 ): NodeJS.ProcessEnv {
-  return withManagedBinPath(
+  return buildManagedRuntimeEnvironment({
+    component: context.component,
+    manifest: context.manifest,
+    paths: context.paths,
+    componentRoot: context.componentRoot,
+    componentConfigDir: context.componentConfigDir,
+    componentDataHome: getComponentRuntimeDataHome(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir
+    ),
+    componentLogsDir: getComponentLogsDirectory(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir
+    ),
+    pm2Home: getComponentPm2Home(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir,
+      context.component.pm2?.pm2Home
+    ),
+    phase: context.phase,
+    purge: context.purge,
+    verbose: context.verbose,
+    scriptBasename: basename(scriptPathForEnv(context.component, context.phase))
+  })
+}
+
+export function buildManagedRuntimeEnvironment(
+  context: ManagedRuntimeEnvironmentContext,
+  baseEnv: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  const componentDataHome =
+    context.componentDataHome ??
+    getComponentRuntimeDataHome(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir
+    )
+  const componentLogsDir =
+    context.componentLogsDir ??
+    getComponentLogsDirectory(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir
+    )
+  const pm2Home =
+    context.pm2Home ??
+    getComponentPm2Home(
+      context.paths,
+      context.component.name,
+      context.component.runtimeDataDir,
+      undefined
+    )
+
+  return prependPathEntries(
     {
-      ...process.env,
+      ...baseEnv,
+      HAGICODE_RUNTIME_HOME: context.paths.runtimeHome,
+      HAGICODE_RUNTIME_DATA_HOME: componentDataHome,
+      PM2_HOME: pm2Home,
       HAGISCRIPT_RUNTIME_ROOT: context.paths.root,
       HAGISCRIPT_RUNTIME_BIN_DIR: context.paths.bin,
       HAGISCRIPT_RUNTIME_CONFIG_DIR: context.paths.config,
@@ -106,26 +186,50 @@ function buildRuntimeScriptEnvironment(
       HAGISCRIPT_RUNTIME_COMPONENT_VERSION: context.component.version ?? "",
       HAGISCRIPT_RUNTIME_COMPONENT_ROOT: context.componentRoot,
       HAGISCRIPT_RUNTIME_COMPONENT_CONFIG_DIR: context.componentConfigDir,
-      HAGISCRIPT_RUNTIME_PHASE: context.phase,
-      HAGISCRIPT_RUNTIME_PURGE: context.purge ? "1" : "0",
-      HAGISCRIPT_RUNTIME_VERBOSE: context.verbose ? "1" : "0",
-      HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: basename(scriptPathForEnv(context.component, context.phase))
+      HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR: componentDataHome,
+      HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR: componentLogsDir,
+      HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME: pm2Home,
+      ...(context.phase ? { HAGISCRIPT_RUNTIME_PHASE: context.phase } : {}),
+      ...(context.purge !== undefined
+        ? { HAGISCRIPT_RUNTIME_PURGE: context.purge ? "1" : "0" }
+        : {}),
+      ...(context.verbose !== undefined
+        ? { HAGISCRIPT_RUNTIME_VERBOSE: context.verbose ? "1" : "0" }
+        : {}),
+      ...(context.scriptBasename
+        ? { HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: context.scriptBasename }
+        : {})
     },
-    context.paths.bin
+    getManagedRuntimePathEntries(context.paths)
   )
 }
 
-function withManagedBinPath(
+export function prependPathEntries(
   env: NodeJS.ProcessEnv,
-  binPath: string
+  pathEntries: readonly string[]
 ): NodeJS.ProcessEnv {
   const pathKey = process.platform === "win32" ? "Path" : "PATH"
   const currentPath = env[pathKey] ?? env.PATH ?? ""
 
   return {
     ...env,
-    [pathKey]: [binPath, currentPath].filter(Boolean).join(process.platform === "win32" ? ";" : ":")
+    [pathKey]: [...pathEntries, currentPath]
+      .filter(Boolean)
+      .join(process.platform === "win32" ? ";" : ":")
   }
+}
+
+export function getManagedRuntimePathEntries(paths: ResolvedRuntimePaths): string[] {
+  const nodeExecutables = getRuntimeExecutablePaths(paths.nodeRuntime)
+  return [
+    dirname(nodeExecutables.nodePath),
+    getManagedNpmBinDirectory(paths.npmPrefix),
+    paths.bin
+  ]
+}
+
+export function getManagedNpmBinDirectory(npmPrefix: string): string {
+  return process.platform === "win32" ? npmPrefix : `${npmPrefix}/bin`
 }
 
 function scriptPathForEnv(

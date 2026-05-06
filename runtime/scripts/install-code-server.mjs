@@ -7,7 +7,7 @@ import {
   readRuntimeScriptContext,
   writeCommandWrapper,
   writeComponentMarker,
-  writeNodeEntrypoint
+  writeManagedServiceEntrypoint
 } from "../lib/runtime-script-lib.mjs"
 
 const context = readRuntimeScriptContext()
@@ -17,16 +17,19 @@ const configPath = path.join(context.componentConfigDir, "config.yaml")
 
 await ensureDirectory(currentRoot)
 await materializeTemplate("code-server-config.yaml", configPath, {
-  DATA_DIR: context.dataDir
+  DATA_DIR: context.runtimeDataHome
 })
-await writeNodeEntrypoint(
+await writeManagedServiceEntrypoint(
   launcherPath,
-  `code-server placeholder managed by hagiscript at ${context.runtimeRoot}`
+  "code-server"
 )
 await writeCommandWrapper(context.binDir, "code-server", launcherPath)
 await writeComponentMarker(context, {
   configPath,
   launcherPath,
+  runtimeHome: context.runtimeHome,
+  runtimeDataHome: context.runtimeDataHome,
+  pm2Home: context.componentPm2Home,
   ownership: "vendored-runtime"
 })
 process.stdout.write(`Prepared code-server assets in ${currentRoot}\n`)

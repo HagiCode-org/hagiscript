@@ -20,7 +20,10 @@ import {
 } from "./runtime-manifest.js"
 import {
   getComponentConfigDirectory,
+  getComponentLogsDirectory,
   getComponentManagedRoot,
+  getComponentPm2Home,
+  getComponentRuntimeDataHome,
   isPathInsideRuntimeRoot,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
@@ -79,6 +82,8 @@ export interface RuntimeStateReport {
   managedPaths: ResolvedRuntimePaths
   layout: {
     separated: boolean
+    runtimeHome: string
+    runtimeDataRoot: string
     programRoots: string[]
     externalDataRoots: string[]
   }
@@ -88,6 +93,8 @@ export interface RuntimeStateReport {
     type: string
     status: RuntimeComponentStatus
     version: string | null
+    runtimeDataHome: string | null
+    pm2Home: string | null
     programPaths: string[]
     externalDataPaths: string[]
     managedPaths: string[]
@@ -202,10 +209,36 @@ export async function runRuntimeLifecycle(
           status: "failed",
           version: state.components[component.name]?.version ?? null,
           managedProgramPaths: [getComponentManagedRoot(paths, component.name)],
-          managedDataPaths: [getComponentConfigDirectory(paths, component.name)],
+          managedDataPaths: [
+            getComponentRuntimeDataHome(paths, component.name, component.runtimeDataDir),
+            getComponentConfigDirectory(paths, component.name, component.runtimeDataDir),
+            getComponentLogsDirectory(paths, component.name, component.runtimeDataDir),
+            ...(component.pm2
+              ? [
+                  getComponentPm2Home(
+                    paths,
+                    component.name,
+                    component.runtimeDataDir,
+                    component.pm2.pm2Home
+                  )
+                ]
+              : [])
+          ],
           managedPaths: [
             getComponentManagedRoot(paths, component.name),
-            getComponentConfigDirectory(paths, component.name)
+            getComponentRuntimeDataHome(paths, component.name, component.runtimeDataDir),
+            getComponentConfigDirectory(paths, component.name, component.runtimeDataDir),
+            getComponentLogsDirectory(paths, component.name, component.runtimeDataDir),
+            ...(component.pm2
+              ? [
+                  getComponentPm2Home(
+                    paths,
+                    component.name,
+                    component.runtimeDataDir,
+                    component.pm2.pm2Home
+                  )
+                ]
+              : [])
           ],
           lastAction: phase,
           lastUpdatedAt: now().toISOString(),
@@ -258,9 +291,27 @@ export async function queryRuntimeState(
   const components = manifest.components.map((component) => {
     const entry = state.components[component.name]
     const fallbackProgramPaths = [getComponentManagedRoot(paths, component.name)]
-    const fallbackDataPaths = component.name === "npm-packages"
-      ? []
-      : [getComponentConfigDirectory(paths, component.name)]
+    const runtimeDataHome =
+      component.name === "npm-packages"
+        ? null
+        : getComponentRuntimeDataHome(paths, component.name, component.runtimeDataDir)
+    const pm2Home = component.pm2
+      ? getComponentPm2Home(
+          paths,
+          component.name,
+          component.runtimeDataDir,
+          component.pm2.pm2Home
+        )
+      : null
+    const fallbackDataPaths =
+      component.name === "npm-packages" || !runtimeDataHome
+        ? []
+        : [
+            runtimeDataHome,
+            getComponentConfigDirectory(paths, component.name, component.runtimeDataDir),
+            getComponentLogsDirectory(paths, component.name, component.runtimeDataDir),
+            ...(pm2Home ? [pm2Home] : [])
+          ]
     const programPaths = entry?.managedProgramPaths ?? fallbackProgramPaths
     const externalDataPaths = entry?.managedDataPaths ?? fallbackDataPaths
     return {
@@ -268,22 +319,35 @@ export async function queryRuntimeState(
       type: component.type,
       status: entry?.status ?? "not-installed",
       version: entry?.version ?? null,
+      runtimeDataHome,
+      pm2Home,
       programPaths,
       externalDataPaths,
       managedPaths: entry?.managedPaths ?? [...programPaths, ...externalDataPaths]
     }
   })
-  const programRoots = [paths.bin, paths.componentsRoot]
-  const externalDataRoots = [paths.config, paths.logs, paths.data]
+  const programRoots = [
+    paths.runtimeHome,
+    paths.bin,
+    paths.componentsRoot,
+    paths.npmPrefix
+  ]
+  const externalDataRoots = [
+    paths.runtimeDataRoot,
+    paths.config,
+    paths.logs,
+    paths.data,
+    paths.componentDataRoot
+  ]
 
   return {
     runtime: state.runtime,
     managedRoot: state.managedRoot,
     managedPaths: state.managedPaths,
     layout: {
-      separated: !programRoots.some((programRoot) =>
-        externalDataRoots.some((dataRoot) => programRoot === dataRoot)
-      ),
+      separated: paths.runtimeHome !== paths.runtimeDataRoot,
+      runtimeHome: paths.runtimeHome,
+      runtimeDataRoot: paths.runtimeDataRoot,
       programRoots,
       externalDataRoots
     },
@@ -298,6 +362,8 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
     `Runtime: ${report.runtime.name} ${report.runtime.version}`,
     `Manifest: ${report.runtime.manifestPath}`,
     `Managed root: ${report.managedRoot}`,
+    `Runtime home: ${report.layout.runtimeHome}`,
+    `Runtime data root: ${report.layout.runtimeDataRoot}`,
     `Bin: ${report.managedPaths.bin}`,
     `State file: ${report.managedPaths.stateFile}`,
     `Program roots: ${report.layout.programRoots.join(", ")}`,
@@ -310,6 +376,12 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
     lines.push(
       `- ${component.name}: ${component.status} version=${component.version ?? "n/a"} program=${component.programPaths.join("|") || "n/a"} data=${component.externalDataPaths.join("|") || "n/a"}`
     )
+    if (component.runtimeDataHome) {
+      lines.push(`  runtime-data-home=${component.runtimeDataHome}`)
+    }
+    if (component.pm2Home) {
+      lines.push(`  pm2-home=${component.pm2Home}`)
+    }
   }
 
   if (report.lastOperation) {
@@ -375,7 +447,11 @@ async function executeRuntimeAction(
   logFilePath: string
 ): Promise<RuntimeComponentState> {
   const componentRoot = getComponentManagedRoot(paths, component.name)
-  const componentConfigDir = getComponentConfigDirectory(paths, component.name)
+  const componentConfigDir = getComponentConfigDirectory(
+    paths,
+    component.name,
+    component.runtimeDataDir
+  )
 
   switch (component.name) {
     case "node":
@@ -610,16 +686,47 @@ async function executeScriptComponent(
       })
     }
   } else {
+    const componentDataHome = getComponentRuntimeDataHome(
+      paths,
+      component.name,
+      component.runtimeDataDir
+    )
     await cleanupManagedComponent(
-      paths.root,
+      [paths.root, paths.runtimeHome, paths.runtimeDataRoot],
       componentRoot,
-      ...(options.purge ? [componentConfigDir] : [])
+      ...(options.purge ? [componentDataHome] : [])
     )
   }
 
   const isRemoval = action.phase === "remove"
   const managedProgramPaths = [componentRoot]
-  const managedDataPaths = options.purge || !isRemoval ? [componentConfigDir] : []
+  const componentDataHome = getComponentRuntimeDataHome(
+    paths,
+    component.name,
+    component.runtimeDataDir
+  )
+  const componentLogsDir = getComponentLogsDirectory(
+    paths,
+    component.name,
+    component.runtimeDataDir
+  )
+  const componentPm2Home = component.pm2
+    ? getComponentPm2Home(
+        paths,
+        component.name,
+        component.runtimeDataDir,
+        component.pm2.pm2Home
+      )
+    : null
+  const managedDataPaths =
+    options.purge || !isRemoval
+      ? [
+          componentDataHome,
+          componentConfigDir,
+          componentLogsDir,
+          ...(componentPm2Home ? [componentPm2Home] : [])
+        ]
+      : []
   return {
     name: component.name,
     type: component.type,
@@ -788,11 +895,14 @@ function computePackageCatalogFingerprint(component: RuntimeComponentDefinition)
 async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<void> {
   await Promise.all([
     mkdir(paths.root, { recursive: true }),
+    mkdir(paths.runtimeHome, { recursive: true }),
+    mkdir(paths.runtimeDataRoot, { recursive: true }),
     mkdir(paths.bin, { recursive: true }),
     mkdir(paths.config, { recursive: true }),
     mkdir(paths.logs, { recursive: true }),
     mkdir(paths.data, { recursive: true }),
     mkdir(paths.componentsRoot, { recursive: true }),
+    mkdir(paths.componentDataRoot, { recursive: true }),
     mkdir(paths.vendoredRoot, { recursive: true })
   ])
 }
@@ -805,11 +915,11 @@ async function appendNpmSyncLog(
 }
 
 async function cleanupManagedComponent(
-  runtimeRoot: string,
+  allowedRoots: readonly string[],
   ...paths: string[]
 ): Promise<void> {
   for (const pathValue of paths) {
-    if (!isPathInsideRuntimeRoot(runtimeRoot, pathValue)) {
+    if (!allowedRoots.some((rootPath) => isPathInsideRuntimeRoot(rootPath, pathValue))) {
       throw new RuntimeLifecycleError(
         `Refusing to clean path outside managed runtime root: ${pathValue}`
       )

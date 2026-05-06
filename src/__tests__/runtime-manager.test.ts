@@ -36,6 +36,49 @@ describe("runtime manager", () => {
     await rm(directory, { recursive: true, force: true })
   })
 
+  it("rejects invalid PM2 env overrides in the runtime manifest", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-pm2-"))
+    const manifestPath = path.join(directory, "invalid-pm2.yaml")
+
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: invalid
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["omniroute"]
+  remove:
+    order: ["omniroute"]
+  update:
+    order: ["omniroute"]
+components:
+  - name: "omniroute"
+    type: "bundled-runtime"
+    installScript: "scripts/install-component.mjs"
+    pm2:
+      env:
+        PORT: 39001
+`,
+      "utf8"
+    )
+
+    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(/pm2.env.PORT must be a string/)
+    await rm(directory, { recursive: true, force: true })
+  })
+
   it("plans filtered installs in manifest order", async () => {
     const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
     const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
@@ -75,21 +118,34 @@ describe("runtime manager", () => {
 
     expect(report.ready).toBe(true)
     expect(report.layout.separated).toBe(true)
+    expect(report.layout.runtimeHome).toBe(path.join(runtimeRoot, "program"))
+    expect(report.layout.runtimeDataRoot).toBe(path.join(runtimeRoot, "runtime-data"))
     expect(report.layout.programRoots).toEqual([
-      path.join(runtimeRoot, "bin"),
-      path.join(runtimeRoot, "components")
+      path.join(runtimeRoot, "program"),
+      path.join(runtimeRoot, "program", "bin"),
+      path.join(runtimeRoot, "program", "components"),
+      path.join(runtimeRoot, "program", "npm")
     ])
     expect(report.layout.externalDataRoots).toEqual([
-      path.join(runtimeRoot, "config"),
-      path.join(runtimeRoot, "logs"),
-      path.join(runtimeRoot, "data")
+      path.join(runtimeRoot, "runtime-data"),
+      path.join(runtimeRoot, "runtime-data", "config"),
+      path.join(runtimeRoot, "runtime-data", "logs"),
+      path.join(runtimeRoot, "runtime-data", "data"),
+      path.join(runtimeRoot, "runtime-data", "components")
     ])
     expect(report.components.map((item) => item.status)).toEqual([
       "installed",
       "installed"
     ])
-    expect(report.components[0]?.programPaths[0]).toContain(path.join(runtimeRoot, "components"))
-    expect(report.components[0]?.externalDataPaths[0]).toContain(path.join(runtimeRoot, "config"))
+    expect(report.components[0]?.programPaths[0]).toContain(
+      path.join(runtimeRoot, "program", "components")
+    )
+    expect(report.components[0]?.runtimeDataHome).toBe(
+      path.join(runtimeRoot, "runtime-data", "components", "alpha-data")
+    )
+    expect(report.components[0]?.externalDataPaths[0]).toContain(
+      path.join(runtimeRoot, "runtime-data", "components", "alpha-data")
+    )
 
     await rm(runtimeRoot, { recursive: true, force: true })
   })
