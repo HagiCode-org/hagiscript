@@ -35,7 +35,6 @@ const packedFiles = new Set(
 const requiredFiles = [
   "package.json",
   "README.md",
-  "README_cn.md",
   "bin/runtime",
   "runtime/manifest.yaml",
   "dist/index.js",
