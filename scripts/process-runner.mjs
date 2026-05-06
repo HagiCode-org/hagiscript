@@ -27,6 +27,7 @@ export async function runProcess(command, args = [], options = {}) {
     cwd: options.cwd,
     env: options.env,
     shell: options.shell,
+    timeout: options.timeoutMs,
     windowsHide: true,
     reject: false,
     all: false,
@@ -64,7 +65,8 @@ export async function runProcess(command, args = [], options = {}) {
     stdout: stdoutMode === "ignore" ? "" : executionResult.stdout,
     stderr: stderrMode === "ignore" ? "" : executionResult.stderr,
     exitCode: executionResult.exitCode,
-    signal: executionResult.signal
+    signal: executionResult.signal,
+    timedOut: executionResult.timedOut === true
   };
 
   if (executionResult.exitCode !== 0 || executionResult.signal) {
@@ -111,6 +113,26 @@ async function runProcessBootstrap(command, args = [], options = {}) {
   });
   const stdoutChunks = [];
   const stderrChunks = [];
+  let timedOut = false;
+  let forcedKill = false;
+  let timeout;
+
+  if (typeof options.timeoutMs === "number" && options.timeoutMs > 0) {
+    timeout = setTimeout(() => {
+      timedOut = true;
+      if (!subprocess.killed) {
+        subprocess.kill("SIGTERM");
+      }
+
+      setTimeout(() => {
+        if (!subprocess.killed) {
+          forcedKill = true;
+          subprocess.kill("SIGKILL");
+        }
+      }, 1_000).unref?.();
+    }, options.timeoutMs);
+    timeout.unref?.();
+  }
 
   subprocess.stdout?.on("data", (chunk) => {
     if (stdoutMode !== "ignore") {
@@ -137,6 +159,9 @@ async function runProcessBootstrap(command, args = [], options = {}) {
   });
 
   const { code, signal } = await waitForSubprocess(subprocess);
+  if (timeout) {
+    clearTimeout(timeout);
+  }
   const result = {
     command,
     args,
@@ -144,7 +169,9 @@ async function runProcessBootstrap(command, args = [], options = {}) {
     stdout: Buffer.concat(stdoutChunks).toString("utf8"),
     stderr: Buffer.concat(stderrChunks).toString("utf8"),
     exitCode: code,
-    signal
+    signal,
+    timedOut,
+    forcedKill
   };
 
   if (code !== 0 || signal) {
@@ -174,7 +201,9 @@ function normalizeProcessError(command, args, cwd, error) {
     stdout: typeof error.stdout === "string" ? error.stdout : "",
     stderr: typeof error.stderr === "string" ? error.stderr : "",
     exitCode: error.exitCode,
-    signal: error.signal
+    signal: error.signal,
+    timedOut: error.timedOut === true,
+    forcedKill: error.isCanceled === true || error.killed === true
   };
 
   return new ProcessRunError(
@@ -183,8 +212,12 @@ function normalizeProcessError(command, args, cwd, error) {
   );
 }
 
-function formatFailureMessage({ command, args, exitCode, signal }) {
+function formatFailureMessage({ command, args, exitCode, signal, timedOut }) {
   const commandLine = [command, ...args].join(" ");
+
+  if (timedOut === true) {
+    return `Command timed out: ${commandLine}`;
+  }
 
   if (signal) {
     return `Command terminated by signal ${signal}: ${commandLine}`;

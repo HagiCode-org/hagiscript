@@ -42,6 +42,14 @@ describe("process runner", () => {
     }
   });
 
+  it("times out long-running processes", async () => {
+    await expect(
+      runProcess(process.execPath, ["-e", "setTimeout(() => {}, 60_000)"], {
+        timeoutMs: 250
+      })
+    ).rejects.toThrow("Command timed out");
+  });
+
   it("only enables the bootstrap shell wrapper for Windows command shims", () => {
     expect(requiresBootstrapShell("npm.cmd", "win32")).toBe(true);
     expect(

@@ -28,13 +28,15 @@ const managedRoot = path.join(tempRoot, "managed-runtime")
 const failingRoot = path.join(tempRoot, "managed-runtime-failure")
 const pm2ManifestPath = path.join(tempRoot, "runtime-manifest-pm2.yaml")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
+const runtimeCommandTimeoutMs = 10 * 60_000
+const pm2CommandTimeoutMs = 5 * 60_000
 let installedTreeLines = []
 let pm2LifecycleLines = []
 let diagnostics
 let finalResult = "failed"
 
 try {
-  diagnostics = await tracker.run("platform diagnostics", async () => {
+  diagnostics = await runStage("platform diagnostics", async () => {
     const collected = await collectPlatformDiagnostics({
       runProcess,
       repoRoot,
@@ -44,7 +46,7 @@ try {
     return collected
   })
 
-  await tracker.run("prepare PM2 integration manifest", async () => {
+  await runStage("prepare PM2 integration manifest", async () => {
     const manifest = parse(fs.readFileSync(manifestPath, "utf8"))
     const manifestDirectory = path.dirname(manifestPath)
     fs.cpSync(
@@ -68,9 +70,16 @@ try {
           ...(component.updateScript
             ? { updateScript: path.resolve(manifestDirectory, component.updateScript) }
             : {}),
-          ...(component.removeScript
-            ? { removeScript: path.resolve(manifestDirectory, component.removeScript) }
-            : {})
+           ...(component.removeScript
+             ? { removeScript: path.resolve(manifestDirectory, component.removeScript) }
+             : {})
+        }
+
+        if (component.pm2 && isManagedPm2Service(component.name)) {
+          normalizedComponent.pm2 = {
+            ...component.pm2,
+            pm2Home: getIntegrationPm2Home(tempRoot, component.name)
+          }
         }
 
         if (component.name !== "npm-packages") {
@@ -94,7 +103,7 @@ try {
     fs.writeFileSync(pm2ManifestPath, stringify(manifest), "utf8")
   })
 
-  await tracker.run("runtime install", async () => {
+  await runStage("runtime install", async () => {
     const { stdout } = await runProcess(
       process.execPath,
       [
@@ -111,14 +120,15 @@ try {
       {
         cwd: repoRoot,
         stdout: "pipe",
-        stderr: "pipe"
+        stderr: "pipe",
+        timeoutMs: runtimeCommandTimeoutMs
       }
     )
 
     assertIncludes(stdout, "Runtime install complete.", "runtime install output")
   })
 
-  await tracker.run("runtime state query", async () => {
+  await runStage("runtime state query", async () => {
     const { stdout } = await runProcess(
       process.execPath,
       [
@@ -134,7 +144,8 @@ try {
       {
         cwd: repoRoot,
         stdout: "pipe",
-        stderr: "pipe"
+        stderr: "pipe",
+        timeoutMs: 60_000
       }
     )
     const report = JSON.parse(stdout)
@@ -246,7 +257,7 @@ try {
     installedTreeLines = renderDirectoryTree(managedRoot)
   })
 
-  await tracker.run("pm2 service lifecycle", async () => {
+  await runStage("pm2 service lifecycle", async () => {
     const installOutput = await runCapture(
       process.execPath,
       [
@@ -339,7 +350,7 @@ try {
     ])
   })
 
-  await tracker.run("runtime remove purge", async () => {
+  await runStage("runtime remove purge", async () => {
     const { stdout } = await runProcess(
       process.execPath,
       [
@@ -357,7 +368,8 @@ try {
       {
         cwd: repoRoot,
         stdout: "pipe",
-        stderr: "pipe"
+        stderr: "pipe",
+        timeoutMs: 60_000
       }
     )
 
@@ -377,7 +389,7 @@ try {
     }
   })
 
-  await tracker.run("runtime partial failure", async () => {
+  await runStage("runtime partial failure", async () => {
     const failureOutput = await runExpectFailure(
       process.execPath,
       [
@@ -413,7 +425,8 @@ try {
       {
         cwd: repoRoot,
         stdout: "pipe",
-        stderr: "pipe"
+        stderr: "pipe",
+        timeoutMs: 60_000
       }
     )
     const report = JSON.parse(stdout)
@@ -496,13 +509,16 @@ try {
 }
 
 async function runExpectFailure(command, args, cwd) {
+  log(`Expecting failure: ${formatCommand(command, args)}`)
   try {
     await runProcess(command, args, {
       cwd,
       stdout: "pipe",
-      stderr: "pipe"
+      stderr: "pipe",
+      timeoutMs: 60_000
     })
   } catch (error) {
+    log(`Observed expected failure: ${summarizeProcessError(error)}`)
     return `${error.stdout ?? ""}${error.stderr ?? ""}`
   }
 
@@ -510,13 +526,23 @@ async function runExpectFailure(command, args, cwd) {
 }
 
 async function runCapture(command, args, cwd) {
-  const { stdout } = await runProcess(command, args, {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe"
-  })
-
-  return stdout
+  const timeoutMs = isPm2Command(args) ? pm2CommandTimeoutMs : runtimeCommandTimeoutMs
+  log(`Running command: ${formatCommand(command, args)} (timeout=${timeoutMs}ms)`)
+  try {
+    const { stdout, stderr } = await runProcess(command, args, {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeoutMs
+    })
+    log(
+      `Command completed: ${formatCommand(command, args)}${formatOutputSummary(stdout, stderr)}`
+    )
+    return stdout
+  } catch (error) {
+    log(`Command failed: ${summarizeProcessError(error)}`)
+    throw error
+  }
 }
 
 function assertIncludes(output, expected, label) {
@@ -589,20 +615,22 @@ function log(message) {
 }
 
 async function killManagedPm2(runtimeRoot, serviceName) {
-  const pm2Home = path.join(
+  const pm2Home = getIntegrationPm2Home(path.dirname(runtimeRoot), serviceName)
+  const nodeBinary = path.join(
     runtimeRoot,
-    "runtime-data",
+    "program",
     "components",
-    "services",
-    serviceName,
-    "pm2"
+    "node",
+    "runtime",
+    ...(process.platform === "win32" ? ["node.exe"] : ["bin", "node"])
   )
-  const pm2Binary = path.join(
+  const pm2Entrypoint = path.join(
     runtimeRoot,
     "program",
     "npm",
-    "bin",
-    process.platform === "win32" ? "pm2.cmd" : "pm2"
+    ...(process.platform === "win32"
+      ? ["node_modules", "pm2", "bin", "pm2"]
+      : ["lib", "node_modules", "pm2", "bin", "pm2"])
   )
   const pathKey = process.platform === "win32" ? "Path" : "PATH"
   const pathEntries = [
@@ -624,10 +652,12 @@ async function killManagedPm2(runtimeRoot, serviceName) {
   ].filter(Boolean)
 
   try {
-    await runProcess(pm2Binary, ["kill"], {
+    log(`Cleaning PM2 daemon for ${serviceName}`)
+    await runProcess(nodeBinary, [pm2Entrypoint, "kill"], {
       cwd: path.join(runtimeRoot, "program"),
       stdout: "pipe",
       stderr: "pipe",
+      timeoutMs: 30_000,
       env: {
         ...process.env,
         PM2_HOME: pm2Home,
@@ -665,4 +695,71 @@ function sleep(milliseconds) {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds)
   })
+}
+
+async function runStage(name, action) {
+  log(`Starting stage: ${name}`)
+  try {
+    const result = await tracker.run(name, action)
+    const stage = tracker.stages.findLast((entry) => entry.name === name)
+    log(`Completed stage: ${name}${stage ? ` (${stage.durationMs}ms)` : ""}`)
+    return result
+  } catch (error) {
+    log(`Stage failed: ${name} - ${error instanceof Error ? error.message : String(error)}`)
+    throw error
+  }
+}
+
+function isPm2Command(args) {
+  return args.includes("pm2")
+}
+
+function isManagedPm2Service(serviceName) {
+  return serviceName === "omniroute" || serviceName === "code-server"
+}
+
+function getIntegrationPm2Home(tempRootPath, serviceName) {
+  return path.join(tempRootPath, "p", getManagedPm2ServiceKey(serviceName))
+}
+
+function getManagedPm2ServiceKey(serviceName) {
+  switch (serviceName) {
+    case "omniroute":
+      return "o"
+    case "code-server":
+      return "c"
+    default:
+      return serviceName
+  }
+}
+
+function formatCommand(command, args) {
+  return [command, ...args].join(" ")
+}
+
+function summarizeProcessError(error) {
+  const command =
+    error?.result?.command && Array.isArray(error?.result?.args)
+      ? formatCommand(error.result.command, error.result.args)
+      : error instanceof Error
+        ? error.message
+        : String(error)
+  const stdout = typeof error?.stdout === "string" ? error.stdout.trim() : ""
+  const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : ""
+  return `${command}${formatOutputSummary(stdout, stderr)}`
+}
+
+function formatOutputSummary(stdout, stderr) {
+  const details = []
+  if (stdout) {
+    details.push(`stdout=${JSON.stringify(truncateOutput(stdout))}`)
+  }
+  if (stderr) {
+    details.push(`stderr=${JSON.stringify(truncateOutput(stderr))}`)
+  }
+  return details.length > 0 ? ` (${details.join(", ")})` : ""
+}
+
+function truncateOutput(value, maxLength = 240) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value
 }
