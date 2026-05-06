@@ -178,7 +178,9 @@ describe("pm2 manager", () => {
           ".pm2"
         )
       )
-      expect(runner.mock.calls[0]?.[2]?.env?.PATH?.startsWith(
+      const runtimePath =
+        runner.mock.calls[0]?.[2]?.env?.Path ?? runner.mock.calls[0]?.[2]?.env?.PATH
+      expect(runtimePath?.startsWith(
         [
           path.join(setup.runtimeRoot, "program", "components", "node", "bin"),
           path.join(setup.runtimeRoot, "program", "npm", "bin"),

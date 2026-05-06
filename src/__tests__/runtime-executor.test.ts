@@ -74,7 +74,8 @@ describe("runtime executor environment", () => {
       getManagedNpmBinDirectory(paths.npmPrefix),
       paths.bin
     ].join(process.platform === "win32" ? ";" : ":")
-    expect(env.PATH?.startsWith(
+    const runtimePath = env.Path ?? env.PATH
+    expect(runtimePath?.startsWith(
         expectedPathPrefix
       )).toBe(true)
     expect(env.CUSTOM_FLAG).toBe("1")
