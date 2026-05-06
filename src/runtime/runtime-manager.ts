@@ -77,12 +77,19 @@ export interface RuntimeStateReport {
   }
   managedRoot: string
   managedPaths: ResolvedRuntimePaths
+  layout: {
+    separated: boolean
+    programRoots: string[]
+    externalDataRoots: string[]
+  }
   ready: boolean
   components: Array<{
     name: string
     type: string
     status: RuntimeComponentStatus
     version: string | null
+    programPaths: string[]
+    externalDataPaths: string[]
     managedPaths: string[]
   }>
   lastOperation: RuntimeState["lastOperation"]
@@ -194,7 +201,12 @@ export async function runRuntimeLifecycle(
           type: component.type,
           status: "failed",
           version: state.components[component.name]?.version ?? null,
-          managedPaths: [getComponentManagedRoot(paths, component.name)],
+          managedProgramPaths: [getComponentManagedRoot(paths, component.name)],
+          managedDataPaths: [getComponentConfigDirectory(paths, component.name)],
+          managedPaths: [
+            getComponentManagedRoot(paths, component.name),
+            getComponentConfigDirectory(paths, component.name)
+          ],
           lastAction: phase,
           lastUpdatedAt: now().toISOString(),
           logFile: logFilePath,
@@ -245,19 +257,36 @@ export async function queryRuntimeState(
   )
   const components = manifest.components.map((component) => {
     const entry = state.components[component.name]
+    const fallbackProgramPaths = [getComponentManagedRoot(paths, component.name)]
+    const fallbackDataPaths = component.name === "npm-packages"
+      ? []
+      : [getComponentConfigDirectory(paths, component.name)]
+    const programPaths = entry?.managedProgramPaths ?? fallbackProgramPaths
+    const externalDataPaths = entry?.managedDataPaths ?? fallbackDataPaths
     return {
       name: component.name,
       type: component.type,
       status: entry?.status ?? "not-installed",
       version: entry?.version ?? null,
-      managedPaths: entry?.managedPaths ?? [getComponentManagedRoot(paths, component.name)]
+      programPaths,
+      externalDataPaths,
+      managedPaths: entry?.managedPaths ?? [...programPaths, ...externalDataPaths]
     }
   })
+  const programRoots = [paths.bin, paths.componentsRoot]
+  const externalDataRoots = [paths.config, paths.logs, paths.data]
 
   return {
     runtime: state.runtime,
     managedRoot: state.managedRoot,
     managedPaths: state.managedPaths,
+    layout: {
+      separated: !programRoots.some((programRoot) =>
+        externalDataRoots.some((dataRoot) => programRoot === dataRoot)
+      ),
+      programRoots,
+      externalDataRoots
+    },
     ready: components.every((component) => component.status === "installed"),
     components,
     lastOperation: state.lastOperation
@@ -271,12 +300,15 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
     `Managed root: ${report.managedRoot}`,
     `Bin: ${report.managedPaths.bin}`,
     `State file: ${report.managedPaths.stateFile}`,
+    `Program roots: ${report.layout.programRoots.join(", ")}`,
+    `External data roots: ${report.layout.externalDataRoots.join(", ")}`,
+    `Separated layout: ${report.layout.separated ? "yes" : "no"}`,
     `Ready: ${report.ready ? "yes" : "no"}`
   ]
 
   for (const component of report.components) {
     lines.push(
-      `- ${component.name}: ${component.status} version=${component.version ?? "n/a"} root=${component.managedPaths[0] ?? "n/a"}`
+      `- ${component.name}: ${component.status} version=${component.version ?? "n/a"} program=${component.programPaths.join("|") || "n/a"} data=${component.externalDataPaths.join("|") || "n/a"}`
     )
   }
 
@@ -389,6 +421,8 @@ async function executeNodeComponent(
       type: component.type,
       status: "removed",
       version: null,
+      managedProgramPaths: [paths.nodeRuntime],
+      managedDataPaths: [],
       managedPaths: [paths.nodeRuntime],
       lastAction: phase,
       lastUpdatedAt: new Date().toISOString(),
@@ -435,6 +469,8 @@ async function executeNodeComponent(
     type: component.type,
     status: "installed",
     version: normalizeVersion(resolvedRuntime.nodeVersion),
+    managedProgramPaths: [paths.nodeRuntime, ...wrappers],
+    managedDataPaths: [],
     managedPaths: [paths.nodeRuntime, ...wrappers],
     lastAction: phase,
     lastUpdatedAt: new Date().toISOString(),
@@ -458,6 +494,8 @@ async function executeNpmPackagesComponent(
       type: component.type,
       status: "removed",
       version: null,
+      managedProgramPaths: [paths.npmPrefix],
+      managedDataPaths: [],
       managedPaths: [paths.npmPrefix],
       lastAction: phase,
       lastUpdatedAt: new Date().toISOString(),
@@ -505,6 +543,8 @@ async function executeNpmPackagesComponent(
     type: component.type,
     status: "installed",
     version: computePackageCatalogFingerprint(component),
+    managedProgramPaths: [paths.npmPrefix],
+    managedDataPaths: [],
     managedPaths: [paths.npmPrefix],
     lastAction: phase,
     lastUpdatedAt: new Date().toISOString(),
@@ -578,17 +618,16 @@ async function executeScriptComponent(
   }
 
   const isRemoval = action.phase === "remove"
+  const managedProgramPaths = [componentRoot]
+  const managedDataPaths = options.purge || !isRemoval ? [componentConfigDir] : []
   return {
     name: component.name,
     type: component.type,
     status: isRemoval ? "removed" : "installed",
     version: isRemoval ? null : component.version ?? component.channelVersion ?? null,
-    managedPaths:
-      isRemoval && !options.purge
-        ? [componentRoot]
-        : isRemoval
-          ? [componentRoot, componentConfigDir]
-          : [componentRoot, componentConfigDir],
+    managedProgramPaths,
+    managedDataPaths,
+    managedPaths: [...managedProgramPaths, ...managedDataPaths],
     lastAction: action.phase,
     lastUpdatedAt: new Date().toISOString(),
     logFile: logFilePath

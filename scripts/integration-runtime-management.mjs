@@ -90,6 +90,21 @@ try {
     const omniroute = report.components.find((item) => item.name === "omniroute")
     const codeServer = report.components.find((item) => item.name === "code-server")
     const npmPackages = report.components.find((item) => item.name === "npm-packages")
+    assert(report.layout?.separated === true, `Expected separated runtime layout. Output:\n${stdout}`)
+    assertArrayEquals(
+      report.layout?.programRoots ?? [],
+      [path.join(managedRoot, "bin"), path.join(managedRoot, "components")],
+      "runtime program roots"
+    )
+    assertArrayEquals(
+      report.layout?.externalDataRoots ?? [],
+      [
+        path.join(managedRoot, "config"),
+        path.join(managedRoot, "logs"),
+        path.join(managedRoot, "data")
+      ],
+      "runtime external data roots"
+    )
 
     if (
       !nodeComponent ||
@@ -107,6 +122,10 @@ try {
     if (!npmPackages || npmPackages.status !== "not-installed") {
       throw new Error(`Expected npm-packages to remain not-installed for filtered install. Output:\n${stdout}`)
     }
+    assertPathsSeparated(nodeComponent.programPaths, nodeComponent.externalDataPaths, "node separation")
+    assertPathsSeparated(dotnet.programPaths, dotnet.externalDataPaths, "dotnet separation")
+    assertPathsSeparated(omniroute.programPaths, omniroute.externalDataPaths, "omniroute separation")
+    assertPathsSeparated(codeServer.programPaths, codeServer.externalDataPaths, "code-server separation")
 
     const dotnetManifest = path.join(
       managedRoot,
@@ -256,6 +275,14 @@ try {
       {
         title: "Installed Runtime Tree",
         lines: installedTreeLines.length > 0 ? installedTreeLines : ["- Not captured"]
+      },
+      {
+        title: "Runtime Separation Checks",
+        lines: [
+          `- Program roots: ${path.join(managedRoot, "bin")}, ${path.join(managedRoot, "components")}`,
+          `- External data roots: ${path.join(managedRoot, "config")}, ${path.join(managedRoot, "logs")}, ${path.join(managedRoot, "data")}`,
+          "- Verified that program paths and external data paths remain separated in runtime state output"
+        ]
       }
     ]
   })
@@ -303,6 +330,27 @@ function assertIncludes(output, expected, label) {
 function assertFile(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Expected file to exist: ${filePath}`)
+  }
+}
+
+function assertArrayEquals(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `Expected ${label} to equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    )
+  }
+}
+
+function assertPathsSeparated(programPaths, externalDataPaths, label) {
+  const overlaps = programPaths.filter((programPath) => externalDataPaths.includes(programPath))
+  if (overlaps.length > 0) {
+    throw new Error(`Expected ${label} to keep program/data paths separated, overlaps: ${overlaps.join(", ")}`)
+  }
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message)
   }
 }
 

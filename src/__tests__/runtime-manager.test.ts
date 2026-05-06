@@ -74,10 +74,22 @@ describe("runtime manager", () => {
     })
 
     expect(report.ready).toBe(true)
+    expect(report.layout.separated).toBe(true)
+    expect(report.layout.programRoots).toEqual([
+      path.join(runtimeRoot, "bin"),
+      path.join(runtimeRoot, "components")
+    ])
+    expect(report.layout.externalDataRoots).toEqual([
+      path.join(runtimeRoot, "config"),
+      path.join(runtimeRoot, "logs"),
+      path.join(runtimeRoot, "data")
+    ])
     expect(report.components.map((item) => item.status)).toEqual([
       "installed",
       "installed"
     ])
+    expect(report.components[0]?.programPaths[0]).toContain(path.join(runtimeRoot, "components"))
+    expect(report.components[0]?.externalDataPaths[0]).toContain(path.join(runtimeRoot, "config"))
 
     await rm(runtimeRoot, { recursive: true, force: true })
   })

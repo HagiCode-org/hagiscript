@@ -14,6 +14,8 @@ export interface RuntimeComponentState {
   type: string
   status: RuntimeComponentStatus
   version: string | null
+  managedProgramPaths: string[]
+  managedDataPaths: string[]
   managedPaths: string[]
   lastAction: "install" | "remove" | "update" | null
   lastUpdatedAt: string | null
