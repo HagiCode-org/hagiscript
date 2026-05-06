@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
-import { join, relative } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { tmpdir } from "node:os"
 import {
   installNodeRuntime,
@@ -377,6 +377,8 @@ async function executeNodeComponent(
   paths: ResolvedRuntimePaths,
   logFilePath: string
 ): Promise<RuntimeComponentState> {
+  await mkdir(dirname(paths.nodeRuntime), { recursive: true })
+
   if (phase === "remove") {
     await rm(paths.nodeRuntime, { recursive: true, force: true })
     await removeWrapper(paths.bin, "node")

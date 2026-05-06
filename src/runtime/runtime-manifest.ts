@@ -336,8 +336,16 @@ function validateRuntimePackageCatalogEntry(
   errors: string[]
 ): RuntimePackageCatalogEntry[] {
   const entryObject = toRecord(value, label, errors)
-  const packageName = readRequiredString(entryObject, `${label}.packageName`, errors)
-  const installSpec = readRequiredString(entryObject, `${label}.installSpec`, errors)
+  const packageName = readRequiredString(
+    entryObject.packageName,
+    `${label}.packageName`,
+    errors
+  )
+  const installSpec = readRequiredString(
+    entryObject.installSpec,
+    `${label}.installSpec`,
+    errors
+  )
 
   return [
     {

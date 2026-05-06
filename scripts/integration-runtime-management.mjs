@@ -15,7 +15,7 @@ import { runProcess } from "./process-runner.mjs"
 const repoRoot = path.resolve(process.argv[2] ?? ".")
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hagiscript-runtime-management-"))
 const tracker = createStageTracker()
-const manifestPath = path.join(repoRoot, "tests", "runtime", "fixtures", "runtime-manifest.yaml")
+const manifestPath = path.join(repoRoot, "runtime", "manifest.yaml")
 const failingManifestPath = path.join(
   repoRoot,
   "tests",
@@ -26,6 +26,7 @@ const failingManifestPath = path.join(
 const managedRoot = path.join(tempRoot, "managed runtime")
 const failingRoot = path.join(tempRoot, "managed runtime failure")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
+let installedTreeLines = []
 let diagnostics
 let finalResult = "failed"
 
@@ -50,7 +51,9 @@ try {
         "--from-manifest",
         manifestPath,
         "--runtime-root",
-        managedRoot
+        managedRoot,
+        "--components",
+        "node,dotnet,omniroute,code-server"
       ],
       {
         cwd: repoRoot,
@@ -82,18 +85,67 @@ try {
       }
     )
     const report = JSON.parse(stdout)
-    const alpha = report.components.find((item) => item.name === "alpha")
-    const beta = report.components.find((item) => item.name === "beta")
+    const nodeComponent = report.components.find((item) => item.name === "node")
+    const dotnet = report.components.find((item) => item.name === "dotnet")
+    const omniroute = report.components.find((item) => item.name === "omniroute")
+    const codeServer = report.components.find((item) => item.name === "code-server")
+    const npmPackages = report.components.find((item) => item.name === "npm-packages")
 
-    if (!alpha || alpha.status !== "installed" || !beta || beta.status !== "installed") {
+    if (
+      !nodeComponent ||
+      nodeComponent.status !== "installed" ||
+      !dotnet ||
+      dotnet.status !== "installed" ||
+      !omniroute ||
+      omniroute.status !== "installed" ||
+      !codeServer ||
+      codeServer.status !== "installed"
+    ) {
       throw new Error(`Unexpected installed component state: ${stdout}`)
     }
 
-    const alphaConfig = path.join(managedRoot, "config", "alpha", "config.txt")
-    const betaConfig = path.join(managedRoot, "config", "beta", "config.txt")
-    assertFile(alphaConfig)
-    assertFile(betaConfig)
-    assertIncludes(fs.readFileSync(alphaConfig, "utf8"), "component=alpha", "alpha template output")
+    if (!npmPackages || npmPackages.status !== "not-installed") {
+      throw new Error(`Expected npm-packages to remain not-installed for filtered install. Output:\n${stdout}`)
+    }
+
+    const dotnetManifest = path.join(
+      managedRoot,
+      "components",
+      "dotnet",
+      "runtime",
+      "current",
+      "runtime-manifest.json"
+    )
+    const omnirouteConfig = path.join(managedRoot, "config", "omniroute", "config.yaml")
+    const codeServerConfig = path.join(managedRoot, "config", "code-server", "config.yaml")
+    const omnirouteBin = path.join(
+      managedRoot,
+      "bin",
+      process.platform === "win32" ? "omniroute.cmd" : "omniroute"
+    )
+    const codeServerBin = path.join(
+      managedRoot,
+      "bin",
+      process.platform === "win32" ? "code-server.cmd" : "code-server"
+    )
+
+    assertFile(dotnetManifest)
+    assertFile(omnirouteConfig)
+    assertFile(codeServerConfig)
+    assertFile(omnirouteBin)
+    assertFile(codeServerBin)
+    assertIncludes(
+      fs.readFileSync(omnirouteConfig, "utf8"),
+      `runtimeRoot: "${managedRoot}"`,
+      "omniroute config output"
+    )
+    assertIncludes(
+      fs.readFileSync(codeServerConfig, "utf8"),
+      "user-data-dir:",
+      "code-server config output"
+    )
+
+    installedTreeLines = renderDirectoryTree(managedRoot)
   })
 
   await tracker.run("runtime remove purge", async () => {
@@ -108,7 +160,7 @@ try {
         "--runtime-root",
         managedRoot,
         "--components",
-        "alpha",
+        "code-server",
         "--purge"
       ],
       {
@@ -119,8 +171,8 @@ try {
     )
 
     assertIncludes(stdout, "Runtime remove complete.", "runtime remove output")
-    if (fs.existsSync(path.join(managedRoot, "config", "alpha"))) {
-      throw new Error("Expected purge removal to clean alpha config directory.")
+    if (fs.existsSync(path.join(managedRoot, "config", "code-server"))) {
+      throw new Error("Expected purge removal to clean code-server config directory.")
     }
   })
 
@@ -199,7 +251,13 @@ try {
     diagnostics: fallbackDiagnostics,
     stages: tracker.stages,
     skipped: tracker.skipped,
-    finalResult
+    finalResult,
+    extraSections: [
+      {
+        title: "Installed Runtime Tree",
+        lines: installedTreeLines.length > 0 ? installedTreeLines : ["- Not captured"]
+      }
+    ]
   })
   fs.writeFileSync(summaryPath, summary)
   process.stdout.write(`\n${summary}`)
@@ -246,6 +304,36 @@ function assertFile(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Expected file to exist: ${filePath}`)
   }
+}
+
+function renderDirectoryTree(rootPath, maxDepth = 4) {
+  const lines = ["```text", `${path.basename(rootPath)}/`]
+  walkDirectory(rootPath, "", 0, maxDepth, lines)
+  lines.push("```")
+  return lines
+}
+
+function walkDirectory(currentPath, prefix, depth, maxDepth, lines) {
+  if (depth >= maxDepth) {
+    return
+  }
+
+  const entries = fs
+    .readdirSync(currentPath, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith("."))
+    .sort((left, right) => left.name.localeCompare(right.name))
+
+  entries.forEach((entry, index) => {
+    const isLast = index === entries.length - 1
+    const connector = isLast ? "└── " : "├── "
+    const nextPrefix = `${prefix}${isLast ? "    " : "│   "}`
+    const fullPath = path.join(currentPath, entry.name)
+    lines.push(`${prefix}${connector}${entry.name}${entry.isDirectory() ? "/" : ""}`)
+
+    if (entry.isDirectory()) {
+      walkDirectory(fullPath, nextPrefix, depth + 1, maxDepth, lines)
+    }
+  })
 }
 
 function log(message) {

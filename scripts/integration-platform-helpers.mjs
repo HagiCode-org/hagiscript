@@ -110,7 +110,8 @@ export function formatIntegrationSummary({
   diagnostics,
   stages,
   skipped,
-  finalResult
+  finalResult,
+  extraSections = []
 }) {
   const lines = [
     "# Hagiscript Installed Runtime Integration Summary",
@@ -142,6 +143,20 @@ export function formatIntegrationSummary({
   } else {
     for (const skip of skipped) {
       lines.push(`- ${skip.name}: skipped - ${skip.reason}`);
+    }
+  }
+
+  for (const section of extraSections) {
+    if (!section?.title) {
+      continue;
+    }
+
+    lines.push("", `## ${section.title}`, "");
+
+    if (Array.isArray(section.lines) && section.lines.length > 0) {
+      lines.push(...section.lines);
+    } else {
+      lines.push("- None");
     }
   }
 
