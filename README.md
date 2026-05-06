@@ -215,6 +215,44 @@ Synced: @openspec/cli (sync)
 
 When fallback is triggered, HagiScript logs `Fallback used: ...` during execution and records `Fallback detail: ...` in the final summary so CI or desktop automation can see which mirror failed, which official registry retry was used, and whether that retry succeeded.
 
+### Runtime Package Management
+
+`hagiscript runtime` adds a manifest-driven package manager for the broader `hagicode-runtime` contract. By default it loads `runtime/manifest.yaml` from the installed package, resolves the managed runtime root to `~/.hagicode/runtime`, and keeps all mutable state under that root unless `--runtime-root <path>` overrides it for a specific install, deployment mode, or automation run.
+
+```bash
+hagiscript runtime install
+hagiscript runtime install --components node,npm-packages --dry-run
+hagiscript runtime update --runtime-root /opt/hagicode/runtime --check-only
+hagiscript runtime remove --components code-server --purge
+hagiscript runtime state --json
+```
+
+The packaged runtime manifest aligns its default component boundaries with HagiCode Desktop:
+
+- Node is governed as a Desktop-aligned Node 22 toolchain component.
+- `.NET` is modeled as a Desktop-aligned 10.0 runtime component.
+- Mutable npm packages are installed into a managed prefix under the selected runtime root instead of the immutable Node payload or host-global npm locations.
+- `code-server` and `omniroute` stay grouped as vendored bundled-runtime components rather than npm-managed packages.
+
+The runtime layout is explicit and stable for downstream consumers:
+
+```text
+<runtime-root>/
+  bin/
+  config/
+  logs/
+  data/
+  state.json
+```
+
+`state.json` is the canonical contract for install, update, remove, and downstream inspection. Use `hagiscript runtime state --json` instead of probing files directly when Desktop, local bootstrap flows, or automation needs to know which components are installed, which managed paths are active, and whether the last lifecycle run succeeded.
+
+The package also ships a thin `hagicode-runtime` wrapper binary that delegates to `hagiscript runtime ...` for automation that prefers a runtime-oriented entrypoint:
+
+```bash
+hagicode-runtime install --runtime-root /srv/hagicode/runtime
+```
+
 Use the library API from ESM consumers:
 
 ```ts

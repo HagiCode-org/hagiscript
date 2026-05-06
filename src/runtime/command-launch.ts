@@ -71,6 +71,7 @@ export function requiresShellLaunch(
   _commandPath: string,
   _platform: NodeJS.Platform = process.platform
 ): boolean {
+  void _platform;
   // Execa already handles Windows command shims without a shell wrapper.
   // Keeping direct execution preserves argv boundaries for paths with spaces.
   return false;

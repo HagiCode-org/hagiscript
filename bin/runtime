@@ -1,0 +1,16 @@
+#!/usr/bin/env node
+
+import { runCli } from "../dist/cli.js"
+
+const argv = [
+  process.argv[0] ?? process.execPath,
+  "hagicode-runtime",
+  "runtime",
+  ...process.argv.slice(2)
+]
+
+runCli(argv).catch((error) => {
+  const message = error instanceof Error ? error.message : String(error)
+  process.stderr.write(`${message}\n`)
+  process.exitCode = 1
+})

@@ -20,10 +20,13 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "hagiscript": "dist/cli.js"
+    "hagiscript": "dist/cli.js",
+    "hagicode-runtime": "bin/runtime"
   },
   "files": [
     "dist",
+    "bin",
+    "runtime",
     "README.md",
     "README_cn.md"
   ],
@@ -35,6 +38,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "integration:installed-runtime": "node scripts/integration-installed-runtime.mjs",
+    "integration:runtime-management": "node scripts/integration-runtime-management.mjs",
     "pack:check": "node scripts/verify-package.mjs",
     "publish:check-prereqs": "node scripts/verify-npm-publish-prereqs.mjs",
     "publish:prepare-dev-version": "node scripts/prepare-dev-version.mjs",
@@ -59,7 +63,8 @@
   "dependencies": {
     "commander": "^14.0.1",
     "execa": "^9.6.1",
-    "semver": "^7.7.4"
+    "semver": "^7.7.4",
+    "yaml": "^2.8.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",

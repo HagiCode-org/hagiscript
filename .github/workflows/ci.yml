@@ -120,7 +120,7 @@ jobs:
       - name: Run installed HagiScript runtime integration test
         env:
           HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration-summary.md
-        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration.log" npm run integration:installed-runtime
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration.log" npm run integration:runtime-management
 
       - name: Append runtime-management summary
         if: always()

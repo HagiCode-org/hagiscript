@@ -1,0 +1,4 @@
+runtimeRoot: "{{RUNTIME_ROOT}}"
+listen: "127.0.0.1:39001"
+dataDir: "{{DATA_DIR}}/omniroute"
+logDir: "{{LOGS_DIR}}/omniroute"

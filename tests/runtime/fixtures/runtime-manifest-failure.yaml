@@ -1,0 +1,42 @@
+runtime:
+  name: "fixture-runtime-failure"
+  version: "1.0.0"
+
+paths:
+  runtimeRoot: "~/.hagicode/runtime-fixture-failure"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "data/npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+
+components:
+  - name: "alpha"
+    type: "bundled-runtime"
+    installScript: "scripts/install-component.mjs"
+    verifyScript: "scripts/verify-component.mjs"
+    version: "1.0.0"
+
+  - name: "failer"
+    type: "bundled-runtime"
+    installScript: "scripts/fail-component.mjs"
+    version: "1.0.0"
+
+  - name: "late"
+    type: "bundled-runtime"
+    installScript: "scripts/install-component.mjs"
+    verifyScript: "scripts/verify-component.mjs"
+    version: "1.0.0"
+
+phases:
+  install:
+    order: ["alpha", "failer", "late"]
+  remove:
+    order: ["late", "failer", "alpha"]
+  update:
+    order: ["alpha", "failer", "late"]

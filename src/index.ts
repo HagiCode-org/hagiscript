@@ -62,3 +62,40 @@ export {
   type ToolSyncRequirement,
   type ToolSyncSelection
 } from "./runtime/tool-sync-catalog.js";
+export {
+  getDefaultRuntimeManifestPath,
+  loadRuntimeManifest,
+  type LoadedRuntimeManifest,
+  type RuntimeComponentDefinition,
+  type RuntimeLifecyclePhase,
+  type RuntimeManifestPaths
+} from "./runtime/runtime-manifest.js";
+export {
+  defaultRuntimeRoot,
+  getComponentConfigDirectory,
+  getComponentManagedRoot,
+  resolveRuntimePaths,
+  type ResolvedRuntimePaths
+} from "./runtime/runtime-paths.js";
+export {
+  createInitialRuntimeState,
+  mergeRuntimeState,
+  readRuntimeState,
+  writeRuntimeState,
+  type RuntimeComponentState,
+  type RuntimeOperationState,
+  type RuntimeState
+} from "./runtime/runtime-state.js";
+export {
+  installRuntime,
+  planRuntimeLifecycle,
+  queryRuntimeState,
+  removeRuntime,
+  renderRuntimeStateText,
+  runRuntimeLifecycle,
+  updateRuntime,
+  type RuntimeLifecycleOptions,
+  type RuntimeLifecycleResult,
+  type RuntimePlannedAction,
+  type RuntimeStateReport
+} from "./runtime/runtime-manager.js";
