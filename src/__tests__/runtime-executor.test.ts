@@ -19,8 +19,9 @@ const fixtureManifestPath = path.resolve(
 
 describe("runtime executor environment", () => {
   it("injects canonical runtime homes, PM2 home, and managed PATH entries", async () => {
+    const runtimeRoot = path.resolve("tmp", "hagiscript-runtime")
     const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
-    const paths = resolveRuntimePaths(manifest, { runtimeRoot: "/tmp/hagiscript-runtime" })
+    const paths = resolveRuntimePaths(manifest, { runtimeRoot })
     const component = manifest.componentMap.get("alpha")
 
     expect(component).toBeDefined()
@@ -51,13 +52,13 @@ describe("runtime executor environment", () => {
       }
     )
 
-    expect(env.HAGICODE_RUNTIME_HOME).toBe(path.join("/tmp/hagiscript-runtime", "program"))
+    expect(env.HAGICODE_RUNTIME_HOME).toBe(path.join(runtimeRoot, "program"))
     expect(env.HAGICODE_RUNTIME_DATA_HOME).toBe(
-      path.join("/tmp/hagiscript-runtime", "runtime-data", "components", "alpha-data")
+      path.join(runtimeRoot, "runtime-data", "components", "alpha-data")
     )
     expect(env.PM2_HOME).toBe(
       path.join(
-        "/tmp/hagiscript-runtime",
+        runtimeRoot,
         "runtime-data",
         "components",
         "alpha-data",
@@ -65,12 +66,12 @@ describe("runtime executor environment", () => {
       )
     )
     expect(env.PATH?.startsWith(
-      [
-        path.join("/tmp/hagiscript-runtime", "program", "components", "node", "bin"),
-        path.join("/tmp/hagiscript-runtime", "program", "npm", "bin"),
-        path.join("/tmp/hagiscript-runtime", "program", "bin")
-      ].join(":")
-    )).toBe(true)
+        [
+          path.join(runtimeRoot, "program", "components", "node", "bin"),
+          path.join(runtimeRoot, "program", "npm", "bin"),
+          path.join(runtimeRoot, "program", "bin")
+        ].join(process.platform === "win32" ? ";" : ":")
+      )).toBe(true)
     expect(env.CUSTOM_FLAG).toBe("1")
   })
 })

@@ -105,19 +105,36 @@ describe("pm2 manager", () => {
 
       expect(runner).toHaveBeenCalledTimes(2)
       expect(runner.mock.calls[0]?.[0]).toBe(
-        path.join(setup.runtimeRoot, "program", "components", "node", "bin", "node")
-      )
-      expect(runner.mock.calls[0]?.[1]).toEqual([
         path.join(
           setup.runtimeRoot,
           "program",
-          "npm",
-          "lib",
-          "node_modules",
-          "pm2",
+          "components",
+          "node",
           "bin",
-          "pm2"
-        ),
+          process.platform === "win32" ? "node.exe" : "node"
+        )
+      )
+      expect(runner.mock.calls[0]?.[1]).toEqual([
+        process.platform === "win32"
+          ? path.join(
+              setup.runtimeRoot,
+              "program",
+              "npm",
+              "node_modules",
+              "pm2",
+              "bin",
+              "pm2"
+            )
+          : path.join(
+              setup.runtimeRoot,
+              "program",
+              "npm",
+              "lib",
+              "node_modules",
+              "pm2",
+              "bin",
+              "pm2"
+            ),
         "start",
         "node",
         "--name",
@@ -174,7 +191,7 @@ describe("pm2 manager", () => {
           path.join(setup.runtimeRoot, "program", "components", "node", "bin"),
           path.join(setup.runtimeRoot, "program", "npm", "bin"),
           path.join(setup.runtimeRoot, "program", "bin")
-        ].join(":")
+        ].join(process.platform === "win32" ? ";" : ":")
       )).toBe(true)
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
@@ -202,10 +219,7 @@ async function createPm2Fixture(): Promise<{
 
   await mkdir(path.join(componentRoot, "current"), { recursive: true })
   await mkdir(path.join(runtimeRoot, "program", "npm", "bin"), { recursive: true })
-  await mkdir(
-    path.join(runtimeRoot, "program", "npm", "lib", "node_modules", "pm2", "bin"),
-    { recursive: true }
-  )
+  await mkdir(getFixturePm2EntrypointDirectory(runtimeRoot), { recursive: true })
   await mkdir(path.join(runtimeRoot, "program", "components", "node", "bin"), {
     recursive: true
   })
@@ -221,16 +235,29 @@ async function createPm2Fixture(): Promise<{
   )
   await chmod(path.join(runtimeRoot, "program", "npm", "bin", "pm2"), 0o755)
   await writeFile(
-    path.join(runtimeRoot, "program", "npm", "lib", "node_modules", "pm2", "bin", "pm2"),
+    getFixturePm2Entrypoint(runtimeRoot),
     "console.log('pm2 entrypoint');\n",
     "utf8"
   )
   await writeFile(
-    path.join(runtimeRoot, "program", "components", "node", "bin", "node"),
+    path.join(
+      runtimeRoot,
+      "program",
+      "components",
+      "node",
+      "bin",
+      process.platform === "win32" ? "node.exe" : "node"
+    ),
     "#!/usr/bin/env sh\n",
     "utf8"
   )
-  await chmod(path.join(runtimeRoot, "program", "components", "node", "bin", "node"), 0o755)
+  if (process.platform !== "win32") {
+    await chmod(getFixturePm2Entrypoint(runtimeRoot), 0o755)
+    await chmod(
+      path.join(runtimeRoot, "program", "components", "node", "bin", "node"),
+      0o755
+    )
+  }
 
   await writeFile(
     manifestPath,
@@ -284,4 +311,14 @@ components:
     manifestPath,
     runtimeRoot
   }
+}
+
+function getFixturePm2EntrypointDirectory(runtimeRoot: string): string {
+  return process.platform === "win32"
+    ? path.join(runtimeRoot, "program", "npm", "node_modules", "pm2", "bin")
+    : path.join(runtimeRoot, "program", "npm", "lib", "node_modules", "pm2", "bin")
+}
+
+function getFixturePm2Entrypoint(runtimeRoot: string): string {
+  return path.join(getFixturePm2EntrypointDirectory(runtimeRoot), "pm2")
 }

@@ -489,7 +489,7 @@ try {
   }
 
   if (process.env.HAGISCRIPT_KEEP_INTEGRATION_TEMP !== "1") {
-    fs.rmSync(tempRoot, { recursive: true, force: true })
+    await cleanupTempRoot(tempRoot)
   } else {
     log(`Keeping integration temp directory: ${tempRoot}`)
   }
@@ -637,4 +637,32 @@ async function killManagedPm2(runtimeRoot, serviceName) {
   } catch {
     // Best-effort cleanup for the integration daemon.
   }
+
+  await sleep(process.platform === "win32" ? 1500 : 250)
+}
+
+async function cleanupTempRoot(targetRoot) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      fs.rmSync(targetRoot, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt === 7) {
+        log(
+          `Temp cleanup skipped after repeated failures: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+        return
+      }
+
+      await sleep(process.platform === "win32" ? 500 : 100)
+    }
+  }
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds)
+  })
 }
