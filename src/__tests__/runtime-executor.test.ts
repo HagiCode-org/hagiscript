@@ -1,7 +1,11 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { buildManagedRuntimeEnvironment } from "../runtime/runtime-executor.js"
+import {
+  buildManagedRuntimeEnvironment,
+  getManagedNpmBinDirectory
+} from "../runtime/runtime-executor.js"
+import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
 import { loadRuntimeManifest } from "../runtime/runtime-manifest.js"
 import {
   getComponentConfigDirectory,
@@ -65,12 +69,13 @@ describe("runtime executor environment", () => {
         "pm2"
       )
     )
+    const expectedPathPrefix = [
+      path.dirname(getRuntimeExecutablePaths(paths.nodeRuntime).nodePath),
+      getManagedNpmBinDirectory(paths.npmPrefix),
+      paths.bin
+    ].join(process.platform === "win32" ? ";" : ":")
     expect(env.PATH?.startsWith(
-        [
-          path.join(runtimeRoot, "program", "components", "node", "bin"),
-          path.join(runtimeRoot, "program", "npm", "bin"),
-          path.join(runtimeRoot, "program", "bin")
-        ].join(process.platform === "win32" ? ";" : ":")
+        expectedPathPrefix
       )).toBe(true)
     expect(env.CUSTOM_FLAG).toBe("1")
   })

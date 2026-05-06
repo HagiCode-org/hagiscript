@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
+import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
 import {
   resolveManagedPm2ServiceDefinition,
   runManagedPm2Command
@@ -104,16 +105,7 @@ describe("pm2 manager", () => {
       })
 
       expect(runner).toHaveBeenCalledTimes(2)
-      expect(runner.mock.calls[0]?.[0]).toBe(
-        path.join(
-          setup.runtimeRoot,
-          "program",
-          "components",
-          "node",
-          "bin",
-          process.platform === "win32" ? "node.exe" : "node"
-        )
-      )
+      expect(runner.mock.calls[0]?.[0]).toBe(getFixtureNodePath(setup.runtimeRoot))
       expect(runner.mock.calls[0]?.[1]).toEqual([
         process.platform === "win32"
           ? path.join(
@@ -233,30 +225,22 @@ async function createPm2Fixture(): Promise<{
     "#!/usr/bin/env sh\n",
     "utf8"
   )
-  await chmod(path.join(runtimeRoot, "program", "npm", "bin", "pm2"), 0o755)
+  if (process.platform !== "win32") {
+    await chmod(path.join(runtimeRoot, "program", "npm", "bin", "pm2"), 0o755)
+  }
   await writeFile(
     getFixturePm2Entrypoint(runtimeRoot),
     "console.log('pm2 entrypoint');\n",
     "utf8"
   )
   await writeFile(
-    path.join(
-      runtimeRoot,
-      "program",
-      "components",
-      "node",
-      "bin",
-      process.platform === "win32" ? "node.exe" : "node"
-    ),
+    getFixtureNodePath(runtimeRoot),
     "#!/usr/bin/env sh\n",
     "utf8"
   )
   if (process.platform !== "win32") {
     await chmod(getFixturePm2Entrypoint(runtimeRoot), 0o755)
-    await chmod(
-      path.join(runtimeRoot, "program", "components", "node", "bin", "node"),
-      0o755
-    )
+    await chmod(getFixtureNodePath(runtimeRoot), 0o755)
   }
 
   await writeFile(
@@ -321,4 +305,10 @@ function getFixturePm2EntrypointDirectory(runtimeRoot: string): string {
 
 function getFixturePm2Entrypoint(runtimeRoot: string): string {
   return path.join(getFixturePm2EntrypointDirectory(runtimeRoot), "pm2")
+}
+
+function getFixtureNodePath(runtimeRoot: string): string {
+  return getRuntimeExecutablePaths(
+    path.join(runtimeRoot, "program", "components", "node")
+  ).nodePath
 }
