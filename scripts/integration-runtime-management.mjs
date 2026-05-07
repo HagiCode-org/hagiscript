@@ -307,7 +307,8 @@ try {
         ],
         repoRoot
       )
-      assertIncludes(startOutput, "Status: online", `${service} start status`)
+      assertIncludes(startOutput, `Action: start`, `${service} start output`)
+      assertIncludes(startOutput, `App: hagicode-${service}`, `${service} start app`)
 
       const statusOutput = await waitForManagedPm2Status(
         service,
