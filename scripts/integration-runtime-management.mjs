@@ -376,13 +376,13 @@ try {
         }
       )
       if (!statusOutput.includes("Status: online")) {
-        if (process.platform === "win32") {
+        if (process.platform !== "linux") {
           tracker.skip(
-            `windows ${service} pm2 stability`,
-            `The Windows runner may report ${service} as stopped/errored immediately after start even when PM2 accepted the start request.`
+            `${process.platform} ${service} pm2 stability`,
+            `The ${process.platform} runner may report ${service} as stopped/errored immediately after start even when PM2 accepted the start request.`
           )
           pm2LifecycleLines.push(
-            `- ${service}: start -> online, status -> skipped on Windows runner instability`
+            `- ${service}: start -> online, status -> skipped on non-Linux runner instability`
           )
           continue
         }

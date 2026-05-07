@@ -1,5 +1,6 @@
 import { createWriteStream } from "node:fs";
 import {
+  cp,
   mkdir,
   readdir,
   readFile,
@@ -44,12 +45,45 @@ export interface NodeArchiveExtractionOptions {
 
 export async function moveExtractedRootToTarget(
   extractedRoot: string,
-  targetDirectory: string
+  targetDirectory: string,
+  operations: NodeRuntimeMoveOperations = {}
 ): Promise<void> {
+  const moveOperations = {
+    mkdir,
+    rm,
+    rename,
+    cp,
+    ...operations
+  };
   await assertTargetIsEmptyOrMissing(targetDirectory);
-  await mkdir(dirname(targetDirectory), { recursive: true });
-  await rm(targetDirectory, { recursive: true, force: true });
-  await rename(extractedRoot, targetDirectory);
+  await moveOperations.mkdir(dirname(targetDirectory), { recursive: true });
+  await moveOperations.rm(targetDirectory, { recursive: true, force: true });
+
+  try {
+    await moveOperations.rename(extractedRoot, targetDirectory);
+  } catch (error) {
+    if (!shouldFallbackToCopy(error)) {
+      throw error;
+    }
+
+    await moveOperations.cp(extractedRoot, targetDirectory, {
+      recursive: true,
+      force: true
+    });
+    await moveOperations.rm(extractedRoot, { recursive: true, force: true });
+  }
+}
+
+export interface NodeRuntimeMoveOperations {
+  mkdir?: typeof mkdir;
+  rm?: typeof rm;
+  rename?: typeof rename;
+  cp?: typeof cp;
+}
+
+export function shouldFallbackToCopy(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "EPERM" || code === "EXDEV" || code === "EBUSY";
 }
 
 export async function assertTargetIsEmptyOrMissing(

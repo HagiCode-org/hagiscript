@@ -10,6 +10,7 @@ import {
 import {
   assertTargetIsEmptyOrMissing,
   extractNodeArchive,
+  moveExtractedRootToTarget,
   NodeRuntimeExtractionError
 } from "../runtime/node-extract.js";
 
@@ -113,6 +114,27 @@ describe("Node.js extraction guards", () => {
 
     expect(extractedRoot).toBe(join(staging, "node-root"));
     await expect(readdir(join(extractedRoot, "bin"))).resolves.toEqual(["node"]);
+  });
+
+  it("falls back to copy when rename is denied during final move", async () => {
+    const root = await makeTempRoot();
+    const extractedRoot = join(root, "staging", "node-v22.12.0");
+    const targetDirectory = join(root, "runtime");
+    await mkdir(join(extractedRoot, "bin"), { recursive: true });
+    await writeFile(join(extractedRoot, "bin", "node"), "node");
+
+    const renameError = Object.assign(new Error("rename blocked"), {
+      code: "EPERM"
+    });
+
+    await moveExtractedRootToTarget(extractedRoot, targetDirectory, {
+      rename: async () => {
+        throw renameError;
+      }
+    });
+
+    await expect(readdir(join(targetDirectory, "bin"))).resolves.toEqual(["node"]);
+    await expect(readdir(extractedRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
