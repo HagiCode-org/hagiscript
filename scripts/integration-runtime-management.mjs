@@ -309,19 +309,14 @@ try {
       )
       assertIncludes(startOutput, "Status: online", `${service} start status`)
 
-      const statusOutput = await runCapture(
-        process.execPath,
-        [
-          "dist/cli.js",
-          "pm2",
-          service,
-          "status",
-          "--from-manifest",
-          pm2ManifestPath,
-          "--runtime-root",
-          managedRoot
-        ],
-        repoRoot
+      const statusOutput = await waitForManagedPm2Status(
+        service,
+        "online",
+        {
+          manifestPath: pm2ManifestPath,
+          runtimeRoot: managedRoot,
+          repoRoot
+        }
       )
       assertIncludes(statusOutput, "Status: online", `${service} queried status`)
 
@@ -545,10 +540,50 @@ async function runCapture(command, args, cwd) {
   }
 }
 
+async function waitForManagedPm2Status(
+  service,
+  expectedStatus,
+  options
+) {
+  const attempts = process.platform === "darwin" ? 6 : 3
+  let lastOutput = ""
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    lastOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "pm2",
+        service,
+        "status",
+        "--from-manifest",
+        options.manifestPath,
+        "--runtime-root",
+        options.runtimeRoot
+      ],
+      options.repoRoot
+    )
+
+    if (lastOutput.includes(`Status: ${expectedStatus}`)) {
+      return lastOutput
+    }
+
+    if (attempt < attempts) {
+      await delay(500 * attempt)
+    }
+  }
+
+  return lastOutput
+}
+
 function assertIncludes(output, expected, label) {
   if (!output.includes(expected)) {
     throw new Error(`Expected ${label} to include ${expected}. Output:\n${output}`)
   }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms))
 }
 
 function assertFile(filePath) {
@@ -693,7 +728,7 @@ async function cleanupTempRoot(targetRoot) {
 
 function sleep(milliseconds) {
   return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds)
+    globalThis.setTimeout(resolve, milliseconds)
   })
 }
 
