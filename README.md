@@ -45,7 +45,7 @@ The split is intentional:
 The packaged manifest currently manages:
 
 - `node` - managed Node.js runtime
-- `dotnet` - managed .NET runtime
+- `dotnet` - managed .NET and ASP.NET Core runtime
 - `npm-packages` - managed npm prefix, including `pm2`
 - `omniroute` - vendored bundled runtime
 - `code-server` - vendored bundled runtime

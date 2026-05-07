@@ -118,13 +118,13 @@ async function runProcessBootstrap(command, args = [], options = {}) {
   let timeout;
 
   if (typeof options.timeoutMs === "number" && options.timeoutMs > 0) {
-    timeout = setTimeout(() => {
+    timeout = globalThis.setTimeout(() => {
       timedOut = true;
       if (!subprocess.killed) {
         subprocess.kill("SIGTERM");
       }
 
-      setTimeout(() => {
+      globalThis.setTimeout(() => {
         if (!subprocess.killed) {
           forcedKill = true;
           subprocess.kill("SIGKILL");
@@ -160,7 +160,7 @@ async function runProcessBootstrap(command, args = [], options = {}) {
 
   const { code, signal } = await waitForSubprocess(subprocess);
   if (timeout) {
-    clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
   }
   const result = {
     command,

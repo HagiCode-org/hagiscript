@@ -28,7 +28,7 @@ const managedRoot = path.join(tempRoot, "managed-runtime")
 const failingRoot = path.join(tempRoot, "managed-runtime-failure")
 const pm2ManifestPath = path.join(tempRoot, "runtime-manifest-pm2.yaml")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
-const runtimeCommandTimeoutMs = 10 * 60_000
+const runtimeCommandTimeoutMs = 20 * 60_000
 const pm2CommandTimeoutMs = 5 * 60_000
 let installedTreeLines = []
 let pm2LifecycleLines = []
@@ -207,6 +207,21 @@ try {
       "current",
       "runtime-manifest.json"
     )
+    const dotnetExecutable = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "dotnet",
+      "runtime",
+      "current",
+      process.platform === "win32" ? "dotnet.exe" : "dotnet"
+    )
+    const dotnetBin = path.join(
+      managedRoot,
+      "program",
+      "bin",
+      process.platform === "win32" ? "dotnet.cmd" : "dotnet"
+    )
     const omnirouteConfig = path.join(
       managedRoot,
       "runtime-data",
@@ -239,10 +254,32 @@ try {
     )
 
     assertFile(dotnetManifest)
+    assertFile(dotnetExecutable)
+    assertFile(dotnetBin)
     assertFile(omnirouteConfig)
     assertFile(codeServerConfig)
     assertFile(omnirouteBin)
     assertFile(codeServerBin)
+    const { stdout: dotnetRuntimesOutput } = await runProcess(
+      dotnetBin,
+      ["--list-runtimes"],
+      {
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeoutMs: 60_000
+      }
+    )
+    assertIncludes(
+      dotnetRuntimesOutput,
+      "Microsoft.NETCore.App 10.0.5",
+      ".NET runtime inventory"
+    )
+    assertIncludes(
+      dotnetRuntimesOutput,
+      "Microsoft.AspNetCore.App 10.0.5",
+      "ASP.NET Core runtime inventory"
+    )
     assertIncludes(
       fs.readFileSync(omnirouteConfig, "utf8"),
       `runtimeHome: "${path.join(managedRoot, "program")}"`,

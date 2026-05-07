@@ -35,6 +35,7 @@ components:
     channelVersion: "10.0"
     installScript: "scripts/install-dotnet.mjs"
     verifyScript: "scripts/verify-dotnet.mjs"
+    removeScript: "scripts/remove-dotnet.mjs"
 
   - name: "npm-packages"
     type: "package"
