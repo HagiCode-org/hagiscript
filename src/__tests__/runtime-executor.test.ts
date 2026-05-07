@@ -3,7 +3,8 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   buildManagedRuntimeEnvironment,
-  getManagedNpmBinDirectory
+  getManagedNpmBinDirectory,
+  prependPathEntries
 } from "../runtime/runtime-executor.js"
 import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
 import { loadRuntimeManifest } from "../runtime/runtime-manifest.js"
@@ -78,6 +79,22 @@ describe("runtime executor environment", () => {
     expect(runtimePath?.startsWith(
         expectedPathPrefix
       )).toBe(true)
+    expect(env.CUSTOM_FLAG).toBe("1")
+  })
+
+  it("normalizes duplicate Windows PATH keys before prepending managed entries", () => {
+    const env = prependPathEntries(
+      {
+        PATH: "C:\\Windows\\System32",
+        Path: "C:\\stale-path",
+        CUSTOM_FLAG: "1"
+      },
+      ["C:\\managed\\node", "C:\\managed\\npm"],
+      "win32"
+    )
+
+    expect(env.Path).toBe("C:\\managed\\node;C:\\managed\\npm;C:\\Windows\\System32")
+    expect(env.PATH).toBeUndefined()
     expect(env.CUSTOM_FLAG).toBe("1")
   })
 })

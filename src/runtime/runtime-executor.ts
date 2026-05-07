@@ -206,16 +206,18 @@ export function buildManagedRuntimeEnvironment(
 
 export function prependPathEntries(
   env: NodeJS.ProcessEnv,
-  pathEntries: readonly string[]
+  pathEntries: readonly string[],
+  platform: NodeJS.Platform = process.platform
 ): NodeJS.ProcessEnv {
-  const pathKey = process.platform === "win32" ? "Path" : "PATH"
-  const currentPath = env[pathKey] ?? env.PATH ?? ""
+  const pathKey = platform === "win32" ? "Path" : "PATH"
+  const currentPath = getPathValue(env, platform)
+  const environmentWithoutPath = stripPathKeys(env, platform)
 
   return {
-    ...env,
+    ...environmentWithoutPath,
     [pathKey]: [...pathEntries, currentPath]
       .filter(Boolean)
-      .join(process.platform === "win32" ? ";" : ":")
+      .join(platform === "win32" ? ";" : ":")
   }
 }
 
@@ -230,6 +232,33 @@ export function getManagedRuntimePathEntries(paths: ResolvedRuntimePaths): strin
 
 export function getManagedNpmBinDirectory(npmPrefix: string): string {
   return process.platform === "win32" ? npmPrefix : `${npmPrefix}/bin`
+}
+
+function getPathValue(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
+  if (platform !== "win32") {
+    return env.PATH ?? ""
+  }
+
+  for (const [key, value] of Object.entries(env)) {
+    if (key.toLowerCase() === "path" && typeof value === "string") {
+      return value
+    }
+  }
+
+  return ""
+}
+
+function stripPathKeys(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform
+): NodeJS.ProcessEnv {
+  if (platform !== "win32") {
+    return { ...env }
+  }
+
+  return Object.fromEntries(
+    Object.entries(env).filter(([key]) => key.toLowerCase() !== "path")
+  )
 }
 
 function scriptPathForEnv(
