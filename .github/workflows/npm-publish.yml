@@ -47,6 +47,9 @@ jobs:
 
       - name: Resolve development version
         id: version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HAGISCRIPT_REQUIRE_UNRELEASED_TAG: "1"
         run: |
           version="$(npm run --silent publish:prepare-dev-version)"
           echo "version=$version" >> "$GITHUB_OUTPUT"

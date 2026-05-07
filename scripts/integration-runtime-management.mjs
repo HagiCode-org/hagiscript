@@ -32,6 +32,7 @@ const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
 const runtimeCommandTimeoutMs = 20 * 60_000
 const pm2CommandTimeoutMs = 5 * 60_000
 let installedTreeLines = []
+let dotnetVerificationLines = []
 let pm2LifecycleLines = []
 let diagnostics
 let finalResult = "failed"
@@ -281,6 +282,21 @@ try {
       "Microsoft.AspNetCore.App 10.0.5",
       "ASP.NET Core runtime inventory"
     )
+    const dotnetManifestData = JSON.parse(fs.readFileSync(dotnetManifest, "utf8"))
+    dotnetVerificationLines = [
+      `- Component status: ${dotnet.status}`,
+      `- Managed executable: ${dotnetExecutable}`,
+      `- Bin wrapper: ${dotnetBin}`,
+      `- Manifest channel version: ${dotnetManifestData.channelVersion ?? "n/a"}`,
+      `- Manifest installed version: ${dotnetManifestData.installedVersion ?? "n/a"}`,
+      `- Manifest dotnet path: ${dotnetManifestData.dotnetPath ?? "n/a"}`,
+      "- Verified runtimes:",
+      ...dotnetRuntimesOutput
+        .trim()
+        .split(/\r?\n/u)
+        .filter(Boolean)
+        .map((line) => `  - ${line}`)
+    ]
     assertIncludes(
       fs.readFileSync(omnirouteConfig, "utf8"),
       `runtimeHome: "${path.join(managedRoot, "program")}"`,
@@ -517,6 +533,10 @@ try {
       {
         title: "Installed Runtime Tree",
         lines: installedTreeLines.length > 0 ? installedTreeLines : ["- Not captured"]
+      },
+      {
+        title: "Managed Dotnet Verification",
+        lines: dotnetVerificationLines.length > 0 ? dotnetVerificationLines : ["- Not captured"]
       },
       {
         title: "Runtime Separation Checks",
