@@ -3,11 +3,12 @@ import path from "node:path"
 import process from "node:process"
 import {
   ensureDirectory,
+  installVendoredPackage,
   materializeTemplate,
   readRuntimeScriptContext,
   writeCommandWrapper,
   writeComponentMarker,
-  writeManagedServiceEntrypoint
+  writeManagedPackageLauncher
 } from "../lib/runtime-script-lib.mjs"
 
 const context = readRuntimeScriptContext()
@@ -21,14 +22,36 @@ await materializeTemplate("omniroute-config.yaml", configPath, {
   DATA_DIR: context.runtimeDataHome,
   LOGS_DIR: context.componentLogsDir
 })
-await writeManagedServiceEntrypoint(
+const installedPackage = await installVendoredPackage(context, {
+  prefixRoot: currentRoot,
+  packageName: "omniroute",
+  entrypointRelativePath: path.join("bin", "omniroute.mjs")
+})
+await writeManagedPackageLauncher(
   launcherPath,
-  "omniroute"
+  {
+    entrypointPath: installedPackage.entrypointPath,
+    configPath,
+    baseArgs: ["--no-open"],
+    defaultEnv: {
+      DATA_DIR: context.runtimeDataHome,
+      LOG_DIR: context.componentLogsDir,
+      PORT: "39001"
+    },
+    serviceKind: "omniroute"
+  }
 )
 await writeCommandWrapper(context.binDir, "omniroute", launcherPath)
 await writeComponentMarker(context, {
   configPath,
   launcherPath,
+  entrypointPath: installedPackage.entrypointPath,
+  vendoredReleaseRepository: installedPackage.releaseRepository,
+  vendoredReleaseTag: installedPackage.releaseTag,
+  vendoredReleaseName: installedPackage.releaseName,
+  vendoredReleaseUrl: installedPackage.releaseUrl,
+  vendoredAssetName: installedPackage.releaseAssetName,
+  vendoredAssetUrl: installedPackage.releaseAssetUrl,
   runtimeHome: context.runtimeHome,
   runtimeDataHome: context.runtimeDataHome,
   pm2Home: context.componentPm2Home,
