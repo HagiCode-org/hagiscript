@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url"
 import { parse } from "yaml"
 
 export type RuntimeLifecyclePhase = "install" | "remove" | "update"
-export type RuntimeComponentType = "runtime" | "package" | "bundled-runtime"
+export type RuntimeComponentType =
+  | "runtime"
+  | "package"
+  | "bundled-runtime"
+  | "released-service"
 
 export interface RuntimePackageCatalogEntry {
   id?: string
@@ -20,8 +24,10 @@ export interface RuntimeComponentDefinition {
   version?: string
   channelVersion?: string
   runtimeDataDir?: string
+  lifecycleDependencies: string[]
   packageCatalog: RuntimePackageCatalogEntry[]
   pm2?: RuntimePm2ServiceDefinition
+  releasedService?: RuntimeReleasedServiceDefinition
   scripts: {
     install: string
     verify?: string
@@ -63,6 +69,14 @@ export interface RuntimePm2ServiceDefinition {
   pm2Home?: string
 }
 
+export interface RuntimeReleasedServiceDefinition {
+  dllPath: string
+  workingDirectory: string
+  configRoot?: string
+  runtimeFilesDir?: string
+  startScript?: string
+}
+
 export interface LoadedRuntimeManifest {
   manifestPath: string
   manifestDir: string
@@ -93,7 +107,8 @@ export class RuntimeManifestValidationError extends Error {
 const supportedComponentTypes = new Set<RuntimeComponentType>([
   "runtime",
   "package",
-  "bundled-runtime"
+  "bundled-runtime",
+  "released-service"
 ])
 
 export function getPackageRoot(moduleUrl = import.meta.url): string {
@@ -204,6 +219,14 @@ function validateRuntimeManifest(
     componentMap.set(component.name, component)
   }
 
+  for (const component of components) {
+    for (const dependencyName of component.lifecycleDependencies) {
+      if (!componentMap.has(dependencyName)) {
+        errors.push(`component ${component.name} references unknown lifecycle dependency ${dependencyName}`)
+      }
+    }
+  }
+
   for (const [phaseName, definition] of Object.entries(phases) as Array<
     [RuntimeLifecyclePhase, RuntimePhaseDefinition]
   >) {
@@ -281,7 +304,9 @@ function validateRuntimeComponents(
     const rawType = readRequiredString(componentObject.type, `components[${index}].type`, errors)
 
     if (!supportedComponentTypes.has(rawType as RuntimeComponentType)) {
-      errors.push(`components[${index}].type must be one of runtime, package, bundled-runtime`)
+      errors.push(
+        `components[${index}].type must be one of runtime, package, bundled-runtime, released-service`
+      )
     }
 
     const installScript = readResolvedScript(
@@ -330,6 +355,33 @@ function validateRuntimeComponents(
       errors.push(`components[${index}].packageCatalog must be an array when provided`)
     }
 
+    const lifecycleDependenciesValue = componentObject.lifecycleDependencies
+    const lifecycleDependencies = Array.isArray(lifecycleDependenciesValue)
+      ? lifecycleDependenciesValue.filter((item): item is string => typeof item === "string")
+      : []
+
+    if (
+      lifecycleDependenciesValue !== undefined &&
+      (!Array.isArray(lifecycleDependenciesValue) ||
+        lifecycleDependencies.length !== lifecycleDependenciesValue.length)
+    ) {
+      errors.push(`components[${index}].lifecycleDependencies must be a string array when provided`)
+    }
+
+    const releasedService = validateRuntimeReleasedServiceDefinition(
+      componentObject.releasedService,
+      `components[${index}].releasedService`,
+      errors
+    )
+
+    if (rawType === "released-service" && !releasedService) {
+      errors.push(`components[${index}].releasedService must be defined for released-service components`)
+    }
+
+    if (rawType === "released-service" && !componentObject.pm2) {
+      errors.push(`components[${index}].pm2 must be defined for released-service components`)
+    }
+
     components.push({
       name,
       type: rawType as RuntimeComponentType,
@@ -345,12 +397,14 @@ function validateRuntimeComponents(
         `components[${index}].runtimeDataDir`,
         errors
       ),
+      lifecycleDependencies,
       packageCatalog,
       pm2: validateRuntimePm2Definition(
         componentObject.pm2,
         `components[${index}].pm2`,
         errors
       ),
+      releasedService,
       scripts: {
         install: installScript,
         verify: verifyScript,
@@ -435,6 +489,37 @@ function validateRuntimePm2Definition(
     args,
     env,
     pm2Home: readOptionalString(pm2Object.pm2Home, `${label}.pm2Home`, errors)
+  }
+}
+
+function validateRuntimeReleasedServiceDefinition(
+  value: unknown,
+  label: string,
+  errors: string[]
+): RuntimeReleasedServiceDefinition | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  const releasedServiceObject = toRecord(value, label, errors)
+  return {
+    dllPath: readRequiredString(releasedServiceObject.dllPath, `${label}.dllPath`, errors),
+    workingDirectory: readRequiredString(
+      releasedServiceObject.workingDirectory,
+      `${label}.workingDirectory`,
+      errors
+    ),
+    configRoot: readOptionalString(releasedServiceObject.configRoot, `${label}.configRoot`, errors),
+    runtimeFilesDir: readOptionalString(
+      releasedServiceObject.runtimeFilesDir,
+      `${label}.runtimeFilesDir`,
+      errors
+    ),
+    startScript: readOptionalString(
+      releasedServiceObject.startScript,
+      `${label}.startScript`,
+      errors
+    )
   }
 }
 

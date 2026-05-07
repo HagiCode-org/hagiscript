@@ -194,6 +194,150 @@ describe("pm2 manager", () => {
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
+
+  it("resolves released-service server definitions from the manifest", async () => {
+    const setup = await createPm2Fixture()
+
+    try {
+      const manifest = await loadRuntimeManifest({ manifestPath: setup.manifestPath })
+      const paths = resolveRuntimePaths(manifest, { runtimeRoot: setup.runtimeRoot })
+      const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, "server")
+
+      expect(definition.launchStrategy).toBe("released-service")
+      expect(definition.script).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "server",
+          "current",
+          "lib",
+          "PCode.Web.dll"
+        )
+      )
+      expect(definition.cwd).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "server",
+          "current",
+          "lib"
+        )
+      )
+      expect(definition.runtimeFilesDir).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "server",
+          "pm2-runtime"
+        )
+      )
+      expect(definition.dotnetPath).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "dotnet",
+          "current",
+          process.platform === "win32" ? "dotnet.exe" : "dotnet"
+        )
+      )
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("retries retryable bootstrap PM2 output before returning status", async () => {
+    const setup = await createPm2Fixture()
+    let jlistCallCount = 0
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[1] === "jlist") {
+        jlistCallCount += 1
+        if (jlistCallCount === 1) {
+          return {
+            command,
+            args,
+            stdout: "",
+            stderr: "[PM2] PM2 Successfully daemonized\n[PM2] pm2 home=/tmp/.pm2\n"
+          }
+        }
+
+        return {
+          command,
+          args,
+          stdout: JSON.stringify([
+            {
+              name: "fixture-server",
+              pid: 9898,
+              pm2_env: { status: "online" }
+            }
+          ]),
+          stderr: ""
+        }
+      }
+
+      return {
+        command,
+        args,
+        stdout: "started",
+        stderr: ""
+      }
+    })
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "server",
+        action: "start",
+        runner
+      })
+
+      expect(result.status).toBe("online")
+      expect(result.runtimeFilesDir).toBeTruthy()
+      expect(jlistCallCount).toBe(2)
+      expect(runner.mock.calls[0]?.[1]).toEqual([
+        process.platform === "win32"
+          ? path.join(
+              setup.runtimeRoot,
+              "program",
+              "npm",
+              "node_modules",
+              "pm2",
+              "bin",
+              "pm2"
+            )
+          : path.join(
+              setup.runtimeRoot,
+              "program",
+              "npm",
+              "lib",
+              "node_modules",
+              "pm2",
+              "bin",
+              "pm2"
+            ),
+        "start",
+        path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "server",
+          "pm2-runtime",
+          "ecosystem.config.cjs"
+        ),
+        "--only",
+        "fixture-server",
+        "--update-env"
+      ])
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
 })
 
 async function createPm2Fixture(): Promise<{
@@ -213,9 +357,15 @@ async function createPm2Fixture(): Promise<{
   )
 
   await mkdir(path.join(componentRoot, "current"), { recursive: true })
+  await mkdir(path.join(runtimeRoot, "program", "components", "server", "current", "lib"), {
+    recursive: true
+  })
   await mkdir(path.join(runtimeRoot, "program", "npm", "bin"), { recursive: true })
   await mkdir(getFixturePm2EntrypointDirectory(runtimeRoot), { recursive: true })
   await mkdir(path.join(runtimeRoot, "program", "components", "node", "bin"), {
+    recursive: true
+  })
+  await mkdir(path.join(runtimeRoot, "program", "components", "dotnet", "current"), {
     recursive: true
   })
   await writeFile(
@@ -241,9 +391,45 @@ async function createPm2Fixture(): Promise<{
     "#!/usr/bin/env sh\n",
     "utf8"
   )
+  await writeFile(
+    path.join(
+      runtimeRoot,
+      "program",
+      "components",
+      "server",
+      "current",
+      "lib",
+      "PCode.Web.dll"
+    ),
+    "fixture server payload\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(
+      runtimeRoot,
+      "program",
+      "components",
+      "dotnet",
+      "current",
+      process.platform === "win32" ? "dotnet.exe" : "dotnet"
+    ),
+    "#!/usr/bin/env sh\n",
+    "utf8"
+  )
   if (process.platform !== "win32") {
     await chmod(getFixturePm2Entrypoint(runtimeRoot), 0o755)
     await chmod(getFixtureNodePath(runtimeRoot), 0o755)
+    await chmod(
+      path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "dotnet",
+        "current",
+        "dotnet"
+      ),
+      0o755
+    ).catch(() => undefined)
   }
 
   await writeFile(
@@ -269,12 +455,22 @@ paths:
   vendoredRoot: "components/services"
 phases:
   install:
-    order: ["omniroute"]
+    order: ["node", "dotnet", "npm-packages", "omniroute", "server"]
   remove:
-    order: ["omniroute"]
+    order: ["server", "omniroute", "npm-packages", "dotnet", "node"]
   update:
-    order: ["omniroute"]
+    order: ["node", "dotnet", "npm-packages", "omniroute", "server"]
 components:
+  - name: "node"
+    type: "runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+  - name: "dotnet"
+    type: "runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+  - name: "npm-packages"
+    type: "package"
+    lifecycleDependencies: ["node"]
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "omniroute"
     type: "bundled-runtime"
     runtimeDataDir: "services/omniroute"
@@ -289,6 +485,20 @@ components:
         - "39001"
       env:
         RUNTIME_MODE: "fixture"
+  - name: "server"
+    type: "released-service"
+    runtimeDataDir: "services/server"
+    lifecycleDependencies: ["dotnet", "npm-packages"]
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "fixture-server"
+      pm2Home: ".pm2"
+      env:
+        ASPNETCORE_URLS: "http://127.0.0.1:39150"
+    releasedService:
+      dllPath: "current/lib/PCode.Web.dll"
+      workingDirectory: "current/lib"
+      runtimeFilesDir: "pm2-runtime"
 `,
     "utf8"
   )

@@ -68,7 +68,8 @@ export {
   type LoadedRuntimeManifest,
   type RuntimeComponentDefinition,
   type RuntimeLifecyclePhase,
-  type RuntimeManifestPaths
+  type RuntimeManifestPaths,
+  type RuntimeReleasedServiceDefinition
 } from "./runtime/runtime-manifest.js";
 export {
   defaultRuntimeRoot,

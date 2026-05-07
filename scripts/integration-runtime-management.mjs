@@ -31,9 +31,11 @@ const pm2ManifestPath = path.join(tempRoot, "runtime-manifest-pm2.yaml")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
 const runtimeCommandTimeoutMs = 20 * 60_000
 const pm2CommandTimeoutMs = 5 * 60_000
+const enableReleasedServerTest = process.env.HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST === "1"
 let installedTreeLines = []
 let dotnetVerificationLines = []
 let pm2LifecycleLines = []
+let releasedServerLines = []
 let diagnostics
 let finalResult = "failed"
 
@@ -56,7 +58,12 @@ try {
       path.join(tempRoot, "templates"),
       { recursive: true }
     )
-    const componentNames = new Set(["node", "npm-packages", "omniroute", "code-server"])
+    const componentNames = new Set(
+      enableReleasedServerTest
+        ? ["node", "dotnet", "npm-packages", "server", "omniroute", "code-server"]
+        : ["node", "npm-packages", "omniroute", "code-server"]
+    )
+    const releasedServerPort = enableReleasedServerTest ? await getAvailablePort() : null
     manifest.components = manifest.components
       .filter((component) => componentNames.has(component.name))
       .map((component) => {
@@ -80,6 +87,14 @@ try {
         if (component.pm2 && isManagedPm2Service(component.name)) {
           normalizedComponent.pm2 = {
             ...component.pm2,
+            ...(component.name === "server" && releasedServerPort
+              ? {
+                  env: {
+                    ...(component.pm2.env ?? {}),
+                    ASPNETCORE_URLS: `http://127.0.0.1:${releasedServerPort}`
+                  }
+                }
+              : {}),
             pm2Home: getIntegrationPm2Home(tempRoot, component.name)
           }
         }
@@ -415,6 +430,130 @@ try {
     ])
   })
 
+  if (enableReleasedServerTest) {
+    await runStage("released server lifecycle", async () => {
+      const releasedServer = await prepareReleasedServerPayload({
+        managedRoot,
+        repoRoot,
+        tempRoot
+      })
+      releasedServerLines.push(
+        `- Release tag: ${releasedServer.tagName}`,
+        `- Asset: ${releasedServer.assetName}`,
+        `- Payload root: ${releasedServer.targetRoot}`,
+        `- DLL: ${releasedServer.dllPath}`
+      )
+
+      const installOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "runtime",
+          "install",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot,
+          "--components",
+          "server"
+        ],
+        repoRoot
+      )
+      assertIncludes(installOutput, "Runtime install complete.", "released server install output")
+
+      const startOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "start",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(startOutput, "Action: start", "server start output")
+      const onlineOutput = await waitForManagedPm2Status("server", "online", {
+        manifestPath: pm2ManifestPath,
+        runtimeRoot: managedRoot,
+        repoRoot
+      })
+      assertIncludes(onlineOutput, "Status: online", "server online status")
+
+      const restartOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "restart",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(restartOutput, "Action: restart", "server restart output")
+
+      const stopOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "stop",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(stopOutput, "Status: stopped", "server stop output")
+
+      const removeOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "runtime",
+          "remove",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot,
+          "--components",
+          "server",
+          "--purge"
+        ],
+        repoRoot
+      )
+      assertIncludes(removeOutput, "Runtime remove complete.", "server remove output")
+
+      const statusOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "status",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(statusOutput, "Status: missing", "server status after removal")
+      releasedServerLines.push(
+        "- Lifecycle: install -> start -> online -> restart -> stop -> runtime remove --purge -> status missing"
+      )
+    })
+  }
+
   await runStage("runtime remove purge", async () => {
     const { stdout } = await runProcess(
       process.execPath,
@@ -553,6 +692,10 @@ try {
       {
         title: "Managed PM2 Lifecycle Checks",
         lines: pm2LifecycleLines.length > 0 ? pm2LifecycleLines : ["- Not captured"]
+      },
+      {
+        title: "Released Server Validation",
+        lines: releasedServerLines.length > 0 ? releasedServerLines : ["- Not requested"]
       }
     ]
   })
@@ -741,6 +884,85 @@ function assert(condition, message) {
   }
 }
 
+async function prepareReleasedServerPayload(options) {
+  if (process.platform !== "linux" || process.arch !== "x64") {
+    throw new Error(
+      `Released server validation currently supports linux/x64 only, received ${process.platform}/${process.arch}.`
+    )
+  }
+
+  const releaseRepository =
+    process.env.HAGISCRIPT_RELEASED_SERVER_REPOSITORY?.trim() || "HagiCode-org/releases"
+  const assetSuffix = "linux-x64-nort.zip"
+  const releaseResponse = await fetch(
+    `https://api.github.com/repos/${releaseRepository}/releases/latest`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "hagiscript-runtime-management"
+      }
+    }
+  )
+
+  if (!releaseResponse.ok) {
+    throw new Error(
+      `Failed to read latest released server metadata: HTTP ${releaseResponse.status}`
+    )
+  }
+
+  const release = await releaseResponse.json()
+  const asset = Array.isArray(release.assets)
+    ? release.assets.find((entry) => typeof entry?.name === "string" && entry.name.endsWith(assetSuffix))
+    : null
+
+  if (!asset?.browser_download_url || !asset?.name || !release.tag_name) {
+    throw new Error(
+      `Latest release in ${releaseRepository} does not expose a ${assetSuffix} asset.`
+    )
+  }
+
+  const archivePath = path.join(options.tempRoot, asset.name)
+  const extractRoot = path.join(options.tempRoot, "released-server")
+  const targetRoot = path.join(options.managedRoot, "program", "components", "server", "current")
+  await downloadFile(asset.browser_download_url, archivePath)
+  fs.rmSync(extractRoot, { recursive: true, force: true })
+  fs.mkdirSync(extractRoot, { recursive: true })
+  await runProcess("unzip", ["-q", archivePath, "-d", extractRoot], {
+    cwd: options.repoRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeoutMs: 5 * 60_000
+  })
+  fs.rmSync(targetRoot, { recursive: true, force: true })
+  fs.mkdirSync(targetRoot, { recursive: true })
+  fs.cpSync(extractRoot, targetRoot, { recursive: true })
+
+  const dllPath = path.join(targetRoot, "lib", "PCode.Web.dll")
+  assertFile(dllPath)
+  return {
+    tagName: release.tag_name,
+    assetName: asset.name,
+    targetRoot,
+    dllPath
+  }
+}
+
+async function downloadFile(url, destinationPath) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/octet-stream",
+      "User-Agent": "hagiscript-runtime-management"
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to download ${url}: HTTP ${response.status}`)
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer())
+  fs.writeFileSync(destinationPath, buffer)
+}
+
 function renderDirectoryTree(rootPath, maxDepth = 4) {
   const lines = ["```text", `${path.basename(rootPath)}/`]
   walkDirectory(rootPath, "", 0, maxDepth, lines)
@@ -878,7 +1100,7 @@ function isPm2Command(args) {
 }
 
 function isManagedPm2Service(serviceName) {
-  return serviceName === "omniroute" || serviceName === "code-server"
+  return serviceName === "server" || serviceName === "omniroute" || serviceName === "code-server"
 }
 
 function getIntegrationPm2Home(tempRootPath, serviceName) {
@@ -887,6 +1109,8 @@ function getIntegrationPm2Home(tempRootPath, serviceName) {
 
 function getManagedPm2ServiceKey(serviceName) {
   switch (serviceName) {
+    case "server":
+      return "s"
     case "omniroute":
       return "o"
     case "code-server":

@@ -7,7 +7,8 @@ import { getRuntimeExecutablePaths } from "./node-verify.js"
 import type {
   LoadedRuntimeManifest,
   RuntimeComponentDefinition,
-  RuntimeLifecyclePhase
+  RuntimeLifecyclePhase,
+  RuntimeReleasedServiceDefinition
 } from "./runtime-manifest.js"
 import type { ResolvedRuntimePaths } from "./runtime-paths.js"
 import {
@@ -30,7 +31,10 @@ export interface RuntimeScriptExecutionContext {
 }
 
 export interface ManagedRuntimeEnvironmentContext {
-  component: Pick<RuntimeComponentDefinition, "name" | "type" | "version" | "runtimeDataDir">
+  component: Pick<
+    RuntimeComponentDefinition,
+    "name" | "type" | "version" | "runtimeDataDir" | "releasedService"
+  >
   manifest: Pick<LoadedRuntimeManifest, "manifestDir">
   paths: ResolvedRuntimePaths
   componentRoot: string
@@ -189,6 +193,10 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR: componentDataHome,
       HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR: componentLogsDir,
       HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME: pm2Home,
+      HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR: context.paths.nodeRuntime,
+      HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR: context.paths.dotnetRuntime,
+      HAGISCRIPT_RUNTIME_NPM_PREFIX: context.paths.npmPrefix,
+      ...buildReleasedServiceEnvironment(context.component.releasedService),
       ...(context.phase ? { HAGISCRIPT_RUNTIME_PHASE: context.phase } : {}),
       ...(context.purge !== undefined
         ? { HAGISCRIPT_RUNTIME_PURGE: context.purge ? "1" : "0" }
@@ -202,6 +210,34 @@ export function buildManagedRuntimeEnvironment(
     },
     getManagedRuntimePathEntries(context.paths)
   )
+}
+
+function buildReleasedServiceEnvironment(
+  releasedService: RuntimeReleasedServiceDefinition | undefined
+): NodeJS.ProcessEnv {
+  if (!releasedService) {
+    return {}
+  }
+
+  return {
+    HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_PATH: releasedService.dllPath,
+    HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY: releasedService.workingDirectory,
+    ...(releasedService.configRoot
+      ? {
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_CONFIG_ROOT: releasedService.configRoot
+        }
+      : {}),
+    ...(releasedService.runtimeFilesDir
+      ? {
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_RUNTIME_FILES_DIR: releasedService.runtimeFilesDir
+        }
+      : {}),
+    ...(releasedService.startScript
+      ? {
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_START_SCRIPT: releasedService.startScript
+        }
+      : {})
+  }
 }
 
 export function prependPathEntries(

@@ -47,6 +47,7 @@ The packaged manifest currently manages:
 - `node` - managed Node.js runtime
 - `dotnet` - managed .NET and ASP.NET Core runtime
 - `npm-packages` - managed npm prefix, including `pm2`
+- `server` - released backend package metadata and PM2 launch assets for `lib/PCode.Web.dll`
 - `omniroute` - vendored bundled runtime
 - `code-server` - vendored bundled runtime
 
@@ -124,18 +125,23 @@ Lifecycle commands print the resolved manifest, managed root, changed component 
 
 Hagiscript manages runtime-scoped PM2 services for:
 
+- `server`
 - `omniroute`
 - `code-server`
 
 Supported actions:
 
 - `start`
+- `restart`
 - `stop`
 - `status`
 
 Examples:
 
 ```bash
+hagiscript pm2 server start
+hagiscript pm2 server restart
+hagiscript pm2 server status
 hagiscript pm2 omniroute status
 hagiscript pm2 omniroute start
 hagiscript pm2 code-server stop
@@ -149,6 +155,28 @@ The PM2 flow is runtime-scoped:
 - `PM2_HOME` is derived from the managed runtime layout, so service state stays inside the runtime data boundary.
 
 This means maintenance scripts should call `hagiscript pm2 ...` instead of a system `pm2` binary.
+
+### Released backend `server` contract
+
+The packaged runtime manifest treats `server` as a `released-service` component. The managed runtime expects a published backend package staged under:
+
+```text
+<runtime-root>/program/components/server/current/
+  lib/PCode.Web.dll
+  lib/PCode.Web.deps.json
+  lib/PCode.Web.runtimeconfig.json
+  start.sh (or the platform equivalent from the release package)
+```
+
+Hagiscript keeps mutable launch state for that service under:
+
+```text
+<runtime-root>/runtime-data/components/services/server/
+  .pm2/
+  pm2-runtime/
+```
+
+`hagiscript runtime install --components server` prepares the runtime-owned launch assets and reports whether the published payload is already staged. `hagiscript pm2 server start` then generates the final PM2 ecosystem/env files under `pm2-runtime/` and launches the released backend through the managed `dotnet` runtime.
 
 ## Runtime Environment Contract
 
@@ -225,6 +253,14 @@ Useful runtime-focused checks:
 npm run integration:runtime-management
 npm run integration:installed-runtime
 ```
+
+The runtime-management integration path also supports a release-oriented validation mode for CI:
+
+```bash
+HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST=1 npm run integration:runtime-management
+```
+
+That mode downloads the latest public backend package from `https://github.com/HagiCode-org/releases/releases`, stages it into the managed runtime, and verifies `server` start/restart/stop/remove through HagiScript-managed PM2.
 
 ## License
 

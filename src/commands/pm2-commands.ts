@@ -54,12 +54,12 @@ function parseManagedPm2Service(value: string): ManagedPm2ServiceName {
 }
 
 function parseManagedPm2Action(value: string): ManagedPm2Action {
-  if (value === "start" || value === "stop" || value === "status") {
+  if (value === "start" || value === "stop" || value === "restart" || value === "status") {
     return value
   }
 
   throw new InvalidArgumentError(
-    `Unsupported PM2 action "${value}". Supported actions: start, stop, status.`
+    `Unsupported PM2 action "${value}". Supported actions: start, stop, restart, status.`
   )
 }
 

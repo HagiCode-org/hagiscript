@@ -18,6 +18,11 @@ const fixtureManifestPath = path.resolve(
     new URL("../../tests/runtime/fixtures/runtime-manifest.yaml", import.meta.url)
   )
 )
+const fixtureScriptPath = path.resolve(
+  fileURLToPath(
+    new URL("../../tests/runtime/fixtures/scripts/install-component.mjs", import.meta.url)
+  )
+)
 
 describe("runtime manager", () => {
   it("rejects manifests with missing required sections", async () => {
@@ -42,7 +47,7 @@ describe("runtime manager", () => {
 
     await writeFile(
       manifestPath,
-      `runtime:
+        `runtime:
   name: invalid
   version: 1.0.0
 paths:
@@ -79,6 +84,52 @@ components:
     await rm(directory, { recursive: true, force: true })
   })
 
+  it("rejects released-service components without required launch metadata", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-server-"))
+    const manifestPath = path.join(directory, "invalid-server.yaml")
+
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: invalid
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["server"]
+  remove:
+    order: ["server"]
+  update:
+    order: ["server"]
+components:
+  - name: "server"
+    type: "released-service"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-server"
+    releasedService:
+      workingDirectory: "current/lib"
+`,
+      "utf8"
+    )
+
+    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
+      /releasedService\.dllPath must be a non-empty string/
+    )
+    await rm(directory, { recursive: true, force: true })
+  })
+
   it("plans filtered installs in manifest order", async () => {
     const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
     const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
@@ -87,6 +138,73 @@ components:
     })
 
     expect(plan.plan.map((item) => item.componentName)).toEqual(["alpha", "beta"])
+  })
+
+  it("expands lifecycle dependencies for released-service installs", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-deps-"))
+    const manifestPath = path.join(directory, "deps.yaml")
+
+    await writeFile(
+      manifestPath,
+        `runtime:
+  name: fixture-runtime
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["node", "dotnet", "npm-packages", "server"]
+  remove:
+    order: ["server", "npm-packages", "dotnet", "node"]
+  update:
+    order: ["node", "dotnet", "npm-packages", "server"]
+components:
+  - name: "node"
+    type: "runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+  - name: "dotnet"
+    type: "runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+  - name: "npm-packages"
+    type: "package"
+    lifecycleDependencies: ["node"]
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+  - name: "server"
+    type: "released-service"
+    lifecycleDependencies: ["dotnet", "npm-packages"]
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-server"
+    releasedService:
+      dllPath: "current/lib/PCode.Web.dll"
+      workingDirectory: "current/lib"
+`,
+      "utf8"
+    )
+
+    const manifest = await loadRuntimeManifest({ manifestPath })
+    const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
+    const plan = planRuntimeLifecycle("install", manifest, state, {
+      components: ["server"]
+    })
+
+    expect(plan.plan.map((item) => item.componentName)).toEqual([
+      "node",
+      "dotnet",
+      "npm-packages",
+      "server"
+    ])
+    await rm(directory, { recursive: true, force: true })
   })
 
   it("does not write state during dry-run execution", async () => {

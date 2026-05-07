@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path"
 import process from "node:process"
+import { writeFile } from "node:fs/promises"
 import {
   ensureDirectory,
   installVendoredPackage,
@@ -15,6 +16,7 @@ const context = readRuntimeScriptContext()
 const currentRoot = path.join(context.componentRoot, "current")
 const launcherPath = path.join(currentRoot, "code-server-launcher.mjs")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
+const entrypointPackageJsonPath = path.join(currentRoot, "out", "node", "package.json")
 
 await ensureDirectory(currentRoot)
 await materializeTemplate("code-server-config.yaml", configPath, {
@@ -25,6 +27,11 @@ const installedPackage = await installVendoredPackage(context, {
   packageName: "code-server",
   entrypointRelativePath: path.join("out", "node", "entry.js")
 })
+await writeFile(
+  entrypointPackageJsonPath,
+  `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
+  "utf8"
+)
 await writeManagedPackageLauncher(
   launcherPath,
   {
@@ -39,6 +46,7 @@ await writeComponentMarker(context, {
   configPath,
   launcherPath,
   entrypointPath: installedPackage.entrypointPath,
+  entrypointPackageJsonPath,
   vendoredReleaseRepository: installedPackage.releaseRepository,
   vendoredReleaseTag: installedPackage.releaseTag,
   vendoredReleaseName: installedPackage.releaseName,

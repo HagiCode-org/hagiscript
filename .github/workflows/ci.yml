@@ -122,6 +122,13 @@ jobs:
           HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration-summary.md
         run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration.log" npm run integration:runtime-management
 
+      - name: Run released-server runtime integration test
+        if: matrix.platform == 'linux'
+        env:
+          HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST: "1"
+          HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-released-server-summary.md
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-released-server.log" npm run integration:runtime-management
+
       - name: Append runtime-management summary
         if: always()
         shell: bash
@@ -132,6 +139,10 @@ jobs:
             cat "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-management-${{ matrix.platform }}-integration-summary.md" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Integration summary was not produced before the job ended." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-management-${{ matrix.platform }}-released-server-summary.md" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-management-${{ matrix.platform }}-released-server-summary.md" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload runtime-management diagnostics

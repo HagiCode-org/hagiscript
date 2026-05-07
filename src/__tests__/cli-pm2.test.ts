@@ -2,15 +2,18 @@ import { describe, expect, it, vi } from "vitest"
 
 const pm2ManagerMocks = vi.hoisted(() => ({
   runManagedPm2Command: vi.fn(async () => ({
-    service: "omniroute",
-    action: "status",
-    appName: "fixture-omniroute",
-    cwd: "/tmp/runtime/program/components/services/omniroute/current",
-    script: "/tmp/runtime/program/components/services/omniroute/current/omniroute-launcher.mjs",
+    service: "server",
+    action: "restart",
+    appName: "fixture-server",
+    cwd: "/tmp/runtime/program/components/server/current/lib",
+    script: "/tmp/runtime/program/components/server/current/lib/PCode.Web.dll",
     runtimeHome: "/tmp/runtime/program",
-    runtimeDataHome: "/tmp/runtime/runtime-data/components/services/omniroute",
-    pm2Home: "/tmp/runtime/runtime-data/components/services/omniroute/pm2",
+    runtimeDataHome: "/tmp/runtime/runtime-data/components/services/server",
+    pm2Home: "/tmp/runtime/runtime-data/components/services/server/.pm2",
     pm2Binary: "/tmp/runtime/program/npm/bin/pm2",
+    launchStrategy: "released-service",
+    dotnetPath: "/tmp/runtime/program/components/dotnet/current/dotnet",
+    runtimeFilesDir: "/tmp/runtime/runtime-data/components/services/server/pm2-runtime",
     exists: true,
     status: "online",
     pid: 4242,
@@ -18,7 +21,7 @@ const pm2ManagerMocks = vi.hoisted(() => ({
     stderr: ""
   })),
   renderManagedPm2StatusText: vi.fn(() => "pm2 status output"),
-  supportedPm2Services: ["omniroute", "code-server"]
+  supportedPm2Services: ["server", "omniroute", "code-server"]
 }))
 
 vi.mock("../runtime/pm2-manager.js", () => pm2ManagerMocks)
@@ -38,19 +41,19 @@ describe("pm2 CLI commands", () => {
 
     await runCli([
       "node",
-      "hagiscript",
-      "pm2",
-      "omniroute",
-      "status",
-      "--runtime-root",
-      "/tmp/runtime-root"
-    ])
+        "hagiscript",
+        "pm2",
+        "server",
+        "restart",
+        "--runtime-root",
+        "/tmp/runtime-root"
+      ])
 
     expect(pm2ManagerMocks.runManagedPm2Command).toHaveBeenCalledWith({
       manifestPath: undefined,
       runtimeRoot: "/tmp/runtime-root",
-      service: "omniroute",
-      action: "status"
+      service: "server",
+      action: "restart"
     })
     expect(stdout.mock.calls.map(([value]) => String(value)).join("")).toContain(
       "pm2 status output"

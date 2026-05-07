@@ -40,6 +40,8 @@ components:
   - name: "npm-packages"
     type: "package"
     source: "desktop-managed-prefix"
+    lifecycleDependencies:
+      - "node"
     installScript: "scripts/install-npm-packages.mjs"
     updateScript: "scripts/update-npm-packages.mjs"
     removeScript: "scripts/remove-npm-packages.mjs"
@@ -113,16 +115,41 @@ components:
       cwd: "."
       script: "current/code-server-launcher.mjs"
 
+  - name: "server"
+    type: "released-service"
+    source: "hagicode-release-package"
+    runtimeDataDir: "services/server"
+    lifecycleDependencies:
+      - "dotnet"
+      - "npm-packages"
+    installScript: "scripts/install-server.mjs"
+    configureScript: "scripts/configure-server.mjs"
+    removeScript: "scripts/remove-server.mjs"
+    pm2:
+      appName: "hagicode-server"
+      pm2Home: ".pm2"
+      env:
+        ASPNETCORE_ENVIRONMENT: "Production"
+        ASPNETCORE_URLS: "http://127.0.0.1:39150"
+    releasedService:
+      dllPath: "current/lib/PCode.Web.dll"
+      workingDirectory: "current/lib"
+      configRoot: "current/lib"
+      runtimeFilesDir: "pm2-runtime"
+      startScript: "current/start.sh"
+
 phases:
   install:
     order:
       - "node"
       - "dotnet"
       - "npm-packages"
+      - "server"
       - "omniroute"
       - "code-server"
   remove:
     order:
+      - "server"
       - "code-server"
       - "omniroute"
       - "npm-packages"
@@ -133,5 +160,6 @@ phases:
       - "node"
       - "dotnet"
       - "npm-packages"
+      - "server"
       - "omniroute"
       - "code-server"

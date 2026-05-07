@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { tmpdir } from "node:os"
@@ -12,6 +13,7 @@ import {
   executeRuntimeScript,
   writeRuntimeLog
 } from "./runtime-executor.js"
+import { ManagedPm2Error, runManagedPm2Command } from "./pm2-manager.js"
 import {
   loadRuntimeManifest,
   type LoadedRuntimeManifest,
@@ -98,6 +100,7 @@ export interface RuntimeStateReport {
     programPaths: string[]
     externalDataPaths: string[]
     managedPaths: string[]
+    details?: Record<string, unknown>
   }>
   lastOperation: RuntimeState["lastOperation"]
 }
@@ -323,7 +326,8 @@ export async function queryRuntimeState(
       pm2Home,
       programPaths,
       externalDataPaths,
-      managedPaths: entry?.managedPaths ?? [...programPaths, ...externalDataPaths]
+      managedPaths: entry?.managedPaths ?? [...programPaths, ...externalDataPaths],
+      details: entry?.details
     }
   })
   const programRoots = [
@@ -351,7 +355,11 @@ export async function queryRuntimeState(
       programRoots,
       externalDataRoots
     },
-    ready: components.every((component) => component.status === "installed"),
+    ready: components.every(
+      (component) =>
+        component.status === "installed" &&
+        (component.details?.releasedServiceReady as boolean | undefined) !== false
+    ),
     components,
     lastOperation: state.lastOperation
   }
@@ -382,6 +390,10 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
     if (component.pm2Home) {
       lines.push(`  pm2-home=${component.pm2Home}`)
     }
+    const details = stateDetailsFromComponent(component)
+    if (details) {
+      lines.push(`  details=${details}`)
+    }
   }
 
   if (report.lastOperation) {
@@ -391,6 +403,22 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
   }
 
   return lines.join("\n")
+}
+
+function stateDetailsFromComponent(component: RuntimeStateReport["components"][number]): string | null {
+  const details = (component as typeof component & { details?: Record<string, unknown> }).details
+  if (!details) {
+    return null
+  }
+
+  const summary =
+    typeof details.readinessSummary === "string"
+      ? details.readinessSummary
+      : typeof details.cleanupSummary === "string"
+        ? details.cleanupSummary
+        : null
+
+  return summary
 }
 
 export function planRuntimeLifecycle(
@@ -405,7 +433,7 @@ export function planRuntimeLifecycle(
     reason: string
   }[]
 } {
-  const requestedSet = selectRequestedComponents(manifest, options.components)
+  const requestedSet = selectRequestedComponents(manifest, options.components, phase)
   const orderedComponentNames = orderedPhaseComponents(manifest, phase).filter((name) =>
     requestedSet.has(name)
   )
@@ -646,6 +674,10 @@ async function executeScriptComponent(
   const scriptPath = resolveScriptForAction(action, component)
 
   if (scriptPath) {
+    if (action.phase === "remove" && component.type === "released-service") {
+      await cleanupReleasedServicePm2(component, manifest, paths, options, logFilePath)
+    }
+
     await executeRuntimeScript(scriptPath, {
       component,
       phase: action.phase,
@@ -727,6 +759,11 @@ async function executeScriptComponent(
           ...(componentPm2Home ? [componentPm2Home] : [])
         ]
       : []
+  const details =
+    component.type === "released-service"
+      ? buildReleasedServiceDetails(component, componentRoot, componentDataHome, isRemoval)
+      : undefined
+
   return {
     name: component.name,
     type: component.type,
@@ -737,26 +774,59 @@ async function executeScriptComponent(
     managedPaths: [...managedProgramPaths, ...managedDataPaths],
     lastAction: action.phase,
     lastUpdatedAt: new Date().toISOString(),
-    logFile: logFilePath
+    logFile: logFilePath,
+    details
   }
 }
 
 function selectRequestedComponents(
   manifest: LoadedRuntimeManifest,
-  requestedComponents: readonly string[] | undefined
+  requestedComponents: readonly string[] | undefined,
+  phase: RuntimeLifecyclePhase
 ): Set<string> {
-  if (!requestedComponents || requestedComponents.length === 0) {
-    return new Set(manifest.components.map((component) => component.name))
+  const requestedSet =
+    !requestedComponents || requestedComponents.length === 0
+      ? new Set(manifest.components.map((component) => component.name))
+      : new Set<string>()
+
+  if (requestedComponents && requestedComponents.length > 0) {
+    for (const value of requestedComponents) {
+      if (!manifest.componentMap.has(value)) {
+        throw new RuntimeLifecycleError(`Unknown runtime component: ${value}`)
+      }
+
+      requestedSet.add(value)
+    }
   }
 
-  const requestedSet = new Set<string>()
+  if (phase === "remove") {
+    return requestedSet
+  }
 
-  for (const value of requestedComponents) {
-    if (!manifest.componentMap.has(value)) {
-      throw new RuntimeLifecycleError(`Unknown runtime component: ${value}`)
+  const queue = [...requestedSet]
+  while (queue.length > 0) {
+    const componentName = queue.shift()
+    if (!componentName) {
+      continue
     }
 
-    requestedSet.add(value)
+    const component = manifest.componentMap.get(componentName)
+    if (!component) {
+      throw new RuntimeLifecycleError(`Unknown runtime component: ${componentName}`)
+    }
+
+    for (const dependencyName of component.lifecycleDependencies) {
+      if (!manifest.componentMap.has(dependencyName)) {
+        throw new RuntimeLifecycleError(
+          `Runtime component ${component.name} depends on unknown component ${dependencyName}`
+        )
+      }
+
+      if (!requestedSet.has(dependencyName)) {
+        requestedSet.add(dependencyName)
+        queue.push(dependencyName)
+      }
+    }
   }
 
   return requestedSet
@@ -979,6 +1049,80 @@ function normalizeVersion(value: string | null | undefined): string | null {
   }
 
   return value.replace(/^v/u, "")
+}
+
+async function cleanupReleasedServicePm2(
+  component: RuntimeComponentDefinition,
+  manifest: LoadedRuntimeManifest,
+  paths: ResolvedRuntimePaths,
+  options: RuntimeLifecycleOptions,
+  logFilePath: string
+): Promise<void> {
+  try {
+    const stopResult = await runManagedPm2Command({
+      manifestPath: manifest.manifestPath,
+      runtimeRoot: paths.root,
+      service: component.name as "server",
+      action: "stop"
+    })
+    await writeRuntimeLog(
+      logFilePath,
+      `Released-service PM2 stop result: ${stopResult.status} (${stopResult.appName})`
+    )
+
+    const deleteResult = await runManagedPm2Command({
+      manifestPath: manifest.manifestPath,
+      runtimeRoot: paths.root,
+      service: component.name as "server",
+      action: "delete"
+    })
+    await writeRuntimeLog(
+      logFilePath,
+      `Released-service PM2 delete result: ${deleteResult.status} (${deleteResult.appName})`
+    )
+  } catch (error) {
+    if (error instanceof ManagedPm2Error && options.verbose) {
+      await writeRuntimeLog(logFilePath, `Released-service PM2 cleanup warning: ${error.message}`)
+      return
+    }
+
+    throw error
+  }
+}
+
+function buildReleasedServiceDetails(
+  component: RuntimeComponentDefinition,
+  componentRoot: string,
+  componentDataHome: string,
+  isRemoval: boolean
+): Record<string, unknown> | undefined {
+  if (!component.releasedService) {
+    return undefined
+  }
+
+  const details: Record<string, unknown> = {
+    releasedPayloadPath: join(componentRoot, component.releasedService.dllPath),
+    releasedWorkingDirectory: join(componentRoot, component.releasedService.workingDirectory),
+    launchAssetsDirectory: join(
+      componentDataHome,
+      component.releasedService.runtimeFilesDir ?? "pm2-runtime"
+    )
+  }
+  details.releasedServiceReady =
+    !isRemoval &&
+    existsSync(String(details.releasedPayloadPath)) &&
+    existsSync(String(details.releasedWorkingDirectory))
+
+  if (isRemoval) {
+    details.cleanupSummary =
+      "Released-service PM2 app cleanup completed before launch assets were removed."
+  } else {
+    details.readinessSummary = details.releasedServiceReady
+      ? "Released-service payload validated and launch assets prepared for `hagiscript pm2 server start`."
+      : "Released-service launch assets are prepared, but the published backend payload is not staged yet."
+  }
+
+  return details
 }
 
 async function resolveNodeRuntimeForPhase(
