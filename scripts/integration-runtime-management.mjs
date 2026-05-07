@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs"
+import net from "node:net"
 import os from "node:os"
 import path from "node:path"
 import process from "node:process"
@@ -295,6 +296,8 @@ try {
   })
 
   await runStage("pm2 service lifecycle", async () => {
+    await prepareOmniroutePm2Config(managedRoot)
+
     const installOutput = await runCapture(
       process.execPath,
       [
@@ -617,6 +620,55 @@ async function waitForManagedPm2Status(
   }
 
   return lastOutput
+}
+
+async function prepareOmniroutePm2Config(runtimeRoot) {
+  const configPath = path.join(
+    runtimeRoot,
+    "runtime-data",
+    "components",
+    "services",
+    "omniroute",
+    "config",
+    "config.yaml"
+  )
+
+  if (!fs.existsSync(configPath)) {
+    return
+  }
+
+  const port = await getAvailablePort()
+  const current = fs.readFileSync(configPath, "utf8")
+  fs.writeFileSync(
+    configPath,
+    current.replace(/listen:\s*"127\.0\.0\.1:\d+"/u, `listen: "127.0.0.1:${port}"`),
+    "utf8"
+  )
+  log(`Prepared omniroute PM2 config with dynamic port ${port}`)
+}
+
+async function getAvailablePort() {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.unref()
+    server.on("error", reject)
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Expected a TCP address when reserving a free port.")))
+        return
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve(address.port)
+      })
+    })
+  })
 }
 
 function assertIncludes(output, expected, label) {
