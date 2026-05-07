@@ -369,17 +369,15 @@ function buildPm2StartArgs(definition: ResolvedManagedPm2ServiceDefinition): str
   if (isNodeLauncherScript(definition.script)) {
     return [
       "start",
-      "node",
+      definition.script,
       "--name",
       definition.appName,
       "--cwd",
       definition.cwd,
       "--interpreter",
-      "none",
+      definition.nodePath,
       "--update-env",
-      "--",
-      definition.script,
-      ...definition.args
+      ...toPm2Args(definition.args)
     ]
   }
 

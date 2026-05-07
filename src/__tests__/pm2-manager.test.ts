@@ -129,7 +129,15 @@ describe("pm2 manager", () => {
               "pm2"
             ),
         "start",
-        "node",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current",
+          "custom-launcher.mjs"
+        ),
         "--name",
         "fixture-omniroute",
         "--cwd",
@@ -142,18 +150,9 @@ describe("pm2 manager", () => {
           "current"
         ),
         "--interpreter",
-        "none",
+        getFixtureNodePath(setup.runtimeRoot),
         "--update-env",
         "--",
-        path.join(
-          setup.runtimeRoot,
-          "program",
-          "components",
-          "services",
-          "omniroute",
-          "current",
-          "custom-launcher.mjs"
-        ),
         "--port",
         "39001"
       ])

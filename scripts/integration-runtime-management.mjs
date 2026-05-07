@@ -545,7 +545,12 @@ async function waitForManagedPm2Status(
   expectedStatus,
   options
 ) {
-  const attempts = process.platform === "darwin" ? 6 : 3
+  const attempts =
+    process.platform === "darwin"
+      ? 6
+      : process.platform === "win32"
+        ? 6
+        : 3
   let lastOutput = ""
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
