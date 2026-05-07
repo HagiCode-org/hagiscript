@@ -4,7 +4,12 @@ import {
   assertTargetIsEmptyOrMissing,
   moveExtractedRootToTarget
 } from "./node-extract.js";
-import { runCommand, type CommandRunner } from "./command-launch.js";
+import {
+  CommandExecutionError,
+  runCommand,
+  type CommandRunner,
+  type CommandRunnerOptions
+} from "./command-launch.js";
 
 export interface InstallManagedDotnetRuntimeOptions {
   targetDirectory: string;
@@ -37,6 +42,7 @@ const managedDotnetRuntimeNames = [
   "Microsoft.NETCore.App",
   "Microsoft.AspNetCore.App"
 ] as const;
+const windowsPowerShellCommands = ["pwsh", "powershell.exe", "powershell"] as const;
 
 export async function installManagedDotnetRuntime(
   options: InstallManagedDotnetRuntimeOptions
@@ -72,7 +78,7 @@ export async function installManagedDotnetRuntime(
         architecture,
         verbose: options.verbose
       });
-      await runner(invocation.command, invocation.args, {
+      await runDotnetInstallInvocation(runner, invocation, {
         timeoutMs: options.timeoutMs,
         env: {
           ...process.env,
@@ -275,15 +281,16 @@ function buildDotnetInstallInvocation(options: {
   architecture: "x64" | "arm64";
   verbose?: boolean;
 }): {
-  command: string;
+  commands: readonly string[];
   args: string[];
 } {
   if (options.platform === "win32") {
     return {
-      command: "powershell.exe",
+      commands: windowsPowerShellCommands,
       args: [
         "-NoLogo",
         "-NoProfile",
+        "-NonInteractive",
         "-ExecutionPolicy",
         "Bypass",
         "-File",
@@ -303,7 +310,7 @@ function buildDotnetInstallInvocation(options: {
   }
 
   return {
-    command: "bash",
+    commands: ["bash"],
     args: [
       options.installerScriptPath,
       "--install-dir",
@@ -318,4 +325,47 @@ function buildDotnetInstallInvocation(options: {
       ...(options.verbose ? ["--verbose"] : [])
     ]
   };
+}
+
+async function runDotnetInstallInvocation(
+  runner: CommandRunner,
+  invocation: {
+    commands: readonly string[];
+    args: string[];
+  },
+  options: CommandRunnerOptions
+): Promise<void> {
+  const failures: string[] = [];
+
+  for (const command of invocation.commands) {
+    try {
+      await runner(command, invocation.args, options);
+      return;
+    } catch (error) {
+      failures.push(formatDotnetInstallFailure(command, invocation.args, error));
+    }
+  }
+
+  throw new Error(
+    `Failed to execute .NET installer. Attempts:\n${failures.map((failure) => `- ${failure}`).join("\n")}`
+  );
+}
+
+function formatDotnetInstallFailure(
+  command: string,
+  args: string[],
+  error: unknown
+): string {
+  const commandLine = `${command} ${args.join(" ")}`;
+
+  if (error instanceof CommandExecutionError) {
+    const details = [
+      error.context.shortMessage || error.message,
+      error.context.stderr.trim() ? `stderr: ${error.context.stderr.trim()}` : "",
+      error.context.stdout.trim() ? `stdout: ${error.context.stdout.trim()}` : ""
+    ].filter(Boolean);
+    return `${commandLine} => ${details.join(" | ")}`;
+  }
+
+  return `${commandLine} => ${error instanceof Error ? error.message : String(error)}`;
 }

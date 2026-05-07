@@ -1,8 +1,9 @@
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
+import { CommandExecutionError } from "../runtime/command-launch.js";
 import {
   buildDotnetInstallScriptUrl,
   installManagedDotnetRuntime,
@@ -42,6 +43,84 @@ Microsoft.AspNetCore.App 10.0.5 [/tmp/dotnet/shared/Microsoft.AspNetCore.App]
     );
   });
 
+  it("falls back across Windows PowerShell commands and preserves failure details", async () => {
+    const root = await makeTempRoot();
+    const targetDirectory = join(root, "managed-dotnet");
+    const version = "10.0.5";
+    const attemptedCommands: string[] = [];
+
+    const result = await installManagedDotnetRuntime({
+      targetDirectory,
+      version,
+      platform: "win32",
+      runner: async (command, args) => {
+        attemptedCommands.push(command);
+
+        if (command === "pwsh") {
+          throw new CommandExecutionError("pwsh missing", {
+            command,
+            args,
+            stdout: "",
+            stderr: "'pwsh' is not recognized as an internal or external command",
+            timedOut: false,
+            failed: true
+          });
+        }
+
+        if (command === "powershell.exe") {
+          const installDir = args[args.indexOf("-InstallDir") + 1];
+          const runtimeKind = args[args.indexOf("-Runtime") + 1];
+          await seedFakeWindowsRuntime(installDir, version, runtimeKind);
+          return {
+            command,
+            args,
+            stdout: `installed ${runtimeKind}`,
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+          };
+        }
+
+        if (command.endsWith("dotnet.exe")) {
+          return {
+            command,
+            args,
+            stdout:
+              args[0] === "--list-runtimes"
+                ? `Microsoft.NETCore.App ${version} [${targetDirectory}\\shared\\Microsoft.NETCore.App]
+Microsoft.AspNetCore.App ${version} [${targetDirectory}\\shared\\Microsoft.AspNetCore.App]
+`
+                : ".NET SDK (fake)\n",
+            stderr: "",
+            exitCode: 0,
+            timedOut: false
+          };
+        }
+
+        throw new Error(`Unexpected command: ${command}`);
+      },
+      fetchImpl: async () =>
+        new Response("Write-Output 'fake dotnet installer'\n", {
+          status: 200,
+          headers: { "content-type": "text/plain" }
+        })
+    });
+
+    expect(result.valid).toBe(true);
+    expect(
+      attemptedCommands.filter((command) =>
+        ["pwsh", "powershell.exe", "powershell"].includes(command)
+      )
+    ).toEqual([
+      "pwsh",
+      "powershell.exe",
+      "pwsh",
+      "powershell.exe"
+    ]);
+    expect(result.installedRuntimes["Microsoft.NETCore.App"]).toContain(version);
+    expect(result.installedRuntimes["Microsoft.AspNetCore.App"]).toContain(version);
+  });
+
   runPosixOnly(
     "downloads the installer script and installs both .NET runtime packs",
     async () => {
@@ -78,6 +157,27 @@ async function makeTempRoot(): Promise<string> {
   tempRoots.push(root);
   await mkdir(root, { recursive: true });
   return root;
+}
+
+async function seedFakeWindowsRuntime(
+  installDir: string,
+  version: string,
+  runtime: string
+): Promise<void> {
+  await mkdir(installDir, { recursive: true });
+  await writeFile(join(installDir, "dotnet.exe"), "fake", "utf8");
+
+  if (runtime === "dotnet") {
+    await mkdir(join(installDir, "host", "fxr", version), { recursive: true });
+    await mkdir(join(installDir, "shared", "Microsoft.NETCore.App", version), {
+      recursive: true
+    });
+    return;
+  }
+
+  await mkdir(join(installDir, "shared", "Microsoft.AspNetCore.App", version), {
+    recursive: true
+  });
 }
 
 function createFakeDotnetInstallerScript(): string {
