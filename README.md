@@ -135,6 +135,7 @@ Supported actions:
 - `restart`
 - `stop`
 - `status`
+- `env`
 
 Examples:
 
@@ -142,6 +143,8 @@ Examples:
 hagiscript pm2 server start
 hagiscript pm2 server restart
 hagiscript pm2 server status
+hagiscript pm2 server env
+hagiscript pm2 server env --json
 hagiscript pm2 omniroute status
 hagiscript pm2 omniroute start
 hagiscript pm2 code-server stop
@@ -176,7 +179,7 @@ Hagiscript keeps mutable launch state for that service under:
   pm2-runtime/
 ```
 
-`hagiscript runtime install --components server` prepares the runtime-owned launch assets and reports whether the published payload is already staged. `hagiscript pm2 server start` then generates the final PM2 ecosystem/env files under `pm2-runtime/` and launches the released backend through the managed `dotnet` runtime.
+`hagiscript runtime install --components server` prepares the runtime-owned launch assets and reports whether the published payload is already staged. `hagiscript pm2 server start` then generates the final PM2 ecosystem/env files under `pm2-runtime/` and launches the released backend through the managed `dotnet` runtime. Use `hagiscript pm2 server env` to print the exact resolved working directory, PATH ordering, and environment variables that HagiScript will use for that startup flow.
 
 ## Runtime Environment Contract
 
