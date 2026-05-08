@@ -309,7 +309,7 @@ try {
     ]
     assertIncludes(
       fs.readFileSync(omnirouteConfig, "utf8"),
-      `runtimeHome: "${path.join(managedRoot, "program")}"`,
+      `runtimeHome: ${path.join(managedRoot, "program")}`,
       "omniroute config output"
     )
     assertIncludes(
