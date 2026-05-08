@@ -123,7 +123,6 @@ jobs:
         run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-integration.log" npm run integration:runtime-management
 
       - name: Run released-server runtime integration test
-        if: matrix.platform == 'linux'
         env:
           HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST: "1"
           HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-management-${{ matrix.platform }}-released-server-summary.md
