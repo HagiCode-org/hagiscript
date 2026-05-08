@@ -217,53 +217,71 @@ try {
   await runStage("pm2 managed service lifecycle", async () => {
     await prepareOmniroutePm2Config(managedRoot)
 
-    for (const service of ["omniroute", "code-server"]) {
-      const startOutput = await runCapture(
-        process.execPath,
-        [
-          "dist/cli.js",
-          "pm2",
-          service,
-          "start",
-          "--from-manifest",
-          runtimeManifestPath,
-          "--runtime-root",
-          managedRoot
-        ],
-        repoRoot
-      )
-      assertIncludes(startOutput, "Action: start", `${service} start`)
+    try {
+      for (const service of ["omniroute", "code-server"]) {
+        const missingOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "pm2",
+            service,
+            "status",
+            "--from-manifest",
+            runtimeManifestPath,
+            "--runtime-root",
+            managedRoot
+          ],
+          repoRoot
+        )
+        assertIncludes(missingOutput, "Status: missing", `${service} missing status`)
 
-      const statusOutput = await waitForManagedPm2Status(service, "online", {
-        manifestPath: runtimeManifestPath,
-        runtimeRoot: managedRoot,
-        repoRoot
-      })
+        const startOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "pm2",
+            service,
+            "start",
+            "--from-manifest",
+            runtimeManifestPath,
+            "--runtime-root",
+            managedRoot
+          ],
+          repoRoot
+        )
+        assertIncludes(startOutput, "Action: start", `${service} start`)
 
-      assertIncludes(statusOutput, "Status: online", `${service} online status`)
+        const statusOutput = await waitForManagedPm2Status(service, "online", {
+          manifestPath: runtimeManifestPath,
+          runtimeRoot: managedRoot,
+          repoRoot
+        })
 
-      const stopOutput = await runCapture(
-        process.execPath,
-        [
-          "dist/cli.js",
-          "pm2",
-          service,
-          "stop",
-          "--from-manifest",
-          runtimeManifestPath,
-          "--runtime-root",
-          managedRoot
-        ],
-        repoRoot
-      )
-      assertIncludes(stopOutput, "Status: stopped", `${service} stop`)
-      pm2LifecycleLines.push(`- ${service}: start -> online -> stop -> stopped`)
+        assertIncludes(statusOutput, "Status: online", `${service} online status`)
+
+        const stopOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "pm2",
+            service,
+            "stop",
+            "--from-manifest",
+            runtimeManifestPath,
+            "--runtime-root",
+            managedRoot
+          ],
+          repoRoot
+        )
+        assertIncludes(stopOutput, "Status: stopped", `${service} stop`)
+        pm2LifecycleLines.push(`- ${service}: start -> online -> stop -> stopped`)
+      }
+    } finally {
+      await Promise.all([
+        killManagedPm2(managedRoot, "omniroute"),
+        killManagedPm2(managedRoot, "code-server")
+      ])
     }
-
-    await Promise.all([
-      killManagedPm2(managedRoot, "omniroute"),
-      killManagedPm2(managedRoot, "code-server")
-    ])
   })
 
   if (enableReleasedServerTest) {
@@ -291,38 +309,40 @@ try {
       )
       assertIncludes(installOutput, "Runtime install complete.", "server runtime install")
 
-      const startOutput = await runCapture(
-        process.execPath,
-        [
-          "dist/cli.js",
-          "pm2",
-          "server",
-          "start",
-          "--from-manifest",
-          runtimeManifestPath,
-          "--runtime-root",
-          managedRoot
-        ],
-        repoRoot
-      )
-      assertIncludes(startOutput, "Action: start", "server start")
+      try {
+        const startOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "pm2",
+            "server",
+            "start",
+            "--from-manifest",
+            runtimeManifestPath,
+            "--runtime-root",
+            managedRoot
+          ],
+          repoRoot
+        )
+        assertIncludes(startOutput, "Action: start", "server start")
 
-      const statusOutput = await waitForManagedPm2Status("server", "online", {
-        manifestPath: runtimeManifestPath,
-        runtimeRoot: managedRoot,
-        repoRoot
-      })
+        const statusOutput = await waitForManagedPm2Status("server", "online", {
+          manifestPath: runtimeManifestPath,
+          runtimeRoot: managedRoot,
+          repoRoot
+        })
 
-      assertIncludes(statusOutput, "Status: online", "server online status")
+        assertIncludes(statusOutput, "Status: online", "server online status")
 
-      releasedServerLines.push(
-        `- Release tag: ${releasedServer.tagName}`,
-        `- Asset: ${releasedServer.assetName}`,
-        `- Payload root: ${releasedServer.targetRoot}`,
-        "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start -> online"
-      )
-
-      await killManagedPm2(managedRoot, "server")
+        releasedServerLines.push(
+          `- Release tag: ${releasedServer.tagName}`,
+          `- Asset: ${releasedServer.assetName}`,
+          `- Payload root: ${releasedServer.targetRoot}`,
+          "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start -> online"
+        )
+      } finally {
+        await killManagedPm2(managedRoot, "server")
+      }
     })
   }
 
