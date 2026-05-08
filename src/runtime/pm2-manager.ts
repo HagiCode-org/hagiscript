@@ -220,7 +220,7 @@ export async function resolveManagedPm2ServiceDefinition(
   await Promise.all([
     validateManagedPath(
       pm2Entrypoint,
-      "Managed PM2 binary is missing. Install the runtime npm-packages component first."
+      "Managed PM2 binary is missing from the configured runtime npm prefix. Install pm2 into that prefix before using `hagiscript pm2 ...`."
     ),
     validateManagedPath(
       nodePath,

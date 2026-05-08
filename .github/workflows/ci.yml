@@ -152,3 +152,64 @@ jobs:
           name: hagiscript-runtime-management-${{ matrix.platform }}-diagnostics
           path: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/
           if-no-files-found: warn
+
+  runtime-key-path:
+    name: Runtime key path (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Prepare CI artifact directory
+        shell: bash
+        run: mkdir -p "$HAGISCRIPT_CI_ARTIFACT_DIR"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build package
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-key-path-build.log" npm run build
+
+      - name: Run runtime key-path integration test
+        env:
+          HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-key-path-summary.md
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-key-path.log" npm run integration:runtime-key-path
+
+      - name: Run released-server runtime key-path integration test
+        env:
+          HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST: "1"
+          GITHUB_TOKEN: ${{ github.token }}
+          HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-key-path-released-server-summary.md
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/runtime-key-path-released-server.log" npm run integration:runtime-key-path
+
+      - name: Append runtime key-path summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## Hagiscript runtime key path (Linux)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-key-path-summary.md" ]; then
+            cat "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-key-path-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Runtime key-path summary was not produced before the job ended." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-key-path-released-server-summary.md" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat "${HAGISCRIPT_CI_ARTIFACT_DIR}/runtime-key-path-released-server-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload runtime key-path diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hagiscript-runtime-key-path-diagnostics
+          path: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/
+          if-no-files-found: warn

@@ -83,8 +83,6 @@ export function getComponentManagedRoot(
       return paths.nodeRuntime
     case "dotnet":
       return paths.dotnetRuntime
-    case "npm-packages":
-      return paths.npmPrefix
     case "omniroute":
     case "code-server":
       return join(paths.vendoredRoot, componentName)

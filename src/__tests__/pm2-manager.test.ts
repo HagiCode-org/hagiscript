@@ -529,11 +529,11 @@ paths:
   vendoredRoot: "components/services"
 phases:
   install:
-    order: ["node", "dotnet", "npm-packages", "omniroute", "server"]
+    order: ["node", "dotnet", "omniroute", "server"]
   remove:
-    order: ["server", "omniroute", "npm-packages", "dotnet", "node"]
+    order: ["server", "omniroute", "dotnet", "node"]
   update:
-    order: ["node", "dotnet", "npm-packages", "omniroute", "server"]
+    order: ["node", "dotnet", "omniroute", "server"]
 components:
   - name: "node"
     type: "runtime"
@@ -541,13 +541,10 @@ components:
   - name: "dotnet"
     type: "runtime"
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
-  - name: "npm-packages"
-    type: "package"
-    lifecycleDependencies: ["node"]
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "omniroute"
     type: "bundled-runtime"
     runtimeDataDir: "services/omniroute"
+    lifecycleDependencies: ["node"]
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "fixture-omniroute"
@@ -562,7 +559,7 @@ components:
   - name: "server"
     type: "released-service"
     runtimeDataDir: "services/server"
-    lifecycleDependencies: ["dotnet", "npm-packages"]
+    lifecycleDependencies: ["node", "dotnet"]
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "fixture-server"

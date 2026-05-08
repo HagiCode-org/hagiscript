@@ -37,6 +37,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "integration:installed-runtime": "node scripts/integration-installed-runtime.mjs",
+    "integration:runtime-key-path": "node scripts/integration-runtime-key-path.mjs",
     "integration:runtime-management": "node scripts/integration-runtime-management.mjs",
     "pack:check": "node scripts/verify-package.mjs",
     "publish:check-prereqs": "node scripts/verify-npm-publish-prereqs.mjs",

@@ -107,6 +107,7 @@ export function formatDiagnostics(diagnostics) {
 }
 
 export function formatIntegrationSummary({
+  title = "Hagiscript Installed Runtime Integration Summary",
   diagnostics,
   stages,
   skipped,
@@ -114,7 +115,7 @@ export function formatIntegrationSummary({
   extraSections = []
 }) {
   const lines = [
-    "# Hagiscript Installed Runtime Integration Summary",
+    `# ${title}`,
     "",
     `- Platform: ${diagnostics.platform}`,
     `- Architecture: ${diagnostics.arch}`,

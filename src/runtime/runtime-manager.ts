@@ -1,14 +1,11 @@
-import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
-import { tmpdir } from "node:os"
 import {
   installNodeRuntime,
   resolveManagedNodeRuntime
 } from "./node-installer.js"
 import { verifyNodeRuntime } from "./node-verify.js"
-import { syncNpmGlobals, type NpmSyncLogEvent } from "./npm-sync.js"
 import {
   executeRuntimeScript,
   writeRuntimeLog
@@ -253,7 +250,7 @@ export async function runRuntimeLifecycle(
         }
 
         throw new RuntimeLifecycleError(
-          `${phase} failed for component ${component.name}: ${error instanceof Error ? error.message : String(error)}`,
+          `${phase} failed for component ${component.name}: ${error instanceof Error ? error.message : String(error)}\nLog: ${logFilePath}`,
           error instanceof Error ? { cause: error } : undefined
         )
       }
@@ -295,10 +292,11 @@ export async function queryRuntimeState(
   const components = manifest.components.map((component) => {
     const entry = state.components[component.name]
     const fallbackProgramPaths = [getComponentManagedRoot(paths, component.name)]
-    const runtimeDataHome =
-      component.name === "npm-packages"
-        ? null
-        : getComponentRuntimeDataHome(paths, component.name, component.runtimeDataDir)
+    const runtimeDataHome = getComponentRuntimeDataHome(
+      paths,
+      component.name,
+      component.runtimeDataDir
+    )
     const pm2Home = component.pm2
       ? getComponentPm2Home(
           paths,
@@ -307,15 +305,12 @@ export async function queryRuntimeState(
           component.pm2.pm2Home
         )
       : null
-    const fallbackDataPaths =
-      component.name === "npm-packages" || !runtimeDataHome
-        ? []
-        : [
-            runtimeDataHome,
-            getComponentConfigDirectory(paths, component.name, component.runtimeDataDir),
-            getComponentLogsDirectory(paths, component.name, component.runtimeDataDir),
-            ...(pm2Home ? [pm2Home] : [])
-          ]
+    const fallbackDataPaths = [
+      runtimeDataHome,
+      getComponentConfigDirectory(paths, component.name, component.runtimeDataDir),
+      getComponentLogsDirectory(paths, component.name, component.runtimeDataDir),
+      ...(pm2Home ? [pm2Home] : [])
+    ]
     const programPaths = entry?.managedProgramPaths ?? fallbackProgramPaths
     const externalDataPaths = entry?.managedDataPaths ?? fallbackDataPaths
     return {
@@ -485,15 +480,6 @@ async function executeRuntimeAction(
   switch (component.name) {
     case "node":
       return executeNodeComponent(action.phase, component, paths, logFilePath)
-    case "npm-packages":
-      return executeNpmPackagesComponent(
-        action.phase,
-        component,
-        manifest,
-        paths,
-        options,
-        logFilePath
-      )
     default:
       return executeScriptComponent(
         action,
@@ -580,83 +566,6 @@ async function executeNodeComponent(
     lastAction: phase,
     lastUpdatedAt: new Date().toISOString(),
     logFile: logFilePath
-  }
-}
-
-async function executeNpmPackagesComponent(
-  phase: RuntimeLifecyclePhase,
-  component: RuntimeComponentDefinition,
-  manifest: LoadedRuntimeManifest,
-  paths: ResolvedRuntimePaths,
-  options: RuntimeLifecycleOptions,
-  logFilePath: string
-): Promise<RuntimeComponentState> {
-  if (phase === "remove") {
-    await rm(paths.npmPrefix, { recursive: true, force: true })
-    await writeRuntimeLog(logFilePath, `Removed managed npm prefix ${paths.npmPrefix}`)
-    return {
-      name: component.name,
-      type: component.type,
-      status: "removed",
-      version: null,
-      managedProgramPaths: [paths.npmPrefix],
-      managedDataPaths: [],
-      managedPaths: [paths.npmPrefix],
-      lastAction: phase,
-      lastUpdatedAt: new Date().toISOString(),
-      logFile: logFilePath
-    }
-  }
-
-  await resolveManagedNodeRuntime({
-    targetDirectory: paths.nodeRuntime,
-    versionSelector: manifest.componentMap.get("node")?.version ?? "22"
-  })
-
-  const scratchDirectory = await mkdtemp(join(tmpdir(), "hagiscript-runtime-npm-"))
-  const manifestPath = join(scratchDirectory, "npm-sync-manifest.json")
-  const npmManifest = {
-    packages: Object.fromEntries(
-      component.packageCatalog.map((entry) => [
-        entry.packageName,
-        toNpmSyncManifestEntry(entry.packageName, entry.installSpec)
-      ])
-    )
-  }
-
-  try {
-    await writeFile(manifestPath, `${JSON.stringify(npmManifest, null, 2)}\n`, "utf8")
-    const summary = await syncNpmGlobals({
-      runtimePath: paths.nodeRuntime,
-      manifestPath,
-      force: options.force,
-      npmOptions: {
-        prefix: paths.npmPrefix
-      },
-      onLog: (event) => appendNpmSyncLog(logFilePath, event)
-    })
-    await writeRuntimeLog(
-      logFilePath,
-      `Managed npm prefix ready: ${paths.npmPrefix} changed=${summary.changedCount}`
-    )
-  } finally {
-    await rm(scratchDirectory, { recursive: true, force: true })
-  }
-
-  return {
-    name: component.name,
-    type: component.type,
-    status: "installed",
-    version: computePackageCatalogFingerprint(component),
-    managedProgramPaths: [paths.npmPrefix],
-    managedDataPaths: [],
-    managedPaths: [paths.npmPrefix],
-    lastAction: phase,
-    lastUpdatedAt: new Date().toISOString(),
-    logFile: logFilePath,
-    details: {
-      packageCount: component.packageCatalog.length
-    }
   }
 }
 
@@ -846,7 +755,7 @@ function resolveRuntimeAction(
   component: RuntimeComponentDefinition,
   phase: RuntimeLifecyclePhase
 ): RuntimePlannedAction {
-  if (component.name === "node" || component.name === "npm-packages") {
+  if (component.name === "node") {
     return {
       componentName: component.name,
       phase,
@@ -907,10 +816,6 @@ function componentNeedsUpdate(
     return true
   }
 
-  if (component.name === "npm-packages") {
-    return state.version !== computePackageCatalogFingerprint(component)
-  }
-
   const desiredVersion = component.version ?? component.channelVersion ?? null
   return desiredVersion !== state.version
 }
@@ -929,40 +834,6 @@ function resolveScriptForAction(
   }
 }
 
-function toNpmSyncManifestEntry(packageName: string, installSpec: string): {
-  version: string
-  target?: string
-} {
-  const trimmed = installSpec.trim()
-  const scopedPrefix = `${packageName}@`
-
-  if (trimmed === packageName) {
-    return {
-      version: "*"
-    }
-  }
-
-  if (trimmed.startsWith(scopedPrefix)) {
-    const selector = trimmed.slice(scopedPrefix.length).trim()
-    return {
-      version: selector || "*",
-      target: selector || undefined
-    }
-  }
-
-  return {
-    version: "*",
-    target: trimmed
-  }
-}
-
-function computePackageCatalogFingerprint(component: RuntimeComponentDefinition): string {
-  return createHash("sha256")
-    .update(JSON.stringify(component.packageCatalog))
-    .digest("hex")
-    .slice(0, 12)
-}
-
 async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<void> {
   await Promise.all([
     mkdir(paths.root, { recursive: true }),
@@ -976,13 +847,6 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
     mkdir(paths.componentDataRoot, { recursive: true }),
     mkdir(paths.vendoredRoot, { recursive: true })
   ])
-}
-
-async function appendNpmSyncLog(
-  logFilePath: string,
-  event: NpmSyncLogEvent
-): Promise<void> {
-  await writeRuntimeLog(logFilePath, `npm-sync:${event.type} ${JSON.stringify(event)}`)
 }
 
 async function cleanupManagedComponent(

@@ -46,10 +46,11 @@ The packaged manifest currently manages:
 
 - `node` - managed Node.js runtime
 - `dotnet` - managed .NET and ASP.NET Core runtime
-- `npm-packages` - managed npm prefix, including `pm2`
 - `server` - released backend package metadata and PM2 launch assets for `lib/PCode.Web.dll`
 - `omniroute` - vendored bundled runtime
 - `code-server` - vendored bundled runtime
+
+The runtime layout still reserves `program/npm/` as the managed npm prefix, but package inventory inside that prefix is not part of the runtime component manifest. Tool installation there is handled separately through `hagiscript npm-sync` or external provisioning.
 
 ## Core Runtime Commands
 
@@ -62,7 +63,7 @@ hagiscript runtime install
 Install selected components only:
 
 ```bash
-hagiscript runtime install --components node,npm-packages
+hagiscript runtime install --components node,omniroute
 ```
 
 Preview planned changes without mutating files:
@@ -152,12 +153,12 @@ hagiscript pm2 code-server stop
 
 The PM2 flow is runtime-scoped:
 
-- PM2 is installed into the managed npm prefix, not the host environment.
+- PM2 is resolved from the managed npm prefix, not the host environment.
 - Hagiscript resolves the runtime manifest before every PM2 action.
 - PM2 runs with the managed Node runtime and managed PATH ordering.
 - `PM2_HOME` is derived from the managed runtime layout, so service state stays inside the runtime data boundary.
 
-This means maintenance scripts should call `hagiscript pm2 ...` instead of a system `pm2` binary.
+This means maintenance scripts should call `hagiscript pm2 ...` instead of a system `pm2` binary, and should ensure `pm2` has been installed into the managed npm prefix beforehand.
 
 ### Released backend `server` contract
 
@@ -230,14 +231,15 @@ hagiscript check-node --target /opt/hagiscript/node
 
 ### Managed npm Package Sync
 
-Sync npm global packages into a managed runtime instead of the host environment:
+Sync npm global packages into the managed npm prefix instead of the host environment:
 
 ```bash
 hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
+hagiscript npm-sync --managed-runtime ~/.hagicode/runtime/program/components/node/runtime --prefix ~/.hagicode/runtime/program/npm --manifest ./manifest.json
 ```
 
-This is mainly useful when runtime maintenance also needs a controlled agent CLI or package inventory inside the managed runtime.
+This is the path for installing `pm2` and any other scenario-specific global tools. The package list is data, not a built-in runtime component.
 
 ## Development
 
@@ -254,16 +256,27 @@ Useful runtime-focused checks:
 
 ```bash
 npm run integration:runtime-management
+npm run integration:runtime-key-path
 npm run integration:installed-runtime
 ```
 
-The runtime-management integration path also supports a release-oriented validation mode for CI:
+The dedicated runtime key-path flow validates the critical production sequence with real network downloads: runtime install for fixed components, npm-sync for scenario-specific tools in the managed npm prefix, and PM2 lifecycle commands resolved from that managed prefix. Run the base flow with:
+
+```bash
+npm run integration:runtime-key-path
+```
+
+The release-oriented key-path mode additionally stages the latest public backend package from GitHub Releases and validates the same managed PM2 contract for `server`:
+
+```bash
+HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST=1 npm run integration:runtime-key-path
+```
+
+The broader runtime-management integration path remains available for the existing end-to-end runtime assertions, including the corresponding released-server mode:
 
 ```bash
 HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST=1 npm run integration:runtime-management
 ```
-
-That mode downloads the latest public backend package from `https://github.com/HagiCode-org/releases/releases`, stages it into the managed runtime, and verifies `server` start/restart/stop/remove through HagiScript-managed PM2.
 
 ## License
 

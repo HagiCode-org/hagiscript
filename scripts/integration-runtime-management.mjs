@@ -29,6 +29,7 @@ const failingManifestPath = path.join(
 const managedRoot = path.join(tempRoot, "managed-runtime")
 const failingRoot = path.join(tempRoot, "managed-runtime-failure")
 const pm2ManifestPath = path.join(tempRoot, "runtime-manifest-pm2.yaml")
+const pm2PackageManifestPath = path.join(tempRoot, "pm2-package-manifest.json")
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md")
 const runtimeCommandTimeoutMs = 20 * 60_000
 const pm2CommandTimeoutMs = 5 * 60_000
@@ -62,8 +63,8 @@ try {
     )
     const componentNames = new Set(
       enableReleasedServerTest
-        ? ["node", "dotnet", "npm-packages", "server", "omniroute", "code-server"]
-        : ["node", "npm-packages", "omniroute", "code-server"]
+        ? ["node", "dotnet", "server", "omniroute", "code-server"]
+        : ["node", "omniroute", "code-server"]
     )
     const releasedServerPort = enableReleasedServerTest ? await getAvailablePort() : null
     manifest.components = manifest.components
@@ -101,16 +102,7 @@ try {
           }
         }
 
-        if (component.name !== "npm-packages") {
-          return normalizedComponent
-        }
-
-        return {
-          ...normalizedComponent,
-          packageCatalog: (component.packageCatalog ?? []).filter(
-            (entry) => entry.id === "pm2"
-          )
-        }
+        return normalizedComponent
       })
 
     for (const phaseName of ["install", "remove", "update"]) {
@@ -120,6 +112,11 @@ try {
     }
 
     fs.writeFileSync(pm2ManifestPath, stringify(manifest), "utf8")
+    fs.writeFileSync(
+      pm2PackageManifestPath,
+      `${JSON.stringify({ packages: { pm2: { version: "7.0.1", target: "pm2@7.0.1" } } }, null, 2)}\n`,
+      "utf8"
+    )
   })
 
   await runStage("runtime install", async () => {
@@ -172,7 +169,6 @@ try {
     const dotnet = report.components.find((item) => item.name === "dotnet")
     const omniroute = report.components.find((item) => item.name === "omniroute")
     const codeServer = report.components.find((item) => item.name === "code-server")
-    const npmPackages = report.components.find((item) => item.name === "npm-packages")
     assert(report.layout?.separated === true, `Expected separated runtime layout. Output:\n${stdout}`)
     assertArrayEquals(
       report.layout?.programRoots ?? [],
@@ -209,9 +205,6 @@ try {
       throw new Error(`Unexpected installed component state: ${stdout}`)
     }
 
-    if (!npmPackages || npmPackages.status !== "not-installed") {
-      throw new Error(`Expected npm-packages to remain not-installed for filtered install. Output:\n${stdout}`)
-    }
     assertPathsSeparated(nodeComponent.programPaths, nodeComponent.externalDataPaths, "node separation")
     assertPathsSeparated(dotnet.programPaths, dotnet.externalDataPaths, "dotnet separation")
     assertPathsSeparated(omniroute.programPaths, omniroute.externalDataPaths, "omniroute separation")
@@ -331,22 +324,21 @@ try {
   await runStage("pm2 service lifecycle", async () => {
     await prepareOmniroutePm2Config(managedRoot)
 
-    const installOutput = await runCapture(
+    const npmSyncOutput = await runCapture(
       process.execPath,
       [
         "dist/cli.js",
-        "runtime",
-        "install",
-        "--from-manifest",
-        pm2ManifestPath,
-        "--runtime-root",
-        managedRoot,
-        "--components",
-        "npm-packages"
+        "npm-sync",
+        "--runtime",
+        path.join(managedRoot, "program", "components", "node", "runtime"),
+        "--prefix",
+        path.join(managedRoot, "program", "npm"),
+        "--manifest",
+        pm2PackageManifestPath
       ],
       repoRoot
     )
-    assertIncludes(installOutput, "Runtime install complete.", "pm2 runtime install output")
+    assertIncludes(npmSyncOutput, "npm-sync complete.", "pm2 npm-sync output")
 
     const services = ["omniroute", "code-server"]
     for (const service of services) {

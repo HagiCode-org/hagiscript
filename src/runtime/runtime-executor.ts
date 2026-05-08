@@ -1,8 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises"
 import { basename, dirname, extname } from "node:path"
 import process from "node:process"
-import type { CommandRunner } from "./command-launch.js"
-import { runCommand } from "./command-launch.js"
+import { CommandExecutionError, runCommand, type CommandRunner } from "./command-launch.js"
 import { getRuntimeExecutablePaths } from "./node-verify.js"
 import type {
   LoadedRuntimeManifest,
@@ -62,31 +61,67 @@ export async function executeRuntimeScript(
 ): Promise<RuntimeScriptExecutionResult> {
   const runner = context.runner ?? runCommand
   const { command, args } = getRuntimeScriptLaunch(scriptPath)
-  const result = await runner(command, args, {
-    cwd: context.manifest.manifestDir,
-    env: buildRuntimeScriptEnvironment(context),
-    maxBuffer: 10 * 1024 * 1024
-  })
 
-  if (context.logFilePath) {
-    await writeRuntimeLog(
-      context.logFilePath,
-      [
+  try {
+    const result = await runner(command, args, {
+      cwd: context.manifest.manifestDir,
+      env: buildRuntimeScriptEnvironment(context),
+      maxBuffer: 10 * 1024 * 1024
+    })
+
+    if (context.logFilePath) {
+      await writeRuntimeLog(
+        context.logFilePath,
+        [
+          `# ${context.phase}:${context.component.name}`,
+          `$ ${command} ${args.join(" ")}`,
+          result.stdout ? `stdout:\n${result.stdout}` : "",
+          result.stderr ? `stderr:\n${result.stderr}` : ""
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+    }
+
+    return {
+      command,
+      args,
+      stdout: result.stdout,
+      stderr: result.stderr
+    }
+  } catch (error) {
+    if (context.logFilePath) {
+      const lines = [
         `# ${context.phase}:${context.component.name}`,
         `$ ${command} ${args.join(" ")}`,
-        result.stdout ? `stdout:\n${result.stdout}` : "",
-        result.stderr ? `stderr:\n${result.stderr}` : ""
+        error instanceof Error ? `failure:\n${error.message}` : `failure:\n${String(error)}`
+      ]
+
+      if (error instanceof CommandExecutionError) {
+        if (error.context.stdout) {
+          lines.push(`stdout:\n${error.context.stdout}`)
+        }
+        if (error.context.stderr) {
+          lines.push(`stderr:\n${error.context.stderr}`)
+        }
+      }
+
+      await writeRuntimeLog(context.logFilePath, lines.join("\n"))
+    }
+
+    if (error instanceof CommandExecutionError) {
+      const detail = [
+        error.message,
+        error.context.stdout ? `stdout:\n${error.context.stdout}` : "",
+        error.context.stderr ? `stderr:\n${error.context.stderr}` : ""
       ]
         .filter(Boolean)
         .join("\n")
-    )
-  }
 
-  return {
-    command,
-    args,
-    stdout: result.stdout,
-    stderr: result.stderr
+      throw new Error(detail, { cause: error })
+    }
+
+    throw error
   }
 }
 

@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -21,6 +21,11 @@ const fixtureManifestPath = path.resolve(
 const fixtureScriptPath = path.resolve(
   fileURLToPath(
     new URL("../../tests/runtime/fixtures/scripts/install-component.mjs", import.meta.url)
+  )
+)
+const fixtureFailureManifestPath = path.resolve(
+  fileURLToPath(
+    new URL("../../tests/runtime/fixtures/runtime-manifest-failure.yaml", import.meta.url)
   )
 )
 
@@ -163,11 +168,11 @@ paths:
   vendoredRoot: "components/services"
 phases:
   install:
-    order: ["node", "dotnet", "npm-packages", "server"]
+    order: ["node", "dotnet", "server"]
   remove:
-    order: ["server", "npm-packages", "dotnet", "node"]
+    order: ["server", "dotnet", "node"]
   update:
-    order: ["node", "dotnet", "npm-packages", "server"]
+    order: ["node", "dotnet", "server"]
 components:
   - name: "node"
     type: "runtime"
@@ -175,13 +180,9 @@ components:
   - name: "dotnet"
     type: "runtime"
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
-  - name: "npm-packages"
-    type: "package"
-    lifecycleDependencies: ["node"]
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "server"
     type: "released-service"
-    lifecycleDependencies: ["dotnet", "npm-packages"]
+    lifecycleDependencies: ["node", "dotnet"]
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
@@ -198,12 +199,7 @@ components:
       components: ["server"]
     })
 
-    expect(plan.plan.map((item) => item.componentName)).toEqual([
-      "node",
-      "dotnet",
-      "npm-packages",
-      "server"
-    ])
+    expect(plan.plan.map((item) => item.componentName)).toEqual(["node", "dotnet", "server"])
     await rm(directory, { recursive: true, force: true })
   })
 
@@ -266,6 +262,31 @@ components:
     )
 
     await rm(runtimeRoot, { recursive: true, force: true })
+  })
+
+  it("surfaces script stderr and runtime log paths when a component install fails", async () => {
+    const runtimeRoot = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-failure-"))
+
+    try {
+      await installRuntime({
+        manifestPath: fixtureFailureManifestPath,
+        runtimeRoot
+      })
+      throw new Error("Expected runtime install to fail.")
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error)
+      const message = error instanceof Error ? error.message : String(error)
+      expect(message).toContain("install failed for component failer")
+      expect(message).toContain("intentional failure for failer")
+      const logPathMatch = message.match(/Log: (.+)$/m)
+      expect(logPathMatch?.[1]).toBeTruthy()
+
+      const logContents = await readFile(String(logPathMatch?.[1]), "utf8")
+      expect(logContents).toContain("# install:failer")
+      expect(logContents).toContain("stderr:\nintentional failure for failer")
+    } finally {
+      await rm(runtimeRoot, { recursive: true, force: true })
+    }
   })
 
   it("reports released-service runtime state for managed server payloads", async () => {
