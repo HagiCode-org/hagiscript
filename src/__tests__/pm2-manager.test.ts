@@ -298,6 +298,28 @@ describe("pm2 manager", () => {
     }
   })
 
+  it("resolves released-service server definitions from external absolute paths", async () => {
+    const externalRoot = path.join(tmpdir(), "hagiscript-external-local-publishment")
+    const setup = await createPm2Fixture({
+      releasedService: {
+        dllPath: path.join(externalRoot, "lib", "PCode.Web.dll"),
+        workingDirectory: path.join(externalRoot, "lib")
+      }
+    })
+
+    try {
+      const manifest = await loadRuntimeManifest({ manifestPath: setup.manifestPath })
+      const paths = resolveRuntimePaths(manifest, { runtimeRoot: setup.runtimeRoot })
+      const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, "server")
+
+      expect(definition.script).toBe(path.join(externalRoot, "lib", "PCode.Web.dll"))
+      expect(definition.cwd).toBe(path.join(externalRoot, "lib"))
+      expect(definition.launchStrategy).toBe("released-service")
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
   it("retries retryable bootstrap PM2 output before returning status", async () => {
     const setup = await createPm2Fixture()
     let jlistCallCount = 0
@@ -388,7 +410,12 @@ describe("pm2 manager", () => {
   })
 })
 
-async function createPm2Fixture(): Promise<{
+async function createPm2Fixture(options: {
+  releasedService?: {
+    dllPath: string
+    workingDirectory: string
+  }
+} = {}): Promise<{
   directory: string
   manifestPath: string
   runtimeRoot: string
@@ -405,7 +432,18 @@ async function createPm2Fixture(): Promise<{
   )
 
   await mkdir(path.join(componentRoot, "current"), { recursive: true })
-  await mkdir(path.join(runtimeRoot, "program", "components", "server", "current", "lib"), {
+  const releasedService = {
+    dllPath: options.releasedService?.dllPath ?? "current/lib/PCode.Web.dll",
+    workingDirectory: options.releasedService?.workingDirectory ?? "current/lib"
+  }
+  const payloadPath = path.isAbsolute(releasedService.dllPath)
+    ? releasedService.dllPath
+    : path.join(runtimeRoot, "program", "components", "server", releasedService.dllPath)
+  const workingDirectoryPath = path.isAbsolute(releasedService.workingDirectory)
+    ? releasedService.workingDirectory
+    : path.join(runtimeRoot, "program", "components", "server", releasedService.workingDirectory)
+
+  await mkdir(workingDirectoryPath, {
     recursive: true
   })
   await mkdir(path.join(runtimeRoot, "program", "npm", "bin"), { recursive: true })
@@ -439,19 +477,7 @@ async function createPm2Fixture(): Promise<{
     "#!/usr/bin/env sh\n",
     "utf8"
   )
-  await writeFile(
-    path.join(
-      runtimeRoot,
-      "program",
-      "components",
-      "server",
-      "current",
-      "lib",
-      "PCode.Web.dll"
-    ),
-    "fixture server payload\n",
-    "utf8"
-  )
+  await writeFile(payloadPath, "fixture server payload\n", "utf8")
   await writeFile(
     path.join(
       runtimeRoot,
@@ -544,8 +570,8 @@ components:
       env:
         ASPNETCORE_URLS: "http://127.0.0.1:39150"
     releasedService:
-      dllPath: "current/lib/PCode.Web.dll"
-      workingDirectory: "current/lib"
+      dllPath: "${releasedService.dllPath.replaceAll("\\", "/")}"
+      workingDirectory: "${releasedService.workingDirectory.replaceAll("\\", "/")}"
       runtimeFilesDir: "pm2-runtime"
 `,
     "utf8"

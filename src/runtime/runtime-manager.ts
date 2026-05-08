@@ -27,6 +27,7 @@ import {
   getComponentPm2Home,
   getComponentRuntimeDataHome,
   isPathInsideRuntimeRoot,
+  resolveReleasedServicePath,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime-paths.js"
@@ -1101,8 +1102,11 @@ function buildReleasedServiceDetails(
   }
 
   const details: Record<string, unknown> = {
-    releasedPayloadPath: join(componentRoot, component.releasedService.dllPath),
-    releasedWorkingDirectory: join(componentRoot, component.releasedService.workingDirectory),
+    releasedPayloadPath: resolveReleasedServicePath(component.releasedService.dllPath, componentRoot),
+    releasedWorkingDirectory: resolveReleasedServicePath(
+      component.releasedService.workingDirectory,
+      componentRoot
+    ),
     launchAssetsDirectory: join(
       componentDataHome,
       component.releasedService.runtimeFilesDir ?? "pm2-runtime"

@@ -97,4 +97,48 @@ describe("runtime executor environment", () => {
     expect(env.PATH).toBeUndefined()
     expect(env.CUSTOM_FLAG).toBe("1")
   })
+
+  it("publishes resolved absolute released-service paths into the runtime script environment", async () => {
+    const runtimeRoot = path.resolve("tmp", "hagiscript-runtime-released-service")
+    const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
+    const paths = resolveRuntimePaths(manifest, { runtimeRoot })
+    const componentRoot = path.join(runtimeRoot, "program", "components", "server")
+    const env = buildManagedRuntimeEnvironment(
+      {
+        component: {
+          name: "server",
+          type: "released-service",
+          releasedService: {
+            dllPath: "/opt/hagicode/local-publishment/lib/PCode.Web.dll",
+            workingDirectory: "/opt/hagicode/local-publishment/lib",
+            configRoot: "/opt/hagicode/local-publishment/lib",
+            startScript: "/opt/hagicode/local-publishment/start.sh"
+          }
+        },
+        manifest,
+        paths,
+        componentRoot,
+        componentConfigDir: path.join(runtimeRoot, "runtime-data", "components", "services", "server", "config")
+      },
+      {
+        PATH: "/usr/bin"
+      }
+    )
+
+    expect(env.HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_PATH).toBe(
+      "/opt/hagicode/local-publishment/lib/PCode.Web.dll"
+    )
+    expect(env.HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_ABSOLUTE_PATH).toBe(
+      "/opt/hagicode/local-publishment/lib/PCode.Web.dll"
+    )
+    expect(env.HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY_ABSOLUTE_PATH).toBe(
+      "/opt/hagicode/local-publishment/lib"
+    )
+    expect(env.HAGISCRIPT_RUNTIME_RELEASED_SERVICE_CONFIG_ROOT_ABSOLUTE_PATH).toBe(
+      "/opt/hagicode/local-publishment/lib"
+    )
+    expect(env.HAGISCRIPT_RUNTIME_RELEASED_SERVICE_START_SCRIPT_ABSOLUTE_PATH).toBe(
+      "/opt/hagicode/local-publishment/start.sh"
+    )
+  })
 })

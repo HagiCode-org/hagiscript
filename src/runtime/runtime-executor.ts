@@ -14,7 +14,8 @@ import type { ResolvedRuntimePaths } from "./runtime-paths.js"
 import {
   getComponentLogsDirectory,
   getComponentPm2Home,
-  getComponentRuntimeDataHome
+  getComponentRuntimeDataHome,
+  resolveReleasedServicePath
 } from "./runtime-paths.js"
 
 export interface RuntimeScriptExecutionContext {
@@ -196,7 +197,7 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR: context.paths.nodeRuntime,
       HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR: context.paths.dotnetRuntime,
       HAGISCRIPT_RUNTIME_NPM_PREFIX: context.paths.npmPrefix,
-      ...buildReleasedServiceEnvironment(context.component.releasedService),
+      ...buildReleasedServiceEnvironment(context.component.releasedService, context.componentRoot),
       ...(context.phase ? { HAGISCRIPT_RUNTIME_PHASE: context.phase } : {}),
       ...(context.purge !== undefined
         ? { HAGISCRIPT_RUNTIME_PURGE: context.purge ? "1" : "0" }
@@ -213,7 +214,8 @@ export function buildManagedRuntimeEnvironment(
 }
 
 function buildReleasedServiceEnvironment(
-  releasedService: RuntimeReleasedServiceDefinition | undefined
+  releasedService: RuntimeReleasedServiceDefinition | undefined,
+  componentRoot: string
 ): NodeJS.ProcessEnv {
   if (!releasedService) {
     return {}
@@ -221,10 +223,18 @@ function buildReleasedServiceEnvironment(
 
   return {
     HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_PATH: releasedService.dllPath,
+    HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_ABSOLUTE_PATH: resolveReleasedServicePath(
+      releasedService.dllPath,
+      componentRoot
+    ),
     HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY: releasedService.workingDirectory,
+    HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY_ABSOLUTE_PATH:
+      resolveReleasedServicePath(releasedService.workingDirectory, componentRoot),
     ...(releasedService.configRoot
       ? {
-          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_CONFIG_ROOT: releasedService.configRoot
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_CONFIG_ROOT: releasedService.configRoot,
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_CONFIG_ROOT_ABSOLUTE_PATH:
+            resolveReleasedServicePath(releasedService.configRoot, componentRoot)
         }
       : {}),
     ...(releasedService.runtimeFilesDir
@@ -234,7 +244,9 @@ function buildReleasedServiceEnvironment(
       : {}),
     ...(releasedService.startScript
       ? {
-          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_START_SCRIPT: releasedService.startScript
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_START_SCRIPT: releasedService.startScript,
+          HAGISCRIPT_RUNTIME_RELEASED_SERVICE_START_SCRIPT_ABSOLUTE_PATH:
+            resolveReleasedServicePath(releasedService.startScript, componentRoot)
         }
       : {})
   }

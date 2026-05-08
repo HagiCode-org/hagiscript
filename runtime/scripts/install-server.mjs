@@ -8,12 +8,16 @@ import {
 } from "../lib/runtime-script-lib.mjs"
 
 const context = readRuntimeScriptContext()
-const dllRelativePath = requiredEnv("HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_PATH")
-const workingDirectoryRelativePath = requiredEnv(
-  "HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY"
+const dllPath = resolveReleasedServicePath(
+  "HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_ABSOLUTE_PATH",
+  "HAGISCRIPT_RUNTIME_RELEASED_SERVICE_DLL_PATH",
+  context.componentRoot
 )
-const dllPath = path.join(context.componentRoot, dllRelativePath)
-const workingDirectory = path.join(context.componentRoot, workingDirectoryRelativePath)
+const workingDirectory = resolveReleasedServicePath(
+  "HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY_ABSOLUTE_PATH",
+  "HAGISCRIPT_RUNTIME_RELEASED_SERVICE_WORKING_DIRECTORY",
+  context.componentRoot
+)
 const payloadExists = await pathExists(dllPath)
 const workingDirectoryExists = await pathExists(workingDirectory)
 
@@ -41,6 +45,15 @@ function requiredEnv(name) {
   }
 
   return value
+}
+
+function resolveReleasedServicePath(absoluteEnvName, legacyEnvName, componentRoot) {
+  const absolutePath = process.env[absoluteEnvName]?.trim()
+  if (absolutePath) {
+    return path.resolve(absolutePath)
+  }
+
+  return path.resolve(componentRoot, requiredEnv(legacyEnvName))
 }
 
 async function pathExists(pathValue) {

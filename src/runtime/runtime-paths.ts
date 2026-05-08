@@ -69,6 +69,10 @@ export function resolveManagedPath(pathValue: string, runtimeRoot: string): stri
   return isAbsolute(expanded) ? resolve(expanded) : resolve(runtimeRoot, expanded)
 }
 
+export function resolveReleasedServicePath(pathValue: string, componentRoot: string): string {
+  return resolveManagedPath(pathValue, componentRoot)
+}
+
 export function getComponentManagedRoot(
   paths: ResolvedRuntimePaths,
   componentName: string

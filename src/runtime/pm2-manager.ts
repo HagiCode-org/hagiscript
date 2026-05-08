@@ -19,6 +19,7 @@ import {
   getComponentPm2Home,
   getComponentRuntimeDataHome,
   resolveManagedPath,
+  resolveReleasedServicePath,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime-paths.js"
@@ -235,8 +236,8 @@ export async function resolveManagedPm2ServiceDefinition(
       )
     }
 
-    const cwd = resolveManagedPath(releasedService.workingDirectory, componentRoot)
-    const script = resolveManagedPath(releasedService.dllPath, componentRoot)
+    const cwd = resolveReleasedServicePath(releasedService.workingDirectory, componentRoot)
+    const script = resolveReleasedServicePath(releasedService.dllPath, componentRoot)
     const runtimeFilesDir = join(runtimeDataHome, releasedService.runtimeFilesDir ?? "pm2-runtime")
     const ecosystemPath = join(runtimeFilesDir, "ecosystem.config.cjs")
     const envFilePath = join(runtimeFilesDir, ".env")
