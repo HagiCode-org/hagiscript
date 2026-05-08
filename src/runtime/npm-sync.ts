@@ -352,7 +352,11 @@ export function createNpmSyncPlan(
     .map(([packageName, entry]) => {
       const installedVersion = installed[packageName];
       const targetSelector = entry.target ?? entry.version;
-      const selectedInstallSelector = `${packageName}@${targetSelector}`;
+      const selectedInstallSelector = resolveInstallSelector(
+        packageName,
+        targetSelector,
+        entry.target !== undefined
+      );
       const metadata = createActionMetadata(entry);
 
       if (!installedVersion) {
@@ -628,6 +632,30 @@ function withRegistryMirror(
   }
 
   return { ...options, registryMirror };
+}
+
+function resolveInstallSelector(
+  packageName: string,
+  targetSelector: string,
+  hasExplicitTarget: boolean
+): string {
+  if (!hasExplicitTarget) {
+    return `${packageName}@${targetSelector}`;
+  }
+
+  if (looksLikeFullPackageSelector(targetSelector)) {
+    return targetSelector;
+  }
+
+  return `${packageName}@${targetSelector}`;
+}
+
+function looksLikeFullPackageSelector(targetSelector: string): boolean {
+  if (targetSelector.startsWith("@")) {
+    return true;
+  }
+
+  return /[@/:]/.test(targetSelector);
 }
 
 function normalizeFallbackPolicy(

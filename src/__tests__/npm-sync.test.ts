@@ -249,6 +249,45 @@ describe("npm-sync planning", () => {
       toolGroup: "optional-agent-cli"
     });
   });
+
+  it("uses bare version targets as package-local selectors", () => {
+    const manifest = validateNpmSyncManifest({
+      packages: {
+        openspec: { version: "^1.2.0", target: "1.2.3" }
+      }
+    });
+
+    const plan = createNpmSyncPlan(manifest, {});
+
+    expect(plan[0]).toMatchObject({
+      packageName: "openspec",
+      targetSelector: "1.2.3",
+      selectedInstallSelector: "openspec@1.2.3"
+    });
+  });
+
+  it("uses explicit full package selectors without re-prefixing the package name", () => {
+    const manifest = validateNpmSyncManifest({
+      packages: {
+        pm2: { version: "7.0.1", target: "pm2@7.0.1" },
+        openspec: {
+          version: "1.3.1",
+          target: "@fission-ai/openspec@1.3.1"
+        }
+      }
+    });
+
+    const plan = createNpmSyncPlan(manifest, {});
+
+    expect(plan.find((action) => action.packageName === "pm2")).toMatchObject({
+      targetSelector: "pm2@7.0.1",
+      selectedInstallSelector: "pm2@7.0.1"
+    });
+    expect(plan.find((action) => action.packageName === "openspec")).toMatchObject({
+      targetSelector: "@fission-ai/openspec@1.3.1",
+      selectedInstallSelector: "@fission-ai/openspec@1.3.1"
+    });
+  });
 });
 
 describe("npm-sync execution", () => {

@@ -80,6 +80,7 @@ jobs:
         with:
           name: hagiscript-validate-${{ matrix.platform }}-diagnostics
           path: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/
+          include-hidden-files: true
           if-no-files-found: warn
 
   runtime-management:
@@ -151,6 +152,7 @@ jobs:
         with:
           name: hagiscript-runtime-management-${{ matrix.platform }}-diagnostics
           path: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/
+          include-hidden-files: true
           if-no-files-found: warn
 
   runtime-key-path:
@@ -212,4 +214,5 @@ jobs:
         with:
           name: hagiscript-runtime-key-path-diagnostics
           path: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/
+          include-hidden-files: true
           if-no-files-found: warn
