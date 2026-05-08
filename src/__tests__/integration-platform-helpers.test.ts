@@ -77,12 +77,27 @@ describe("installed-runtime integration platform helpers", () => {
         { name: "platform-specific checks", status: "passed", durationMs: 2 }
       ],
       skipped: [{ name: "symlink creation", reason: "missing privilege" }],
-      finalResult: "passed"
+      finalResult: "passed",
+      extraSections: [
+        {
+          title: "Managed PM2 Verification",
+          lines: ["- omniroute: start -> online -> stop -> stopped"],
+          details: [
+            {
+              summary: "PM2 environment snapshot",
+              lines: ["```text", "PM2_HOME=C:/temp/.pm2", "```"]
+            }
+          ]
+        }
+      ]
     });
 
     expect(summary).toContain("- Final result: passed");
     expect(summary).toContain("- platform-specific checks: passed (2ms)");
     expect(summary).toContain("- symlink creation: skipped - missing privilege");
     expect(summary).not.toContain("- symlink creation: passed");
+    expect(summary).toContain("## Managed PM2 Verification");
+    expect(summary).toContain("<details>");
+    expect(summary).toContain("<summary>PM2 environment snapshot</summary>");
   });
 });

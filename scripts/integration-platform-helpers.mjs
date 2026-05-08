@@ -159,9 +159,39 @@ export function formatIntegrationSummary({
     } else {
       lines.push("- None");
     }
+
+    if (Array.isArray(section.details)) {
+      for (const detail of section.details) {
+        if (!detail?.summary) {
+          continue;
+        }
+
+        lines.push(
+          "",
+          detail.open ? "<details open>" : "<details>",
+          `<summary>${escapeHtml(detail.summary)}</summary>`,
+          ""
+        );
+
+        if (Array.isArray(detail.lines) && detail.lines.length > 0) {
+          lines.push(...detail.lines);
+        } else {
+          lines.push("- None");
+        }
+
+        lines.push("", "</details>");
+      }
+    }
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 async function commandVersion(runProcess, command, args, cwd) {

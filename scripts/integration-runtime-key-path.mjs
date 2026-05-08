@@ -240,6 +240,8 @@ try {
         repoRoot
       })
 
+      assertIncludes(statusOutput, "Status: online", `${service} online status`)
+
       const stopOutput = await runCapture(
         process.execPath,
         [
@@ -255,17 +257,7 @@ try {
         repoRoot
       )
       assertIncludes(stopOutput, "Status: stopped", `${service} stop`)
-
-      if (!statusOutput.includes("Status: online") && process.platform !== "linux") {
-        tracker.skip(
-          `${process.platform} ${service} pm2 stability`,
-          `The ${process.platform} runner may report ${service} as stopped/errored immediately after start even when PM2 accepted the start request.`
-        )
-        pm2LifecycleLines.push(`- ${service}: start accepted, online verification skipped on non-Linux runner instability, stop -> stopped`)
-      } else {
-        assertIncludes(statusOutput, "Status: online", `${service} online status`)
-        pm2LifecycleLines.push(`- ${service}: start -> online -> stop -> stopped`)
-      }
+      pm2LifecycleLines.push(`- ${service}: start -> online -> stop -> stopped`)
     }
 
     await Promise.all([
@@ -321,13 +313,13 @@ try {
         repoRoot
       })
 
+      assertIncludes(statusOutput, "Status: online", "server online status")
+
       releasedServerLines.push(
         `- Release tag: ${releasedServer.tagName}`,
         `- Asset: ${releasedServer.assetName}`,
         `- Payload root: ${releasedServer.targetRoot}`,
-        statusOutput.includes("Status: online")
-          ? "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start -> online"
-          : "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start accepted"
+        "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start -> online"
       )
 
       await killManagedPm2(managedRoot, "server")
@@ -357,24 +349,35 @@ try {
     finalResult,
     extraSections: [
       {
-        title: "Runtime Install Results",
+        title: "Runtime Install",
         lines: runtimeInstallLines.length > 0 ? runtimeInstallLines : ["- Not captured"]
       },
       {
-        title: "npm-sync Tool Provisioning",
+        title: "npm-sync Provisioning",
         lines: npmSyncLines.length > 0 ? npmSyncLines : ["- Not captured"]
       },
       {
-        title: "PM2 Environment Contract",
-        lines: pm2EnvironmentLines.length > 0 ? pm2EnvironmentLines : ["- Not captured"]
-      },
-      {
-        title: "PM2 Lifecycle Results",
-        lines: pm2LifecycleLines.length > 0 ? pm2LifecycleLines : ["- Not captured"]
-      },
-      {
-        title: "Released Server Results",
-        lines: releasedServerLines.length > 0 ? releasedServerLines : ["- Not requested"]
+        title: "Managed PM2 Verification",
+        lines: [
+          ...(pm2LifecycleLines.length > 0 ? pm2LifecycleLines : ["- Not captured"]),
+          releasedServerLines.length > 0
+            ? "- Released server validation: captured in folded details below"
+            : "- Released server validation: not requested"
+        ],
+        details: [
+          {
+            summary: "PM2 environment contract",
+            lines: pm2EnvironmentLines.length > 0 ? pm2EnvironmentLines : ["- Not captured"]
+          },
+          ...(releasedServerLines.length > 0
+            ? [
+                {
+                  summary: "Released server validation",
+                  lines: releasedServerLines
+                }
+              ]
+            : [])
+        ]
       }
     ]
   })

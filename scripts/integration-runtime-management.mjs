@@ -384,20 +384,7 @@ try {
           repoRoot
         }
       )
-      if (!statusOutput.includes("Status: online")) {
-        if (process.platform !== "linux") {
-          tracker.skip(
-            `${process.platform} ${service} pm2 stability`,
-            `The ${process.platform} runner may report ${service} as stopped/errored immediately after start even when PM2 accepted the start request.`
-          )
-          pm2LifecycleLines.push(
-            `- ${service}: start -> online, status -> skipped on non-Linux runner instability`
-          )
-          continue
-        }
-
-        assertIncludes(statusOutput, "Status: online", `${service} queried status`)
-      }
+      assertIncludes(statusOutput, "Status: online", `${service} queried status`)
 
       const stopOutput = await runCapture(
         process.execPath,
@@ -496,54 +483,39 @@ try {
         runtimeRoot: managedRoot,
         repoRoot
       })
-      const serverOnline = onlineOutput.includes("Status: online")
-      if (!serverOnline) {
-        if (process.platform !== "linux") {
-          tracker.skip(
-            `${process.platform} released server pm2 stability`,
-            `The ${process.platform} runner may report the released server as stopped/errored immediately after PM2 accepted the start request.`
-          )
-          releasedServerLines.push(
-            "- Lifecycle: install -> start requested, online verification skipped on non-Linux runner instability"
-          )
-        } else {
-          assertIncludes(onlineOutput, "Status: online", "server online status")
-        }
-      }
+      assertIncludes(onlineOutput, "Status: online", "server online status")
 
-      if (serverOnline) {
-        const restartOutput = await runCapture(
-          process.execPath,
-          [
-            "dist/cli.js",
-            "pm2",
-            "server",
-            "restart",
-            "--from-manifest",
-            pm2ManifestPath,
-            "--runtime-root",
-            managedRoot
-          ],
-          repoRoot
-        )
-        assertIncludes(restartOutput, "Action: restart", "server restart output")
+      const restartOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "restart",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(restartOutput, "Action: restart", "server restart output")
 
-        const stopOutput = await runCapture(
-          process.execPath,
-          [
-            "dist/cli.js",
-            "pm2",
-            "server",
-            "stop",
-            "--from-manifest",
-            pm2ManifestPath,
-            "--runtime-root",
-            managedRoot
-          ],
-          repoRoot
-        )
-        assertIncludes(stopOutput, "Status: stopped", "server stop output")
-      }
+      const stopOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "stop",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      assertIncludes(stopOutput, "Status: stopped", "server stop output")
 
       const removeOutput = await runCapture(
         process.execPath,
@@ -578,15 +550,9 @@ try {
         repoRoot
       )
       assertIncludes(statusOutput, "Status: missing", "server status after removal")
-      if (serverOnline) {
-        releasedServerLines.push(
-          "- Lifecycle: install -> start -> online -> restart -> stop -> runtime remove --purge -> status missing"
-        )
-      } else {
-        releasedServerLines.push(
-          "- Lifecycle: install -> start requested -> runtime remove --purge -> status missing"
-        )
-      }
+      releasedServerLines.push(
+        "- Lifecycle: install -> start -> online -> restart -> stop -> runtime remove --purge -> status missing"
+      )
     })
   }
 
@@ -708,37 +674,38 @@ try {
     finalResult,
     extraSections: [
       {
-        title: "Installed Runtime Tree",
-        lines: installedTreeLines.length > 0 ? installedTreeLines : ["- Not captured"]
-      },
-      {
-        title: "Managed Dotnet Verification",
-        lines: dotnetVerificationLines.length > 0 ? dotnetVerificationLines : ["- Not captured"]
-      },
-      {
-        title: "Runtime Separation Checks",
+        title: "Managed Runtime Layout",
         lines: [
+          ...(dotnetVerificationLines.length > 0 ? dotnetVerificationLines : ["- Not captured"]),
           `- Runtime home: ${path.join(managedRoot, "program")}`,
           `- Runtime data root: ${path.join(managedRoot, "runtime-data")}`,
           `- Program roots: ${path.join(managedRoot, "program")}, ${path.join(managedRoot, "program", "bin")}, ${path.join(managedRoot, "program", "components")}, ${path.join(managedRoot, "program", "npm")}`,
           `- External data roots: ${path.join(managedRoot, "runtime-data")}, ${path.join(managedRoot, "runtime-data", "config")}, ${path.join(managedRoot, "runtime-data", "logs")}, ${path.join(managedRoot, "runtime-data", "data")}, ${path.join(managedRoot, "runtime-data", "components")}`,
           "- Verified that program paths and external data paths remain separated in runtime state output"
+        ],
+        details: [
+          {
+            summary: "Installed runtime tree",
+            lines: installedTreeLines.length > 0 ? installedTreeLines : ["- Not captured"]
+          }
         ]
       },
       {
-        title: "Managed PM2 Lifecycle Checks",
+        title: "Managed PM2 Verification",
         lines: pm2LifecycleLines.length > 0 ? pm2LifecycleLines : ["- Not captured"]
       },
       {
         title: "Released Server Validation",
-        lines: releasedServerLines.length > 0 ? releasedServerLines : ["- Not requested"]
-      },
-      {
-        title: "Released Server Startup Environment",
-        lines:
+        lines: releasedServerLines.length > 0 ? releasedServerLines : ["- Not requested"],
+        details:
           releasedServerEnvironmentLines.length > 0
-            ? releasedServerEnvironmentLines
-            : ["- Not requested"]
+            ? [
+                {
+                  summary: "Released server startup environment",
+                  lines: releasedServerEnvironmentLines
+                }
+              ]
+            : []
       }
     ]
   })
