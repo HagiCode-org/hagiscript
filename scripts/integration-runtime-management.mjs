@@ -36,6 +36,7 @@ let installedTreeLines = []
 let dotnetVerificationLines = []
 let pm2LifecycleLines = []
 let releasedServerLines = []
+let releasedServerEnvironmentLines = []
 let diagnostics
 let finalResult = "failed"
 
@@ -461,6 +462,27 @@ try {
       )
       assertIncludes(installOutput, "Runtime install complete.", "released server install output")
 
+      const envOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "pm2",
+          "server",
+          "env",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot
+        ],
+        repoRoot
+      )
+      releasedServerEnvironmentLines = [
+        "- Command: `hagiscript pm2 server env --from-manifest <integration-manifest> --runtime-root <managed-root>`",
+        "```text",
+        ...envOutput.trimEnd().split(/\r?\n/u),
+        "```"
+      ]
+
       const startOutput = await runCapture(
         process.execPath,
         [
@@ -717,6 +739,13 @@ try {
       {
         title: "Released Server Validation",
         lines: releasedServerLines.length > 0 ? releasedServerLines : ["- Not requested"]
+      },
+      {
+        title: "Released Server Startup Environment",
+        lines:
+          releasedServerEnvironmentLines.length > 0
+            ? releasedServerEnvironmentLines
+            : ["- Not requested"]
       }
     ]
   })
