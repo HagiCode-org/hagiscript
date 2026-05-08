@@ -596,13 +596,32 @@ async function extractZipArchive(archivePath, extractRoot, cwd) {
 }
 
 function getReleasedServerAssetSuffix() {
+  const platform = getReleasedServerPlatform()
+  const arch = getReleasedServerArch()
+  return `${platform}-${arch}-nort.zip`
+}
+
+function getReleasedServerPlatform() {
   switch (process.platform) {
-    case "win32":
-      return "-win-x64.zip"
     case "darwin":
-      return process.arch === "arm64" ? "-osx-arm64.zip" : "-osx-x64.zip"
+      return "osx"
+    case "win32":
+      return "win"
     default:
-      return process.arch === "arm64" ? "-linux-arm64.zip" : "-linux-x64.zip"
+      return "linux"
+  }
+}
+
+function getReleasedServerArch() {
+  switch (process.arch) {
+    case "x64":
+      return "x64"
+    case "arm64":
+      return "arm64"
+    default:
+      throw new Error(
+        `Released server validation does not support architecture ${process.arch}.`
+      )
   }
 }
 
