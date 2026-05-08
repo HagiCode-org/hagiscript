@@ -3,7 +3,10 @@ import { basename, extname, join } from "node:path"
 import process from "node:process"
 import type { CommandResult, CommandRunner } from "./command-launch.js"
 import { CommandExecutionError, runCommand } from "./command-launch.js"
-import { buildManagedRuntimeEnvironment } from "./runtime-executor.js"
+import {
+  buildManagedRuntimeEnvironment,
+  getManagedRuntimePathEntries
+} from "./runtime-executor.js"
 import { getRuntimeExecutablePaths } from "./node-verify.js"
 import {
   loadRuntimeManifest,
@@ -80,6 +83,29 @@ export interface ManagedPm2CommandResult {
   runtimeFilesDir?: string
 }
 
+export interface ManagedPm2EnvironmentResult {
+  service: ManagedPm2ServiceName
+  appName: string
+  cwd: string
+  script: string
+  args: string[]
+  env: NodeJS.ProcessEnv
+  pathKey: "PATH" | "Path"
+  pathEntries: string[]
+  runtimeHome: string
+  runtimeDataHome: string
+  componentRoot: string
+  componentConfigDir: string
+  pm2Home: string
+  pm2Binary: string
+  nodePath: string
+  launchStrategy: ManagedPm2LaunchStrategy
+  dotnetPath?: string
+  runtimeFilesDir?: string
+  ecosystemPath?: string
+  envFilePath?: string
+}
+
 export class ManagedPm2Error extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
@@ -123,6 +149,38 @@ export async function runManagedPm2Command(
       return readManagedPm2Status(definition, "delete", runner)
     case "status":
       return readManagedPm2Status(definition, "status", runner)
+  }
+}
+
+export async function resolveManagedPm2Environment(
+  options: Omit<ManagedPm2CommandOptions, "action" | "runner">
+): Promise<ManagedPm2EnvironmentResult> {
+  const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
+  const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
+  const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, options.service)
+  const env = buildManagedPm2Environment(definition)
+
+  return {
+    service: definition.service,
+    appName: definition.appName,
+    cwd: definition.cwd,
+    script: definition.script,
+    args: [...definition.args],
+    env,
+    pathKey: process.platform === "win32" ? "Path" : "PATH",
+    pathEntries: getManagedRuntimePathEntries(definition.paths),
+    runtimeHome: definition.runtimeHome,
+    runtimeDataHome: definition.runtimeDataHome,
+    componentRoot: definition.componentRoot,
+    componentConfigDir: definition.componentConfigDir,
+    pm2Home: definition.pm2Home,
+    pm2Binary: definition.pm2Binary,
+    nodePath: definition.nodePath,
+    launchStrategy: definition.launchStrategy,
+    dotnetPath: definition.dotnetPath,
+    runtimeFilesDir: definition.runtimeFilesDir,
+    ecosystemPath: definition.ecosystemPath,
+    envFilePath: definition.envFilePath
   }
 }
 
@@ -273,6 +331,40 @@ export function renderManagedPm2StatusText(result: ManagedPm2CommandResult): str
   ].join("\n")
 }
 
+export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentResult): string {
+  const argsText =
+    result.args.length > 0 ? result.args.map((entry) => JSON.stringify(entry)).join(" ") : "(none)"
+  const envLines = Object.entries(result.env)
+    .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `  ${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
+
+  return [
+    `Service: ${result.service}`,
+    `App: ${result.appName}`,
+    `Launch strategy: ${result.launchStrategy}`,
+    `Working directory: ${result.cwd}`,
+    `Script: ${result.script}`,
+    `Arguments: ${argsText}`,
+    `Runtime home: ${result.runtimeHome}`,
+    `Runtime data home: ${result.runtimeDataHome}`,
+    `Component root: ${result.componentRoot}`,
+    `Component config dir: ${result.componentConfigDir}`,
+    `PM2 home: ${result.pm2Home}`,
+    `PM2 binary: ${result.pm2Binary}`,
+    `Node: ${result.nodePath}`,
+    ...(result.dotnetPath ? [`Dotnet: ${result.dotnetPath}`] : []),
+    ...(result.runtimeFilesDir ? [`Runtime files: ${result.runtimeFilesDir}`] : []),
+    ...(result.ecosystemPath ? [`PM2 ecosystem: ${result.ecosystemPath}`] : []),
+    ...(result.envFilePath ? [`PM2 env file: ${result.envFilePath}`] : []),
+    `Path key: ${result.pathKey}`,
+    "Managed PATH entries:",
+    ...result.pathEntries.map((entry) => `  - ${entry}`),
+    "Environment:",
+    ...envLines
+  ].join("\n")
+}
+
 function assertSupportedPm2Service(service: string): asserts service is ManagedPm2ServiceName {
   if ((supportedPm2Services as readonly string[]).includes(service)) {
     return
@@ -344,19 +436,7 @@ async function executePm2(
     allowMissingProcess?: boolean
   } = {}
 ): Promise<CommandResult> {
-  const env = buildManagedRuntimeEnvironment(
-    {
-      component: definition.component,
-      manifest: { manifestDir: definition.manifestDir },
-      paths: definition.paths,
-      componentRoot: definition.componentRoot,
-      componentConfigDir: definition.componentConfigDir,
-      componentDataHome: definition.runtimeDataHome,
-      pm2Home: definition.pm2Home,
-      scriptBasename: basename(definition.script)
-    },
-    { ...process.env, ...definition.env }
-  )
+  const env = buildManagedPm2Environment(definition)
 
   try {
     return await runner(definition.nodePath, [definition.pm2Binary, ...args], {
@@ -404,19 +484,7 @@ async function prepareReleasedServicePm2Files(
     return
   }
 
-  const env = buildManagedRuntimeEnvironment(
-    {
-      component: definition.component,
-      manifest: { manifestDir: definition.manifestDir },
-      paths: definition.paths,
-      componentRoot: definition.componentRoot,
-      componentConfigDir: definition.componentConfigDir,
-      componentDataHome: definition.runtimeDataHome,
-      pm2Home: definition.pm2Home,
-      scriptBasename: basename(definition.script)
-    },
-    { ...process.env, ...definition.env }
-  )
+  const env = buildManagedPm2Environment(definition)
 
   await mkdir(definition.runtimeFilesDir, { recursive: true })
   await writeFile(definition.envFilePath, buildPm2EnvFile(env), "utf8")
@@ -464,6 +532,25 @@ function buildPm2EnvFile(env: NodeJS.ProcessEnv): string {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
       .join("\n") + "\n"
+  )
+}
+
+function buildManagedPm2Environment(
+  definition: ResolvedManagedPm2ServiceDefinition,
+  baseEnv: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  return buildManagedRuntimeEnvironment(
+    {
+      component: definition.component,
+      manifest: { manifestDir: definition.manifestDir },
+      paths: definition.paths,
+      componentRoot: definition.componentRoot,
+      componentConfigDir: definition.componentConfigDir,
+      componentDataHome: definition.runtimeDataHome,
+      pm2Home: definition.pm2Home,
+      scriptBasename: basename(definition.script)
+    },
+    { ...baseEnv, ...definition.env }
   )
 }
 

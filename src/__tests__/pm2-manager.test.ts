@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { getManagedNpmBinDirectory } from "../runtime/runtime-executor.js"
 import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
 import {
+  resolveManagedPm2Environment,
   resolveManagedPm2ServiceDefinition,
   runManagedPm2Command
 } from "../runtime/pm2-manager.js"
@@ -243,6 +244,53 @@ describe("pm2 manager", () => {
           "dotnet",
           "current",
           process.platform === "win32" ? "dotnet.exe" : "dotnet"
+        )
+      )
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("reports reusable launch environment for released-service server startup", async () => {
+    const setup = await createPm2Fixture()
+
+    try {
+      const report = await resolveManagedPm2Environment({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "server"
+      })
+
+      expect(report.launchStrategy).toBe("released-service")
+      expect(report.dotnetPath).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "dotnet",
+          "current",
+          process.platform === "win32" ? "dotnet.exe" : "dotnet"
+        )
+      )
+      expect(report.pathEntries).toEqual([
+        path.dirname(getFixtureNodePath(setup.runtimeRoot)),
+        getManagedNpmBinDirectory(path.join(setup.runtimeRoot, "program", "npm")),
+        path.join(setup.runtimeRoot, "program", "bin")
+      ])
+      expect(report.env.HAGISCRIPT_RUNTIME_COMPONENT_NAME).toBe("server")
+      expect(report.env.ASPNETCORE_URLS).toBe("http://127.0.0.1:39150")
+      expect(report.env[report.pathKey]?.startsWith(report.pathEntries.join(path.delimiter))).toBe(
+        true
+      )
+      expect(report.ecosystemPath).toBe(
+        path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "server",
+          "pm2-runtime",
+          "ecosystem.config.cjs"
         )
       )
     } finally {

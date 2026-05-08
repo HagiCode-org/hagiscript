@@ -91,10 +91,13 @@ export {
   type RuntimeState
 } from "./runtime/runtime-state.js";
 export {
+  renderManagedPm2EnvironmentText,
   renderManagedPm2StatusText,
+  resolveManagedPm2Environment,
   resolveManagedPm2ServiceDefinition,
   runManagedPm2Command,
   supportedPm2Services,
+  type ManagedPm2EnvironmentResult,
   type ManagedPm2Action,
   type ManagedPm2CommandResult,
   type ManagedPm2CommandOptions,

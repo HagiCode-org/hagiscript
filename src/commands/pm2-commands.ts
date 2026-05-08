@@ -1,6 +1,8 @@
 import { Command, InvalidArgumentError } from "commander"
 import {
+  renderManagedPm2EnvironmentText,
   renderManagedPm2StatusText,
+  resolveManagedPm2Environment,
   runManagedPm2Command,
   supportedPm2Services,
   type ManagedPm2Action,
@@ -10,7 +12,10 @@ import {
 interface Pm2CommandOptions {
   fromManifest?: string
   runtimeRoot?: string
+  json?: boolean
 }
+
+type ManagedPm2CliAction = ManagedPm2Action | "env"
 
 export function registerPm2Commands(program: Command): void {
   program
@@ -20,22 +25,45 @@ export function registerPm2Commands(program: Command): void {
     .argument("<action>", "pm2 action", parseManagedPm2Action)
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option("--json", "emit machine-readable JSON output")
     .action(
       async (
         service: ManagedPm2ServiceName,
-        action: ManagedPm2Action,
+        action: ManagedPm2CliAction,
         options: Pm2CommandOptions,
         command: Command
       ) => {
         try {
+          const manifestPath = validatePathOption(options.fromManifest, "--from-manifest")
+          const runtimeRoot = validatePathOption(options.runtimeRoot, "--runtime-root")
+
+          if (action === "env") {
+            const result = await resolveManagedPm2Environment({
+              manifestPath,
+              runtimeRoot,
+              service
+            })
+
+            process.stdout.write(
+              options.json
+                ? `${JSON.stringify(result, null, 2)}\n`
+                : `${renderManagedPm2EnvironmentText(result)}\n`
+            )
+            return
+          }
+
           const result = await runManagedPm2Command({
-            manifestPath: validatePathOption(options.fromManifest, "--from-manifest"),
-            runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root"),
+            manifestPath,
+            runtimeRoot,
             service,
             action
           })
 
-          process.stdout.write(`${renderManagedPm2StatusText(result)}\n`)
+          process.stdout.write(
+            options.json
+              ? `${JSON.stringify(result, null, 2)}\n`
+              : `${renderManagedPm2StatusText(result)}\n`
+          )
         } catch (error) {
           command.error(formatPm2Error(error), { exitCode: 1 })
         }
@@ -53,13 +81,19 @@ function parseManagedPm2Service(value: string): ManagedPm2ServiceName {
   )
 }
 
-function parseManagedPm2Action(value: string): ManagedPm2Action {
-  if (value === "start" || value === "stop" || value === "restart" || value === "status") {
+function parseManagedPm2Action(value: string): ManagedPm2CliAction {
+  if (
+    value === "start" ||
+    value === "stop" ||
+    value === "restart" ||
+    value === "status" ||
+    value === "env"
+  ) {
     return value
   }
 
   throw new InvalidArgumentError(
-    `Unsupported PM2 action "${value}". Supported actions: start, stop, restart, status.`
+    `Unsupported PM2 action "${value}". Supported actions: start, stop, restart, status, env.`
   )
 }
 
