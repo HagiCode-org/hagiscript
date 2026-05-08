@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { Buffer } from "node:buffer"
 import fs from "node:fs"
 import net from "node:net"
 import os from "node:os"
@@ -938,7 +939,7 @@ async function prepareReleasedServerPayload(options) {
   const releaseRepository =
     process.env.HAGISCRIPT_RELEASED_SERVER_REPOSITORY?.trim() || "HagiCode-org/releases"
   const assetSuffix = getReleasedServerAssetSuffix()
-  const releaseResponse = await fetch(
+  const releaseResponse = await globalThis.fetch(
     `https://api.github.com/repos/${releaseRepository}/releases/latest`,
     {
       headers: buildGitHubRequestHeaders("application/vnd.github+json")
@@ -984,7 +985,7 @@ async function prepareReleasedServerPayload(options) {
 }
 
 async function downloadFile(url, destinationPath) {
-  const response = await fetch(url, {
+  const response = await globalThis.fetch(url, {
     headers: buildGitHubRequestHeaders("application/octet-stream")
   })
 

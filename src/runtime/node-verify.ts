@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { constants } from "node:fs";
 import {
   CommandExecutionError,
@@ -99,6 +99,7 @@ async function runVersionCommand(
   try {
     const { stdout } = await defaultRunCommand(command, args, {
       timeoutMs,
+      env: prependExecutableDirectoryToPath(command),
       shell: launchOptions.shell,
       maxBuffer: 1024 * 1024
     });
@@ -113,4 +114,20 @@ async function runVersionCommand(
         : `Command failed: ${command} ${args.join(" ")}`
     );
   }
+}
+
+function prependExecutableDirectoryToPath(
+  command: string,
+  baseEnv: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  const executableDirectory = dirname(command);
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  const existingPath = process.platform === "win32" ? (baseEnv.Path ?? baseEnv.PATH ?? "") : (baseEnv.PATH ?? "");
+
+  return {
+    ...baseEnv,
+    [pathKey]: [executableDirectory, existingPath].filter(Boolean).join(
+      process.platform === "win32" ? ";" : ":"
+    )
+  };
 }

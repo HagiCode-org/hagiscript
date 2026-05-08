@@ -1,5 +1,5 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import semver from "semver";
 import {
   installGlobalPackage,
@@ -852,10 +852,17 @@ function createRuntimeNpmEnv(
   delete env.npm_config_globalconfig;
   delete env.NPM_CONFIG_USERCONFIG;
   delete env.npm_config_userconfig;
+  const runtimeBinDirectory =
+    process.platform === "win32" ? runtimePath : join(runtimePath, "bin");
+  const pathKey = process.platform === "win32" ? "Path" : "PATH";
+  const existingPath =
+    process.platform === "win32" ? (env.Path ?? env.PATH ?? "") : (env.PATH ?? "");
 
   return {
     ...env,
     NPM_CONFIG_PREFIX: runtimePath,
+    npm_config_prefix: runtimePath,
+    [pathKey]: [runtimeBinDirectory, existingPath].filter(Boolean).join(delimiter),
     npm_config_fund: "false",
     npm_config_audit: "false"
   };

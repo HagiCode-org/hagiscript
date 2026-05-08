@@ -1,5 +1,5 @@
 import { access } from "node:fs/promises"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -267,4 +267,178 @@ components:
 
     await rm(runtimeRoot, { recursive: true, force: true })
   })
+
+  it("reports released-service runtime state for managed server payloads", async () => {
+    const setup = await createReleasedServiceRuntimeFixture()
+
+    try {
+      await installRuntime({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot
+      })
+      const report = await queryRuntimeState({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot
+      })
+      const server = report.components.find((item) => item.name === "server")
+
+      expect(server?.status).toBe("installed")
+      expect(server?.programPaths).toEqual([
+        path.join(setup.runtimeRoot, "program", "components", "server")
+      ])
+      expect(server?.externalDataPaths).toContain(
+        path.join(setup.runtimeRoot, "runtime-data", "components", "services", "server")
+      )
+      expect(server?.details).toMatchObject({
+        releasedPayloadPath: setup.releasedPayloadPath,
+        releasedWorkingDirectory: setup.releasedWorkingDirectory,
+        launchAssetsDirectory: path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "server",
+          "pm2-runtime"
+        ),
+        releasedServiceReady: true
+      })
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("reports released-service runtime state for external server payloads", async () => {
+    const setup = await createReleasedServiceRuntimeFixture({ serviceLocation: "external" })
+
+    try {
+      await installRuntime({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot
+      })
+      const report = await queryRuntimeState({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot
+      })
+      const server = report.components.find((item) => item.name === "server")
+
+      expect(server?.status).toBe("installed")
+      expect(server?.programPaths).toEqual([
+        path.join(setup.runtimeRoot, "program", "components", "server")
+      ])
+      expect(server?.externalDataPaths).toContain(
+        path.join(setup.runtimeRoot, "runtime-data", "components", "services", "server")
+      )
+      expect(server?.details).toMatchObject({
+        releasedPayloadPath: setup.releasedPayloadPath,
+        releasedWorkingDirectory: setup.releasedWorkingDirectory,
+        launchAssetsDirectory: path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "server",
+          "pm2-runtime"
+        ),
+        releasedServiceReady: true
+      })
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
 })
+
+async function createReleasedServiceRuntimeFixture(options: {
+  serviceLocation?: "managed" | "external"
+} = {}): Promise<{
+  directory: string
+  manifestPath: string
+  runtimeRoot: string
+  releasedPayloadPath: string
+  releasedWorkingDirectory: string
+}> {
+  const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-server-"))
+  const runtimeRoot = path.join(directory, "managed-runtime")
+  const manifestPath = path.join(directory, "released-service.yaml")
+  const templateDir = path.join(directory, "templates")
+  const releasedWorkingDirectory =
+    options.serviceLocation === "external"
+      ? path.join(directory, "external-local-publishment", "lib")
+      : path.join(runtimeRoot, "program", "components", "server", "current", "lib")
+  const releasedPayloadPath = path.join(releasedWorkingDirectory, "PCode.Web.dll")
+
+  await mkdir(releasedWorkingDirectory, { recursive: true })
+  await mkdir(templateDir, { recursive: true })
+  await writeFile(releasedPayloadPath, "fixture released-service payload\n", "utf8")
+  await writeFile(
+    path.join(templateDir, "service-template.txt"),
+    "component={{COMPONENT_NAME}} root={{RUNTIME_ROOT}} phase={{PHASE}}\n",
+    "utf8"
+  )
+  await writeFile(
+    manifestPath,
+    `runtime:
+  name: fixture-runtime
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["server"]
+  remove:
+    order: ["server"]
+  update:
+    order: ["server"]
+components:
+  - name: "server"
+    type: "released-service"
+    runtimeDataDir: "services/server"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-server"
+    releasedService:
+      dllPath: "${
+        options.serviceLocation === "external"
+          ? normalizeManifestPath(releasedPayloadPath)
+          : "current/lib/PCode.Web.dll"
+      }"
+      workingDirectory: "${
+        options.serviceLocation === "external"
+          ? normalizeManifestPath(releasedWorkingDirectory)
+          : "current/lib"
+      }"
+      configRoot: "${
+        options.serviceLocation === "external"
+          ? normalizeManifestPath(releasedWorkingDirectory)
+          : "current/lib"
+      }"
+      runtimeFilesDir: "pm2-runtime"
+`,
+    "utf8"
+  )
+
+  return {
+    directory,
+    manifestPath,
+    runtimeRoot,
+    releasedPayloadPath,
+    releasedWorkingDirectory
+  }
+}
+
+function normalizeManifestPath(value: string): string {
+  return value.replaceAll("\\", "/")
+}

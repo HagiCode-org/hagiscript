@@ -410,6 +410,16 @@ function integrationEnv(npmPrefix) {
 
   if (npmPrefix) {
     nextEnv.NPM_CONFIG_PREFIX = npmPrefix;
+    nextEnv.npm_config_prefix = npmPrefix;
+    const runtimeBinDirectory = path.dirname(runtimeNpmCommand(npmPrefix));
+    const pathKey = process.platform === "win32" ? "Path" : "PATH";
+    const existingPath =
+      process.platform === "win32"
+        ? (nextEnv.Path ?? nextEnv.PATH ?? "")
+        : (nextEnv.PATH ?? "");
+    nextEnv[pathKey] = [runtimeBinDirectory, existingPath]
+      .filter(Boolean)
+      .join(path.delimiter);
   }
 
   return nextEnv;

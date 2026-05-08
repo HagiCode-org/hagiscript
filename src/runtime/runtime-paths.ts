@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { isAbsolute, join, relative, resolve } from "node:path"
+import { isAbsolute, join, posix, relative, resolve, win32 } from "node:path"
 import type { LoadedRuntimeManifest } from "./runtime-manifest.js"
 
 export const defaultRuntimeRoot = "~/.hagicode/runtime"
@@ -66,7 +66,8 @@ export function normalizeManagedRoot(value: string): string {
 
 export function resolveManagedPath(pathValue: string, runtimeRoot: string): string {
   const expanded = expandHomeDirectory(pathValue.trim())
-  return isAbsolute(expanded) ? resolve(expanded) : resolve(runtimeRoot, expanded)
+  const absolutePath = resolvePortableAbsolutePath(expanded)
+  return absolutePath ?? resolve(runtimeRoot, expanded)
 }
 
 export function resolveReleasedServicePath(pathValue: string, componentRoot: string): string {
@@ -146,4 +147,20 @@ function expandHomeDirectory(value: string): string {
   }
 
   return value
+}
+
+function resolvePortableAbsolutePath(value: string): string | undefined {
+  if (isAbsolute(value)) {
+    return resolve(value)
+  }
+
+  if (posix.isAbsolute(value)) {
+    return posix.normalize(value)
+  }
+
+  if (win32.isAbsolute(value)) {
+    return win32.normalize(value)
+  }
+
+  return undefined
 }
