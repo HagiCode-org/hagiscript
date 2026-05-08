@@ -912,10 +912,7 @@ async function prepareReleasedServerPayload(options) {
   const releaseResponse = await fetch(
     `https://api.github.com/repos/${releaseRepository}/releases/latest`,
     {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "hagiscript-runtime-management"
-      }
+      headers: buildGitHubRequestHeaders("application/vnd.github+json")
     }
   )
 
@@ -959,10 +956,7 @@ async function prepareReleasedServerPayload(options) {
 
 async function downloadFile(url, destinationPath) {
   const response = await fetch(url, {
-    headers: {
-      Accept: "application/octet-stream",
-      "User-Agent": "hagiscript-runtime-management"
-    }
+    headers: buildGitHubRequestHeaders("application/octet-stream")
   })
 
   if (!response.ok) {
@@ -1042,6 +1036,20 @@ function getReleasedServerArch() {
 
 function escapePowerShell(value) {
   return value.replaceAll("'", "''")
+}
+
+function buildGitHubRequestHeaders(accept) {
+  const token =
+    process.env.HAGISCRIPT_RELEASED_SERVER_TOKEN?.trim() ||
+    process.env.GITHUB_TOKEN?.trim() ||
+    process.env.GH_TOKEN?.trim()
+
+  return {
+    Accept: accept,
+    "User-Agent": "hagiscript-runtime-management",
+    "X-GitHub-Api-Version": "2022-11-28",
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
 }
 
 function renderDirectoryTree(rootPath, maxDepth = 4) {
