@@ -2,7 +2,7 @@
 
 The `.github/workflows/ci.yml` workflow validates HagiScript on Linux, Windows, and macOS GitHub-hosted runners. Both `validate` and `runtime-management` use the same operating-system matrix:
 
-The dedicated `runtime-key-path` job runs on `ubuntu-latest` and validates the production-oriented runtime flow with real network downloads. It installs the managed runtime components from the packaged manifest, provisions scenario-specific npm global tools through `hagiscript npm-sync`, resolves `pm2` from the managed npm prefix, and then starts or stops the managed services through `hagiscript pm2 ...`. An additional released-server step stages the latest public backend payload from GitHub Releases and verifies the same managed PM2 contract against that published package.
+The dedicated `runtime-key-path` job now uses the same Linux/Windows/macOS matrix and validates the production-oriented runtime flow with real network downloads on each runner. It installs the managed runtime components from the packaged manifest, provisions scenario-specific npm global tools through `hagiscript npm-sync`, resolves `pm2` from the managed npm prefix, and then starts or stops the managed services through `hagiscript pm2 ...`. An additional released-server step stages the latest public backend payload from GitHub Releases and verifies the same managed PM2 contract against that published package.
 
 - `ubuntu-latest` validates POSIX paths, Unix permission bits, symlink resolution, package build output, unit tests, package contents, and installed-package runtime behavior.
 - `windows-latest` validates `.cmd` command shims, managed `node.exe` and `npm.cmd` resolution, Windows-safe argument arrays, installed-package runtime behavior, and skip handling for runner capabilities such as symlink creation privilege.
@@ -66,7 +66,7 @@ The dedicated runtime key-path summary adds its own focused stages:
 
 Each integration run writes a consistent Markdown summary with platform, architecture, runner metadata, Node.js and npm versions, temp root, package version, stage outcomes, skipped checks, and final result. In GitHub Actions, the summary is appended to the job summary and copied into `.ci-artifacts` for upload.
 
-The workflow uploads diagnostics with platform-specific artifact names such as `hagiscript-validate-linux-diagnostics`, `hagiscript-validate-windows-diagnostics`, `hagiscript-runtime-management-macos-diagnostics`, and `hagiscript-runtime-key-path-diagnostics`. Artifacts include stage logs and the integration summary when the reporting step is reached.
+The workflow uploads diagnostics with platform-specific artifact names such as `hagiscript-validate-linux-diagnostics`, `hagiscript-validate-windows-diagnostics`, `hagiscript-runtime-management-macos-diagnostics`, and `hagiscript-runtime-key-path-windows-diagnostics`. Artifacts include stage logs and the integration summary when the reporting step is reached.
 
 Skipped checks are listed under `Skipped Checks`. They are not reported as successful validations. A skipped check means the runner did not expose a capability that can be required consistently, while a passed stage means the validation actually ran and succeeded.
 
