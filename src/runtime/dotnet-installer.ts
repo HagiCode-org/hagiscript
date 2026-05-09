@@ -1,6 +1,12 @@
 import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import {
+  copyDirectoryFromCache,
+  isDownloadCacheEnabled,
+  resolveDownloadCacheDirectory,
+  storeDirectoryInCache
+} from "./download-cache.js";
+import {
   assertTargetIsEmptyOrMissing,
   moveExtractedRootToTarget
 } from "./node-extract.js";
@@ -20,6 +26,8 @@ export interface InstallManagedDotnetRuntimeOptions {
   architecture?: string;
   timeoutMs?: number;
   scriptBaseUrl?: string;
+  downloadCacheEnabled?: boolean;
+  downloadCacheDirectory?: string;
   verbose?: boolean;
 }
 
@@ -58,10 +66,50 @@ export async function installManagedDotnetRuntime(
     stagingRoot,
     platform === "win32" ? "dotnet-install.ps1" : "dotnet-install.sh"
   );
+  const cacheRuntimeDirectory = isDownloadCacheEnabled(options.downloadCacheEnabled)
+    ? join(
+        resolveDownloadCacheDirectory(options.downloadCacheDirectory),
+        "dotnet",
+        version,
+        `${platform}-${architecture}`
+      )
+    : undefined;
 
   await assertTargetIsEmptyOrMissing(targetDirectory);
 
   try {
+    if (cacheRuntimeDirectory) {
+      const restoredFromCache = await copyDirectoryFromCache(
+        cacheRuntimeDirectory,
+        stagedRuntimeDirectory
+      );
+      if (restoredFromCache) {
+        const cachedVerification = await verifyManagedDotnetRuntime({
+          targetDirectory: stagedRuntimeDirectory,
+          version,
+          runner,
+          platform,
+          timeoutMs: options.timeoutMs
+        });
+
+        if (cachedVerification.valid) {
+          await moveExtractedRootToTarget(stagedRuntimeDirectory, targetDirectory);
+          return {
+            ...cachedVerification,
+            valid: true,
+            targetDirectory
+          };
+        }
+
+        await rm(cacheRuntimeDirectory, { recursive: true, force: true }).catch(
+          () => undefined
+        );
+        await rm(stagedRuntimeDirectory, { recursive: true, force: true }).catch(
+          () => undefined
+        );
+      }
+    }
+
     await downloadDotnetInstallScript(installerScriptPath, {
       platform,
       scriptBaseUrl: options.scriptBaseUrl,
@@ -101,6 +149,10 @@ export async function installManagedDotnetRuntime(
       throw new Error(
         `Installed .NET runtime failed verification: ${verification.failureReason ?? "unknown failure"}`
       );
+    }
+
+    if (cacheRuntimeDirectory) {
+      await storeDirectoryInCache(stagedRuntimeDirectory, cacheRuntimeDirectory);
     }
 
     await moveExtractedRootToTarget(stagedRuntimeDirectory, targetDirectory);
