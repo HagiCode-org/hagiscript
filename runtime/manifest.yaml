@@ -48,6 +48,7 @@ components:
     configureScript: "scripts/configure-omniroute.mjs"
     pm2:
       appName: "hagicode-omniroute"
+      nameIdentifierEnv: "hagicode_pm2_name"
       cwd: "."
       script: "current/omniroute-launcher.mjs"
 
@@ -62,6 +63,7 @@ components:
     configureScript: "scripts/configure-code-server.mjs"
     pm2:
       appName: "hagicode-code-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
       cwd: "."
       script: "current/code-server-launcher.mjs"
 
@@ -77,6 +79,7 @@ components:
     removeScript: "scripts/remove-server.mjs"
     pm2:
       appName: "hagicode-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
       pm2Home: ".pm2"
       env:
         ASPNETCORE_ENVIRONMENT: "Production"

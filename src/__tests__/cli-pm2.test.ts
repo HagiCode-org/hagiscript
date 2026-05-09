@@ -4,7 +4,10 @@ const pm2ManagerMocks = vi.hoisted(() => ({
   runManagedPm2Command: vi.fn(async () => ({
     service: "server",
     action: "restart",
-    appName: "fixture-server",
+    baseAppName: "fixture-server",
+    appName: "fixture-server-fixture",
+    nameIdentifierEnv: "hagicode_pm2_name",
+    nameIdentifier: "fixture",
     cwd: "/tmp/runtime/program/components/server/current/lib",
     script: "/tmp/runtime/program/components/server/current/lib/PCode.Web.dll",
     runtimeHome: "/tmp/runtime/program",
@@ -22,12 +25,17 @@ const pm2ManagerMocks = vi.hoisted(() => ({
   })),
   resolveManagedPm2Environment: vi.fn(async () => ({
     service: "server",
-    appName: "fixture-server",
+    baseAppName: "fixture-server",
+    appName: "fixture-server-fixture",
+    nameIdentifierEnv: "hagicode_pm2_name",
+    nameIdentifier: "fixture",
+    bootstrapNameIdentifierValue: "hagicode",
     cwd: "/tmp/runtime/program/components/server/current/lib",
     script: "/tmp/runtime/program/components/server/current/lib/PCode.Web.dll",
     args: [],
     env: {
       HAGICODE_RUNTIME_HOME: "/tmp/runtime/program",
+      hagicode_pm2_name: "fixture",
       ASPNETCORE_URLS: "http://127.0.0.1:39150",
       PATH: "/tmp/runtime/program/bin:/usr/bin"
     },

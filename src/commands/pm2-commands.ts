@@ -86,6 +86,7 @@ function parseManagedPm2Action(value: string): ManagedPm2CliAction {
     value === "start" ||
     value === "stop" ||
     value === "restart" ||
+    value === "delete" ||
     value === "status" ||
     value === "env"
   ) {
@@ -93,7 +94,7 @@ function parseManagedPm2Action(value: string): ManagedPm2CliAction {
   }
 
   throw new InvalidArgumentError(
-    `Unsupported PM2 action "${value}". Supported actions: start, stop, restart, status, env.`
+    `Unsupported PM2 action "${value}". Supported actions: start, stop, restart, delete, status, env.`
   )
 }
 

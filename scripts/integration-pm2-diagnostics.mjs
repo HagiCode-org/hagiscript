@@ -34,7 +34,8 @@ export async function collectManagedPm2FailureDetail({
   );
   const envOutput = envCapture.stdout || envCapture.stderr;
   const appName =
-    extractPrefixedLine(envOutput, "App: ") ?? `hagicode-${service}`;
+    extractPrefixedLine(envOutput, "App: ") ??
+    `hagicode-${service}-${process.env.hagicode_pm2_name?.trim() || "hagicode"}`;
   const pm2Home =
     extractPrefixedLine(envOutput, "PM2 home: ") ??
     path.join(tempRoot, `.pm2-${service}`);

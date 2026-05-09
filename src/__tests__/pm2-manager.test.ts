@@ -21,6 +21,7 @@ const fixtureScriptPath = path.resolve(
 
 describe("pm2 manager", () => {
   it("resolves service definitions from manifest overrides", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
 
     try {
@@ -32,7 +33,10 @@ describe("pm2 manager", () => {
         "omniroute"
       )
 
-      expect(definition.appName).toBe("fixture-omniroute")
+      expect(definition.baseAppName).toBe("fixture-omniroute")
+      expect(definition.appName).toBe("fixture-omniroute-fixture")
+      expect(definition.nameIdentifierEnv).toBe("hagicode_pm2_name")
+      expect(definition.nameIdentifier).toBe("fixture")
       expect(definition.cwd).toBe(
         path.join(
           setup.runtimeRoot,
@@ -66,11 +70,13 @@ describe("pm2 manager", () => {
       )
       expect(definition.env.RUNTIME_MODE).toBe("fixture")
     } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
 
   it("starts managed services with the runtime-scoped PM2 binary and env", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
     const runner = vi.fn(async (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
       if (args[1] === "jlist") {
@@ -79,7 +85,7 @@ describe("pm2 manager", () => {
           args,
           stdout: JSON.stringify([
             {
-              name: "fixture-omniroute",
+              name: "fixture-omniroute-fixture",
               pid: 4242,
               pm2_env: { status: "online" }
             }
@@ -140,7 +146,7 @@ describe("pm2 manager", () => {
           "custom-launcher.mjs"
         ),
         "--name",
-        "fixture-omniroute",
+        "fixture-omniroute-fixture",
         "--cwd",
         path.join(
           setup.runtimeRoot,
@@ -189,14 +195,17 @@ describe("pm2 manager", () => {
       expect(runtimePath?.startsWith(
         expectedPathPrefix
       )).toBe(true)
+      expect(runner.mock.calls[0]?.[2]?.env?.hagicode_pm2_name).toBe("fixture")
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
     } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
 
   it("resolves released-service server definitions from the manifest", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
 
     try {
@@ -205,6 +214,10 @@ describe("pm2 manager", () => {
       const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, "server")
 
       expect(definition.launchStrategy).toBe("released-service")
+      expect(definition.baseAppName).toBe("fixture-server")
+      expect(definition.appName).toBe("fixture-server-fixture")
+      expect(definition.nameIdentifierEnv).toBe("hagicode_pm2_name")
+      expect(definition.nameIdentifier).toBe("fixture")
       expect(definition.script).toBe(
         path.join(
           setup.runtimeRoot,
@@ -247,11 +260,13 @@ describe("pm2 manager", () => {
         )
       )
     } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
 
   it("reports reusable launch environment for released-service server startup", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
 
     try {
@@ -262,6 +277,11 @@ describe("pm2 manager", () => {
       })
 
       expect(report.launchStrategy).toBe("released-service")
+      expect(report.baseAppName).toBe("fixture-server")
+      expect(report.appName).toBe("fixture-server-fixture")
+      expect(report.nameIdentifierEnv).toBe("hagicode_pm2_name")
+      expect(report.nameIdentifier).toBe("fixture")
+      expect(report.bootstrapNameIdentifierValue).toBe("hagicode")
       expect(report.dotnetPath).toBe(
         path.join(
           setup.runtimeRoot,
@@ -278,6 +298,7 @@ describe("pm2 manager", () => {
         path.join(setup.runtimeRoot, "program", "bin")
       ])
       expect(report.env.HAGISCRIPT_RUNTIME_COMPONENT_NAME).toBe("server")
+      expect(report.env.hagicode_pm2_name).toBe("fixture")
       expect(report.env.ASPNETCORE_URLS).toBe("http://127.0.0.1:39150")
       expect(report.env[report.pathKey]?.startsWith(report.pathEntries.join(path.delimiter))).toBe(
         true
@@ -294,11 +315,13 @@ describe("pm2 manager", () => {
         )
       )
     } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
 
   it("resolves released-service server definitions from external absolute paths", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const externalRoot = path.join(tmpdir(), "hagiscript-external-local-publishment")
     const setup = await createPm2Fixture({
       releasedService: {
@@ -316,11 +339,13 @@ describe("pm2 manager", () => {
       expect(definition.cwd).toBe(path.join(externalRoot, "lib"))
       expect(definition.launchStrategy).toBe("released-service")
     } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
 
   it("retries retryable bootstrap PM2 output before returning status", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
     let jlistCallCount = 0
     const runner = vi.fn(async (command: string, args: string[]) => {
@@ -339,10 +364,10 @@ describe("pm2 manager", () => {
           command,
           args,
           stdout: JSON.stringify([
-            {
-              name: "fixture-server",
-              pid: 9898,
-              pm2_env: { status: "online" }
+              {
+                name: "fixture-server-fixture",
+                pid: 9898,
+                pm2_env: { status: "online" }
             }
           ]),
           stderr: ""
@@ -401,10 +426,74 @@ describe("pm2 manager", () => {
           "ecosystem.config.cjs"
         ),
         "--only",
-        "fixture-server",
+        "fixture-server-fixture",
         "--update-env"
       ])
     } finally {
+      restoreEnv()
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("fails PM2 actions early when the required naming identifier is missing", async () => {
+    const setup = await createPm2Fixture()
+    const runner = vi.fn()
+
+    try {
+      for (const action of ["start", "restart", "stop", "delete", "status"] as const) {
+        await expect(
+          runManagedPm2Command({
+            manifestPath: setup.manifestPath,
+            runtimeRoot: setup.runtimeRoot,
+            service: "server",
+            action,
+            runner
+          })
+        ).rejects.toThrow(/requires environment variable hagicode_pm2_name.*hagicode/)
+      }
+
+      await expect(
+        resolveManagedPm2Environment({
+          manifestPath: setup.manifestPath,
+          runtimeRoot: setup.runtimeRoot,
+          service: "server"
+        })
+      ).rejects.toThrow(/requires environment variable hagicode_pm2_name.*hagicode/)
+      expect(runner).not.toHaveBeenCalled()
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("fails PM2 actions early when the resolved naming identifier is invalid", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("Fixture-01")
+    const setup = await createPm2Fixture()
+    const runner = vi.fn()
+
+    try {
+      await expect(
+        runManagedPm2Command({
+          manifestPath: setup.manifestPath,
+          runtimeRoot: setup.runtimeRoot,
+          service: "omniroute",
+          action: "status",
+          runner
+        })
+      ).rejects.toThrow(
+        /requires hagicode_pm2_name to use only lowercase letters, digits, and underscores/
+      )
+      await expect(
+        resolveManagedPm2Environment({
+          manifestPath: setup.manifestPath,
+          runtimeRoot: setup.runtimeRoot,
+          service: "omniroute"
+        })
+      ).rejects.toThrow(
+        /requires hagicode_pm2_name to use only lowercase letters, digits, and underscores/
+      )
+      expect(runner).not.toHaveBeenCalled()
+    } finally {
+      restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
@@ -548,6 +637,7 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "fixture-omniroute"
+      nameIdentifierEnv: "hagicode_pm2_name"
       cwd: "current"
       script: "current/custom-launcher.mjs"
       pm2Home: ".pm2"
@@ -563,6 +653,7 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "fixture-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
       pm2Home: ".pm2"
       env:
         ASPNETCORE_URLS: "http://127.0.0.1:39150"
@@ -595,4 +686,18 @@ function getFixtureNodePath(runtimeRoot: string): string {
   return getRuntimeExecutablePaths(
     path.join(runtimeRoot, "program", "components", "node")
   ).nodePath
+}
+
+function setPm2NameIdentifierEnv(value: string): () => void {
+  const previous = process.env.hagicode_pm2_name
+  process.env.hagicode_pm2_name = value
+
+  return () => {
+    if (previous === undefined) {
+      delete process.env.hagicode_pm2_name
+      return
+    }
+
+    process.env.hagicode_pm2_name = previous
+  }
 }

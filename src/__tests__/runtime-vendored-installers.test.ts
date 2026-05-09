@@ -20,7 +20,7 @@ const installOmnirouteScript = path.join(
   "scripts",
   "install-omniroute.mjs"
 )
-const releaseVersion = "2026.0506.0029"
+const releaseVersion = "2026.0509.0040"
 const releaseTag = `v${releaseVersion}`
 const runTest = process.platform === "win32" ? it.skip : it
 

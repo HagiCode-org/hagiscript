@@ -30,6 +30,7 @@ const toolManifestPath = path.join(tempRoot, "runtime-key-path-tools.json");
 const summaryPath = path.join(tempRoot, "runtime-key-path-summary.md");
 const runtimeCommandTimeoutMs = 20 * 60_000;
 const pm2CommandTimeoutMs = 5 * 60_000;
+const pm2NameIdentifier = "keypath";
 const enableReleasedServerTest =
   process.env.HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST === "1";
 let diagnostics;
@@ -43,6 +44,7 @@ const pm2FailureDetails = [];
 const releasedServerLines = [];
 
 try {
+  process.env.hagicode_pm2_name = pm2NameIdentifier;
   diagnostics = await runStage("platform diagnostics", async () => {
     const collected = await collectPlatformDiagnostics({
       runProcess,
@@ -66,7 +68,7 @@ try {
     const componentNames = new Set(
       enableReleasedServerTest
         ? ["node", "dotnet", "server", "omniroute", "code-server"]
-        : ["node", "dotnet", "omniroute", "code-server"]
+        : ["node", "omniroute", "code-server"]
     );
     const releasedServerPort = enableReleasedServerTest
       ? await getAvailablePort()

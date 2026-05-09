@@ -45,7 +45,10 @@ export interface ResolvedManagedPm2ServiceDefinition {
   component: RuntimeComponentDefinition
   manifestDir: string
   paths: ResolvedRuntimePaths
+  baseAppName: string
   appName: string
+  nameIdentifierEnv: string
+  nameIdentifier: string
   cwd: string
   script: string
   args: string[]
@@ -67,7 +70,10 @@ export interface ResolvedManagedPm2ServiceDefinition {
 export interface ManagedPm2CommandResult {
   service: ManagedPm2ServiceName
   action: ManagedPm2Action
+  baseAppName: string
   appName: string
+  nameIdentifierEnv: string
+  nameIdentifier: string
   cwd: string
   script: string
   runtimeHome: string
@@ -86,7 +92,11 @@ export interface ManagedPm2CommandResult {
 
 export interface ManagedPm2EnvironmentResult {
   service: ManagedPm2ServiceName
+  baseAppName: string
   appName: string
+  nameIdentifierEnv: string
+  nameIdentifier: string
+  bootstrapNameIdentifierValue: string
   cwd: string
   script: string
   args: string[]
@@ -116,6 +126,8 @@ export class ManagedPm2Error extends Error {
 
 const DEFAULT_PM2_STATUS_RETRY_DELAY_MS = 500
 const DEFAULT_PM2_STATUS_MAX_RETRIES = 3
+const PM2_NAME_IDENTIFIER_PATTERN = /^[a-z0-9_]+$/u
+const PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT = "hagicode"
 
 export async function runManagedPm2Command(
   options: ManagedPm2CommandOptions
@@ -163,7 +175,11 @@ export async function resolveManagedPm2Environment(
 
   return {
     service: definition.service,
+    baseAppName: definition.baseAppName,
     appName: definition.appName,
+    nameIdentifierEnv: definition.nameIdentifierEnv,
+    nameIdentifier: definition.nameIdentifier,
+    bootstrapNameIdentifierValue: PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT,
     cwd: definition.cwd,
     script: definition.script,
     args: [...definition.args],
@@ -216,6 +232,10 @@ export async function resolveManagedPm2ServiceDefinition(
   )
   const nodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
   const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix)
+  const { baseAppName, nameIdentifierEnv, nameIdentifier } = resolvePm2NameIdentifier(
+    component,
+    service
+  )
 
   await Promise.all([
     validateManagedPath(
@@ -261,7 +281,10 @@ export async function resolveManagedPm2ServiceDefinition(
       component,
       manifestDir: manifest.manifestDir,
       paths,
-      appName: component.pm2?.appName ?? `hagicode-${component.name}`,
+      baseAppName,
+      appName: `${baseAppName}-${nameIdentifier}`,
+      nameIdentifierEnv,
+      nameIdentifier,
       cwd,
       script,
       args: component.pm2?.args ?? [],
@@ -297,7 +320,10 @@ export async function resolveManagedPm2ServiceDefinition(
     component,
     manifestDir: manifest.manifestDir,
     paths,
-    appName: component.pm2?.appName ?? `hagicode-${component.name}`,
+    baseAppName,
+    appName: `${baseAppName}-${nameIdentifier}`,
+    nameIdentifierEnv,
+    nameIdentifier,
     cwd,
     script,
     args: component.pm2?.args ?? [],
@@ -316,8 +342,11 @@ export async function resolveManagedPm2ServiceDefinition(
 export function renderManagedPm2StatusText(result: ManagedPm2CommandResult): string {
   return [
     `Service: ${result.service}`,
+    `Base app: ${result.baseAppName}`,
     `Action: ${result.action}`,
     `App: ${result.appName}`,
+    `Name identifier env: ${result.nameIdentifierEnv}`,
+    `Name identifier: ${result.nameIdentifier}`,
     `Status: ${result.status}`,
     `Launch strategy: ${result.launchStrategy}`,
     `Runtime home: ${result.runtimeHome}`,
@@ -342,7 +371,12 @@ export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentRes
 
   return [
     `Service: ${result.service}`,
+    `Base app: ${result.baseAppName}`,
     `App: ${result.appName}`,
+    `Name identifier env: ${result.nameIdentifierEnv}`,
+    `Name identifier: ${result.nameIdentifier}`,
+    `Bootstrap default: ${result.nameIdentifierEnv}=${result.bootstrapNameIdentifierValue}`,
+    "Override the bootstrap default when running multiple runtime instances on one host.",
     `Launch strategy: ${result.launchStrategy}`,
     `Working directory: ${result.cwd}`,
     `Script: ${result.script}`,
@@ -392,7 +426,10 @@ async function readManagedPm2Status(
       return {
         service: definition.service,
         action,
+        baseAppName: definition.baseAppName,
         appName: definition.appName,
+        nameIdentifierEnv: definition.nameIdentifierEnv,
+        nameIdentifier: definition.nameIdentifier,
         cwd: definition.cwd,
         script: definition.script,
         runtimeHome: definition.runtimeHome,
@@ -488,7 +525,7 @@ async function prepareReleasedServicePm2Files(
   const env = buildManagedPm2Environment(definition)
 
   await mkdir(definition.runtimeFilesDir, { recursive: true })
-  await writeFile(definition.envFilePath, buildPm2EnvFile(env), "utf8")
+  await writeFile(definition.envFilePath, buildPm2EnvFile(definition, env), "utf8")
   await writeFile(
     definition.ecosystemPath,
     buildReleasedServiceEcosystemConfig(definition),
@@ -526,13 +563,19 @@ function buildReleasedServiceEcosystemConfig(
   ].join("\n")
 }
 
-function buildPm2EnvFile(env: NodeJS.ProcessEnv): string {
+function buildPm2EnvFile(
+  definition: ResolvedManagedPm2ServiceDefinition,
+  env: NodeJS.ProcessEnv
+): string {
   return (
-    Object.entries(env)
-      .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
-      .join("\n") + "\n"
+    [
+      `# Bootstrap default: ${definition.nameIdentifierEnv}=${PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT}`,
+      `# Override ${definition.nameIdentifierEnv} when running multiple runtime instances on one host.`,
+      ...Object.entries(env)
+        .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
+    ].join("\n") + "\n"
   )
 }
 
@@ -553,6 +596,47 @@ function buildManagedPm2Environment(
     },
     { ...baseEnv, ...definition.env }
   )
+}
+
+function resolvePm2NameIdentifier(
+  component: RuntimeComponentDefinition,
+  service: ManagedPm2ServiceName
+): {
+  baseAppName: string
+  nameIdentifierEnv: string
+  nameIdentifier: string
+} {
+  const nameIdentifierEnv = component.pm2?.nameIdentifierEnv?.trim()
+  if (!nameIdentifierEnv) {
+    throw new ManagedPm2Error(
+      `Runtime manifest component ${component.name} must define pm2.nameIdentifierEnv for managed PM2 service ${service}.`
+    )
+  }
+
+  if (!PM2_NAME_IDENTIFIER_PATTERN.test(nameIdentifierEnv)) {
+    throw new ManagedPm2Error(
+      `Runtime manifest component ${component.name} declares invalid pm2.nameIdentifierEnv "${nameIdentifierEnv}". Only lowercase letters, digits, and underscores are allowed.`
+    )
+  }
+
+  const nameIdentifier = process.env[nameIdentifierEnv]?.trim()
+  if (!nameIdentifier) {
+    throw new ManagedPm2Error(
+      `Managed PM2 service ${service} requires environment variable ${nameIdentifierEnv}. Bootstrap with ${nameIdentifierEnv}=${PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT} and override it when running multiple runtime instances on one host.`
+    )
+  }
+
+  if (!PM2_NAME_IDENTIFIER_PATTERN.test(nameIdentifier)) {
+    throw new ManagedPm2Error(
+      `Managed PM2 service ${service} requires ${nameIdentifierEnv} to use only lowercase letters, digits, and underscores. Received "${nameIdentifier}".`
+    )
+  }
+
+  return {
+    baseAppName: component.pm2?.appName ?? `hagicode-${component.name}`,
+    nameIdentifierEnv,
+    nameIdentifier
+  }
 }
 
 type ManagedPm2ParsedStatus =

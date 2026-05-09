@@ -89,6 +89,101 @@ components:
     await rm(directory, { recursive: true, force: true })
   })
 
+  it("rejects PM2 manifests without a required naming env declaration", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-pm2-name-"))
+    const manifestPath = path.join(directory, "invalid-pm2-name.yaml")
+
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: invalid
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["server"]
+  remove:
+    order: ["server"]
+  update:
+    order: ["server"]
+components:
+  - name: "server"
+    type: "released-service"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-server"
+    releasedService:
+      dllPath: "current/lib/PCode.Web.dll"
+      workingDirectory: "current/lib"
+`,
+      "utf8"
+    )
+
+    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
+      /pm2\.nameIdentifierEnv must be a non-empty string/
+    )
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  it("rejects PM2 manifests with invalid naming env declarations", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-pm2-name-format-"))
+    const manifestPath = path.join(directory, "invalid-pm2-name-format.yaml")
+
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: invalid
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["server"]
+  remove:
+    order: ["server"]
+  update:
+    order: ["server"]
+components:
+  - name: "server"
+    type: "released-service"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-server"
+      nameIdentifierEnv: "HAGICODE_PM2_NAME"
+    releasedService:
+      dllPath: "current/lib/PCode.Web.dll"
+      workingDirectory: "current/lib"
+`,
+      "utf8"
+    )
+
+    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
+      /pm2\.nameIdentifierEnv must match \^\[a-z0-9_\]\+\$/
+    )
+    await rm(directory, { recursive: true, force: true })
+  })
+
   it("rejects released-service components without required launch metadata", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-server-"))
     const manifestPath = path.join(directory, "invalid-server.yaml")
@@ -123,6 +218,7 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
     releasedService:
       workingDirectory: "current/lib"
 `,
@@ -186,6 +282,7 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
     releasedService:
       dllPath: "current/lib/PCode.Web.dll"
       workingDirectory: "current/lib"
@@ -430,6 +527,7 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
+      nameIdentifierEnv: "hagicode_pm2_name"
     releasedService:
       dllPath: "${
         options.serviceLocation === "external"

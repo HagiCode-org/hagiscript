@@ -66,6 +66,7 @@ export interface RuntimePm2ServiceDefinition {
   script?: string
   args?: string[]
   env?: Record<string, string>
+  nameIdentifierEnv: string
   pm2Home?: string
 }
 
@@ -110,6 +111,7 @@ const supportedComponentTypes = new Set<RuntimeComponentType>([
   "bundled-runtime",
   "released-service"
 ])
+const pm2NameIdentifierEnvPattern = /^[a-z0-9_]+$/u
 
 export function getPackageRoot(moduleUrl = import.meta.url): string {
   return resolve(dirname(fileURLToPath(moduleUrl)), "..", "..")
@@ -488,8 +490,26 @@ function validateRuntimePm2Definition(
     script: readOptionalString(pm2Object.script, `${label}.script`, errors),
     args,
     env,
+    nameIdentifierEnv: readRequiredPm2NameIdentifierEnv(
+      pm2Object.nameIdentifierEnv,
+      `${label}.nameIdentifierEnv`,
+      errors
+    ),
     pm2Home: readOptionalString(pm2Object.pm2Home, `${label}.pm2Home`, errors)
   }
+}
+
+function readRequiredPm2NameIdentifierEnv(
+  value: unknown,
+  label: string,
+  errors: string[]
+): string {
+  const envName = readRequiredString(value, label, errors)
+  if (envName && !pm2NameIdentifierEnvPattern.test(envName)) {
+    errors.push(`${label} must match ^[a-z0-9_]+$`)
+  }
+
+  return envName
 }
 
 function validateRuntimeReleasedServiceDefinition(

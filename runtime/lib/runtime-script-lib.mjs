@@ -28,7 +28,7 @@ export function readRuntimeScriptContext() {
     componentVersion: process.env.HAGISCRIPT_RUNTIME_COMPONENT_VERSION?.trim() || null,
     vendoredRepository: process.env.HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY?.trim() || "HagiCode-org/vendered",
     vendoredTag:
-      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0509.0034",
+      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0509.0040",
     vendoredBaseUrl: process.env.HAGISCRIPT_RUNTIME_VENDORED_BASE_URL?.trim() || "https://github.com",
     phase: process.env.HAGISCRIPT_RUNTIME_PHASE?.trim() || "install",
     purge: process.env.HAGISCRIPT_RUNTIME_PURGE === "1"

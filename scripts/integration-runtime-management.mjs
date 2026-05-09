@@ -36,6 +36,7 @@ const pm2PackageManifestPath = path.join(tempRoot, "pm2-package-manifest.json");
 const summaryPath = path.join(tempRoot, "runtime-management-summary.md");
 const runtimeCommandTimeoutMs = 20 * 60_000;
 const pm2CommandTimeoutMs = 5 * 60_000;
+const pm2NameIdentifier = "integration";
 const enableReleasedServerTest =
   process.env.HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST === "1";
 let installedTreeLines = [];
@@ -51,6 +52,7 @@ let diagnostics;
 let finalResult = "failed";
 
 try {
+  process.env.hagicode_pm2_name = pm2NameIdentifier;
   diagnostics = await runStage("platform diagnostics", async () => {
     const collected = await collectPlatformDiagnostics({
       runProcess,
@@ -164,7 +166,9 @@ try {
         "--runtime-root",
         managedRoot,
         "--components",
-        "node,dotnet,omniroute,code-server"
+        enableReleasedServerTest
+          ? "node,dotnet,omniroute,code-server"
+          : "node,omniroute,code-server"
       ],
       {
         cwd: repoRoot,
@@ -241,8 +245,6 @@ try {
     if (
       !nodeComponent ||
       nodeComponent.status !== "installed" ||
-      !dotnet ||
-      dotnet.status !== "installed" ||
       !omniroute ||
       omniroute.status !== "installed" ||
       !codeServer ||
@@ -251,16 +253,26 @@ try {
       throw new Error(`Unexpected installed component state: ${stdout}`);
     }
 
+    if (enableReleasedServerTest) {
+      if (!dotnet || dotnet.status !== "installed") {
+        throw new Error(`Expected dotnet to be installed for released-server validation: ${stdout}`);
+      }
+    } else if (!dotnet || dotnet.status !== "not-installed") {
+      throw new Error(`Expected dotnet to remain not-installed when released-server validation is disabled: ${stdout}`);
+    }
+
     assertPathsSeparated(
       nodeComponent.programPaths,
       nodeComponent.externalDataPaths,
       "node separation"
     );
-    assertPathsSeparated(
-      dotnet.programPaths,
-      dotnet.externalDataPaths,
-      "dotnet separation"
-    );
+    if (dotnet) {
+      assertPathsSeparated(
+        dotnet.programPaths,
+        dotnet.externalDataPaths,
+        "dotnet separation"
+      );
+    }
     assertPathsSeparated(
       omniroute.programPaths,
       omniroute.externalDataPaths,
@@ -327,50 +339,52 @@ try {
       process.platform === "win32" ? "code-server.cmd" : "code-server"
     );
 
-    assertFile(dotnetManifest);
-    assertFile(dotnetExecutable);
-    assertFile(dotnetBin);
     assertFile(omnirouteConfig);
     assertFile(codeServerConfig);
     assertFile(omnirouteBin);
     assertFile(codeServerBin);
-    const { stdout: dotnetRuntimesOutput } = await runProcess(
-      dotnetBin,
-      ["--list-runtimes"],
-      {
-        cwd: repoRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-        timeoutMs: 60_000
-      }
-    );
-    assertIncludes(
-      dotnetRuntimesOutput,
-      "Microsoft.NETCore.App 10.0.5",
-      ".NET runtime inventory"
-    );
-    assertIncludes(
-      dotnetRuntimesOutput,
-      "Microsoft.AspNetCore.App 10.0.5",
-      "ASP.NET Core runtime inventory"
-    );
-    const dotnetManifestData = JSON.parse(
-      fs.readFileSync(dotnetManifest, "utf8")
-    );
-    dotnetVerificationLines = [
-      `- Component status: ${dotnet.status}`,
-      `- Managed executable: ${dotnetExecutable}`,
-      `- Bin wrapper: ${dotnetBin}`,
-      `- Manifest channel version: ${dotnetManifestData.channelVersion ?? "n/a"}`,
-      `- Manifest installed version: ${dotnetManifestData.installedVersion ?? "n/a"}`,
-      `- Manifest dotnet path: ${dotnetManifestData.dotnetPath ?? "n/a"}`,
-      "- Verified runtimes:",
-      ...dotnetRuntimesOutput
-        .trim()
-        .split(/\r?\n/u)
-        .filter(Boolean)
-        .map((line) => `  - ${line}`)
-    ];
+    if (enableReleasedServerTest) {
+      assertFile(dotnetManifest);
+      assertFile(dotnetExecutable);
+      assertFile(dotnetBin);
+      const { stdout: dotnetRuntimesOutput } = await runProcess(
+        dotnetBin,
+        ["--list-runtimes"],
+        {
+          cwd: repoRoot,
+          stdout: "pipe",
+          stderr: "pipe",
+          timeoutMs: 60_000
+        }
+      );
+      assertIncludes(
+        dotnetRuntimesOutput,
+        "Microsoft.NETCore.App 10.0.5",
+        ".NET runtime inventory"
+      );
+      assertIncludes(
+        dotnetRuntimesOutput,
+        "Microsoft.AspNetCore.App 10.0.5",
+        "ASP.NET Core runtime inventory"
+      );
+      const dotnetManifestData = JSON.parse(
+        fs.readFileSync(dotnetManifest, "utf8")
+      );
+      dotnetVerificationLines = [
+        `- Component status: ${dotnet.status}`,
+        `- Managed executable: ${dotnetExecutable}`,
+        `- Bin wrapper: ${dotnetBin}`,
+        `- Manifest channel version: ${dotnetManifestData.channelVersion ?? "n/a"}`,
+        `- Manifest installed version: ${dotnetManifestData.installedVersion ?? "n/a"}`,
+        `- Manifest dotnet path: ${dotnetManifestData.dotnetPath ?? "n/a"}`,
+        "- Verified runtimes:",
+        ...dotnetRuntimesOutput
+          .trim()
+          .split(/\r?\n/u)
+          .filter(Boolean)
+          .map((line) => `  - ${line}`)
+      ];
+    }
     assertIncludes(
       fs.readFileSync(omnirouteConfig, "utf8"),
       `runtimeHome: ${path.join(managedRoot, "program")}`,
@@ -476,7 +490,7 @@ try {
           );
           assertIncludes(
             startOutput,
-            `App: hagicode-${service}`,
+            `App: hagicode-${service}-${pm2NameIdentifier}`,
             `${service} start app`
           );
 
