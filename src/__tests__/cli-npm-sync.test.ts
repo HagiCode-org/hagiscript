@@ -261,11 +261,15 @@ describe("npm-sync CLI command", () => {
       "hagiscript",
       "npm-sync",
       "--manifest",
-      "/tmp/manifest.json"
+      "/tmp/manifest.json",
+      "--download-cache-dir",
+      "/tmp/download-cache"
     ]);
 
     expect(resolveManagedNodeRuntime).toHaveBeenCalledWith({
-      targetDirectory: "/tmp/managed-runtime"
+      targetDirectory: "/tmp/managed-runtime",
+      downloadCacheEnabled: true,
+      downloadCacheDirectory: "/tmp/download-cache"
     });
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({

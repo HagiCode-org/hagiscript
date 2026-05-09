@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { CommandExecutionError } from "../runtime/command-launch.js";
@@ -53,6 +53,7 @@ Microsoft.AspNetCore.App 10.0.5 [/tmp/dotnet/shared/Microsoft.AspNetCore.App]
       targetDirectory,
       version,
       platform: "win32",
+      downloadCacheEnabled: false,
       runner: async (command, args) => {
         attemptedCommands.push(command);
 
@@ -135,6 +136,7 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}\\shared\\Microsoft.AspNe
           targetDirectory,
           version,
           scriptBaseUrl: server.baseUrl,
+          downloadCacheEnabled: false,
           timeoutMs: 60_000
         });
 
@@ -150,6 +152,72 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}\\shared\\Microsoft.AspNe
       }
     }
   );
+
+  it("reuses the cached managed runtime for repeated installs of the same version", async () => {
+    const root = await makeTempRoot();
+    const cacheDirectory = join(root, "download-cache");
+    const version = "10.0.5";
+    let installInvocations = 0;
+
+    const runner = async (command: string, args: string[]) => {
+      if (command === "bash") {
+        installInvocations += 1;
+        const installDir = args[args.indexOf("--install-dir") + 1];
+        const runtimeKind = args[args.indexOf("--runtime") + 1];
+        await seedFakePosixRuntime(installDir, version, runtimeKind);
+        return {
+          command,
+          args,
+          stdout: `installed ${runtimeKind}`,
+          stderr: "",
+          exitCode: 0,
+          timedOut: false
+        };
+      }
+
+      if (command.endsWith("/dotnet")) {
+        const targetDirectory = dirname(command);
+        return {
+          command,
+          args,
+          stdout:
+            args[0] === "--list-runtimes"
+              ? `Microsoft.NETCore.App ${version} [${targetDirectory}/shared/Microsoft.NETCore.App]
+Microsoft.AspNetCore.App ${version} [${targetDirectory}/shared/Microsoft.AspNetCore.App]
+`
+              : ".NET SDK (fake)\n",
+          stderr: "",
+          exitCode: 0,
+          timedOut: false
+        };
+      }
+
+      throw new Error(`Unexpected command: ${command}`);
+    };
+
+    const fetchImpl = async () =>
+      new Response("#!/usr/bin/env sh\nexit 0\n", {
+        status: 200,
+        headers: { "content-type": "text/plain" }
+      });
+
+    await installManagedDotnetRuntime({
+      targetDirectory: join(root, "managed-dotnet-a"),
+      version,
+      runner,
+      fetchImpl,
+      downloadCacheDirectory: cacheDirectory
+    });
+    await installManagedDotnetRuntime({
+      targetDirectory: join(root, "managed-dotnet-b"),
+      version,
+      runner,
+      fetchImpl,
+      downloadCacheDirectory: cacheDirectory
+    });
+
+    expect(installInvocations).toBe(2);
+  });
 });
 
 async function makeTempRoot(): Promise<string> {
@@ -166,6 +234,27 @@ async function seedFakeWindowsRuntime(
 ): Promise<void> {
   await mkdir(installDir, { recursive: true });
   await writeFile(join(installDir, "dotnet.exe"), "fake", "utf8");
+
+  if (runtime === "dotnet") {
+    await mkdir(join(installDir, "host", "fxr", version), { recursive: true });
+    await mkdir(join(installDir, "shared", "Microsoft.NETCore.App", version), {
+      recursive: true
+    });
+    return;
+  }
+
+  await mkdir(join(installDir, "shared", "Microsoft.AspNetCore.App", version), {
+    recursive: true
+  });
+}
+
+async function seedFakePosixRuntime(
+  installDir: string,
+  version: string,
+  runtime: string
+): Promise<void> {
+  await mkdir(installDir, { recursive: true });
+  await writeFile(join(installDir, "dotnet"), "#!/usr/bin/env sh\nexit 0\n", "utf8");
 
   if (runtime === "dotnet") {
     await mkdir(join(installDir, "host", "fxr", version), { recursive: true });

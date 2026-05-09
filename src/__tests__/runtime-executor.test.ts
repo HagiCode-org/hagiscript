@@ -80,6 +80,7 @@ describe("runtime executor environment", () => {
         expectedPathPrefix
       )).toBe(true)
     expect(env.CUSTOM_FLAG).toBe("1")
+    expect(env.HAGISCRIPT_DOWNLOAD_CACHE).toBe("1")
   })
 
   it("normalizes duplicate Windows PATH keys before prepending managed entries", () => {

@@ -103,11 +103,38 @@ describe("runtime CLI commands", () => {
       expect.objectContaining({
         components: ["beta", "alpha"],
         dryRun: true,
-        runtimeRoot: "/tmp/runtime-root"
+        runtimeRoot: "/tmp/runtime-root",
+        downloadCache: true
       })
     )
     expect(stdout.mock.calls.map(([value]) => String(value)).join("")).toContain(
       "Runtime install complete (dry-run)."
+    )
+
+    stdout.mockRestore()
+  })
+
+  it("passes download cache overrides into runtime install", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "runtime",
+      "install",
+      "--runtime-root",
+      "/tmp/runtime-root",
+      "--no-download-cache",
+      "--download-cache-dir",
+      "/tmp/download-cache"
+    ])
+
+    expect(runtimeManagerMocks.installRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeRoot: "/tmp/runtime-root",
+        downloadCache: false,
+        downloadCacheDir: "/tmp/download-cache"
+      })
     )
 
     stdout.mockRestore()

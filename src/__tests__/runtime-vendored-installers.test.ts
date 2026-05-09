@@ -103,6 +103,49 @@ describe("vendored runtime installers", () => {
     }
   })
 
+  runTest("reuses the shared download cache for repeated vendored installs", async () => {
+    const cacheRoot = await makeRuntimeRoot("vendored-cache")
+    const firstRuntimeRoot = await makeRuntimeRoot("code-server-cache-a")
+    const secondRuntimeRoot = await makeRuntimeRoot("code-server-cache-b")
+    const vendoredPlatform = getVendoredPlatform()
+    const vendoredArch = getVendoredArch()
+    const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.tar.gz`
+    const assetBuffer = createTarGzArchive("release", {
+      "out/node/entry.js": createRecordedEntrypoint({
+        includeEnvKeys: [],
+        moduleType: "cjs"
+      })
+    })
+    const releaseServer = await startVendoredReleaseServer([
+      { name: assetName, contents: assetBuffer }
+    ])
+
+    try {
+      await execa(process.execPath, [installCodeServerScript], {
+        cwd: repoRoot,
+        env: createRuntimeScriptEnv(firstRuntimeRoot, "code-server", releaseServer.baseUrl, cacheRoot)
+      })
+    } finally {
+      await releaseServer.close()
+    }
+
+    await execa(process.execPath, [installCodeServerScript], {
+      cwd: repoRoot,
+      env: createRuntimeScriptEnv(secondRuntimeRoot, "code-server", releaseServer.baseUrl, cacheRoot)
+    })
+
+    const markerPath = path.join(
+      secondRuntimeRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      ".hagicode-runtime.json"
+    )
+    const marker = JSON.parse(await readFile(markerPath, "utf8"))
+    expect(marker.vendoredAssetName).toBe(assetName)
+  })
+
   runTest("installs omniroute from the vendored GitHub release archive", async () => {
     const runtimeRoot = await makeRuntimeRoot("omniroute")
     const outputPath = path.join(runtimeRoot, "omniroute-output.json")
@@ -183,7 +226,8 @@ async function makeRuntimeRoot(prefix: string): Promise<string> {
 function createRuntimeScriptEnv(
   runtimeRoot: string,
   componentName: "code-server" | "omniroute",
-  baseUrl: string
+  baseUrl: string,
+  downloadCacheDir?: string
 ) {
   const runtimeHome = path.join(runtimeRoot, "program")
   const runtimeDataRoot = path.join(runtimeRoot, "runtime-data")
@@ -217,7 +261,10 @@ function createRuntimeScriptEnv(
       componentName === "code-server" ? "4.117.0" : "3.6.9",
     HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY: "HagiCode-org/vendered",
     HAGISCRIPT_RUNTIME_VENDORED_TAG: releaseTag,
-    HAGISCRIPT_RUNTIME_VENDORED_BASE_URL: baseUrl
+    HAGISCRIPT_RUNTIME_VENDORED_BASE_URL: baseUrl,
+    ...(downloadCacheDir
+      ? { HAGISCRIPT_DOWNLOAD_CACHE_DIR: downloadCacheDir }
+      : {})
   }
 }
 

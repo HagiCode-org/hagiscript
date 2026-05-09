@@ -75,6 +75,53 @@ describe("Node.js runtime installer", () => {
       expect.stringMatching(/^\.hagiscript-node-/)
     );
   });
+
+  it("reuses the cached archive for repeated installs of the same version", async () => {
+    const platform = mapNodePlatform();
+    if (platform.archiveExtension !== "tar.xz") {
+      return;
+    }
+
+    const root = await makeTempRoot();
+    const cacheDirectory = join(root, "download-cache");
+    const archivePath = await createUnixFixtureArchive(root, platform.nodeFileKey);
+    const archiveBytes = await import("node:fs/promises").then(({ readFile }) =>
+      readFile(archivePath)
+    );
+    let archiveRequests = 0;
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/index.json")) {
+        return Response.json([
+          {
+            version: "v22.12.0",
+            files: [platform.releaseFileKey],
+            npm: "10.9.0",
+            lts: "Jod"
+          }
+        ]);
+      }
+
+      archiveRequests += 1;
+      return new Response(archiveBytes, {
+        status: 200,
+        headers: { "content-length": String(archiveBytes.byteLength) }
+      });
+    }) as unknown as typeof fetch;
+
+    await installNodeRuntime({
+      targetDirectory: join(root, "node-runtime-a"),
+      fetchImpl,
+      downloadCacheDirectory: cacheDirectory
+    });
+    await installNodeRuntime({
+      targetDirectory: join(root, "node-runtime-b"),
+      fetchImpl,
+      downloadCacheDirectory: cacheDirectory
+    });
+
+    expect(archiveRequests).toBe(1);
+  });
 });
 
 async function createUnixFixtureArchive(

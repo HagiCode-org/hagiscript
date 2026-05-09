@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCli, runCli } from "../cli.js";
 
-vi.mock("../runtime/node-installer.js", () => ({
+const { installNodeRuntime } = vi.hoisted(() => ({
   installNodeRuntime: vi.fn(async () => ({
     version: "v22.12.0",
     npmVersion: "10.9.0",
@@ -11,6 +11,10 @@ vi.mock("../runtime/node-installer.js", () => ({
     archiveUrl:
       "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz"
   }))
+}));
+
+vi.mock("../runtime/node-installer.js", () => ({
+  installNodeRuntime
 }));
 
 vi.mock("../runtime/node-verify.js", () => ({
@@ -35,6 +39,7 @@ describe("node runtime CLI commands", () => {
   });
 
   it("installs Node.js with default version selector", async () => {
+    installNodeRuntime.mockClear();
     const stdout = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
@@ -50,6 +55,40 @@ describe("node runtime CLI commands", () => {
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
     expect(output).toContain("Installing Node.js 22 into /tmp/runtime");
     expect(output).toContain("Node.js runtime installed successfully.");
+    expect(installNodeRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetDirectory: "/tmp/runtime",
+        downloadCacheEnabled: true
+      })
+    );
+    stdout.mockRestore();
+  });
+
+  it("passes explicit download cache settings into install-node", async () => {
+    installNodeRuntime.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "install-node",
+      "--target",
+      "/tmp/runtime",
+      "--no-download-cache",
+      "--download-cache-dir",
+      "/tmp/download-cache"
+    ]);
+
+    expect(installNodeRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetDirectory: "/tmp/runtime",
+        downloadCacheEnabled: false,
+        downloadCacheDirectory: "/tmp/download-cache"
+      })
+    );
+
     stdout.mockRestore();
   });
 
