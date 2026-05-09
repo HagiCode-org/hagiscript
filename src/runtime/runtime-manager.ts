@@ -47,6 +47,8 @@ export interface RuntimeLifecycleOptions {
   purge?: boolean
   checkOnly?: boolean
   verbose?: boolean
+  downloadCache?: boolean
+  downloadCacheDir?: string
   logger?: (message: string) => void
   now?: () => Date
 }
@@ -479,7 +481,7 @@ async function executeRuntimeAction(
 
   switch (component.name) {
     case "node":
-      return executeNodeComponent(action.phase, component, paths, logFilePath)
+      return executeNodeComponent(action.phase, component, paths, options, logFilePath)
     default:
       return executeScriptComponent(
         action,
@@ -498,6 +500,7 @@ async function executeNodeComponent(
   phase: RuntimeLifecyclePhase,
   component: RuntimeComponentDefinition,
   paths: ResolvedRuntimePaths,
+  options: RuntimeLifecycleOptions,
   logFilePath: string
 ): Promise<RuntimeComponentState> {
   await mkdir(dirname(paths.nodeRuntime), { recursive: true })
@@ -544,7 +547,9 @@ async function executeNodeComponent(
     phase,
     paths.nodeRuntime,
     desiredVersion,
-    currentVerification
+    currentVerification,
+    options.downloadCache,
+    options.downloadCacheDir
   )
 
   const wrappers = await materializeNodeWrappers(paths.bin, {
@@ -597,7 +602,9 @@ async function executeScriptComponent(
       componentConfigDir,
       logFilePath,
       purge: options.purge,
-      verbose: options.verbose
+      verbose: options.verbose,
+      downloadCache: options.downloadCache,
+      downloadCacheDir: options.downloadCacheDir
     })
 
     if (action.phase !== "remove" && component.scripts.configure) {
@@ -610,7 +617,9 @@ async function executeScriptComponent(
         componentConfigDir,
         logFilePath,
         purge: options.purge,
-        verbose: options.verbose
+        verbose: options.verbose,
+        downloadCache: options.downloadCache,
+        downloadCacheDir: options.downloadCacheDir
       })
     }
 
@@ -624,7 +633,9 @@ async function executeScriptComponent(
         componentConfigDir,
         logFilePath,
         purge: options.purge,
-        verbose: options.verbose
+        verbose: options.verbose,
+        downloadCache: options.downloadCache,
+        downloadCacheDir: options.downloadCacheDir
       })
     }
   } else {
@@ -997,7 +1008,9 @@ async function resolveNodeRuntimeForPhase(
   phase: RuntimeLifecyclePhase,
   targetDirectory: string,
   desiredVersion: string | undefined,
-  currentVerification: Awaited<ReturnType<typeof verifyNodeRuntime>>
+  currentVerification: Awaited<ReturnType<typeof verifyNodeRuntime>>,
+  downloadCache: boolean | undefined,
+  downloadCacheDir: string | undefined
 ): Promise<{
   targetDirectory: string
   nodePath: string
@@ -1022,7 +1035,9 @@ async function resolveNodeRuntimeForPhase(
   if (phase === "update") {
     const installed = await installNodeRuntime({
       targetDirectory,
-      versionSelector: desiredVersion
+      versionSelector: desiredVersion,
+      downloadCacheEnabled: downloadCache,
+      downloadCacheDirectory: downloadCacheDir
     })
     return {
       targetDirectory: installed.targetDirectory,
@@ -1035,6 +1050,8 @@ async function resolveNodeRuntimeForPhase(
 
   return resolveManagedNodeRuntime({
     targetDirectory,
-    versionSelector: desiredVersion
+    versionSelector: desiredVersion,
+    downloadCacheEnabled: downloadCache,
+    downloadCacheDirectory: downloadCacheDir
   })
 }

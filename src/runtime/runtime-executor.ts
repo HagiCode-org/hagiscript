@@ -27,6 +27,8 @@ export interface RuntimeScriptExecutionContext {
   logFilePath?: string
   purge?: boolean
   verbose?: boolean
+  downloadCache?: boolean
+  downloadCacheDir?: string
   runner?: CommandRunner
 }
 
@@ -45,6 +47,8 @@ export interface ManagedRuntimeEnvironmentContext {
   phase?: string
   purge?: boolean
   verbose?: boolean
+  downloadCache?: boolean
+  downloadCacheDir?: string
   scriptBasename?: string
 }
 
@@ -239,6 +243,10 @@ export function buildManagedRuntimeEnvironment(
         : {}),
       ...(context.verbose !== undefined
         ? { HAGISCRIPT_RUNTIME_VERBOSE: context.verbose ? "1" : "0" }
+        : {}),
+      HAGISCRIPT_DOWNLOAD_CACHE: context.downloadCache === false ? "0" : "1",
+      ...(context.downloadCacheDir
+        ? { HAGISCRIPT_DOWNLOAD_CACHE_DIR: context.downloadCacheDir }
         : {}),
       ...(context.scriptBasename
         ? { HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: context.scriptBasename }
