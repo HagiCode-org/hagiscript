@@ -23,6 +23,8 @@ await installManagedDotnetRuntime({
   targetDirectory: currentRoot,
   version: dotnetVersion,
   scriptBaseUrl: process.env.HAGISCRIPT_DOTNET_INSTALL_SCRIPT_BASE_URL?.trim() || undefined,
+  downloadCacheEnabled: process.env.HAGISCRIPT_DOWNLOAD_CACHE !== "0",
+  downloadCacheDirectory: process.env.HAGISCRIPT_DOWNLOAD_CACHE_DIR?.trim() || undefined,
   verbose: process.env.HAGISCRIPT_RUNTIME_VERBOSE === "1"
 })
 await writeFile(path.join(currentRoot, "runtime-manifest.json"), `${JSON.stringify({

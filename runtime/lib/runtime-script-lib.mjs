@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { createReadStream, createWriteStream } from "node:fs"
-import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
+import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 import process from "node:process"
 import { createGunzip } from "node:zlib"
@@ -30,6 +30,10 @@ export function readRuntimeScriptContext() {
     vendoredTag:
       process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0509.0040",
     vendoredBaseUrl: process.env.HAGISCRIPT_RUNTIME_VENDORED_BASE_URL?.trim() || "https://github.com",
+    downloadCacheEnabled: process.env.HAGISCRIPT_DOWNLOAD_CACHE !== "0",
+    downloadCacheDir:
+      process.env.HAGISCRIPT_DOWNLOAD_CACHE_DIR?.trim() ||
+      path.join(homedir(), ".hagiscript", "download-cache"),
     phase: process.env.HAGISCRIPT_RUNTIME_PHASE?.trim() || "install",
     purge: process.env.HAGISCRIPT_RUNTIME_PURGE === "1"
   }
@@ -132,6 +136,32 @@ export async function installVendoredPackage(context, options) {
     arch
   })
   const assetUrl = buildVendoredAssetUrl(baseUrl, repository, releaseTag, assetName)
+  const cacheRoot = path.join(
+    context.downloadCacheDir,
+    "vendored",
+    options.packageName,
+    releaseTag,
+    `${platform}-${arch}`
+  )
+
+  if (context.downloadCacheEnabled) {
+    const restoredEntrypoint = await restoreVendoredPackageFromCache(
+      cacheRoot,
+      options.prefixRoot,
+      options.entrypointRelativePath
+    )
+    if (restoredEntrypoint) {
+      return {
+        entrypointPath: restoredEntrypoint,
+        releaseRepository: repository,
+        releaseTag,
+        releaseName: releaseTag.replace(/^v/u, ""),
+        releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
+        releaseAssetName: assetName,
+        releaseAssetUrl: assetUrl
+      }
+    }
+  }
 
   const stagingRoot = await mkdtemp(path.join(tmpdir(), `hagiscript-vendored-${options.packageName}-`))
 
@@ -145,6 +175,9 @@ export async function installVendoredPackage(context, options) {
       path.extname(assetName).toLowerCase() === ".zip" ? "zip" : "tar.gz"
     )
     await replaceDirectory(extractedRoot, options.prefixRoot)
+    if (context.downloadCacheEnabled) {
+      await storeDirectoryInCache(options.prefixRoot, cacheRoot)
+    }
 
     const entrypointPath = path.join(options.prefixRoot, options.entrypointRelativePath)
     await access(entrypointPath)
@@ -526,6 +559,89 @@ async function replaceDirectory(sourceDirectory, targetDirectory) {
   await rename(sourceDirectory, targetDirectory)
 }
 
+async function restoreVendoredPackageFromCache(cacheRoot, prefixRoot, entrypointRelativePath) {
+  try {
+    await stat(cacheRoot)
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return null
+    }
+
+    throw error
+  }
+
+  await rm(prefixRoot, { recursive: true, force: true })
+  await ensureDirectory(path.dirname(prefixRoot))
+  await cp(cacheRoot, prefixRoot, {
+    recursive: true,
+    force: false,
+    errorOnExist: true
+  })
+
+  const entrypointPath = path.join(prefixRoot, entrypointRelativePath)
+  try {
+    await access(entrypointPath)
+    return entrypointPath
+  } catch (error) {
+    await rm(cacheRoot, { recursive: true, force: true }).catch(() => undefined)
+    await rm(prefixRoot, { recursive: true, force: true }).catch(() => undefined)
+    if (isMissingPathError(error)) {
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function storeDirectoryInCache(sourceDirectory, cacheDirectory) {
+  try {
+    await stat(cacheDirectory)
+    return
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error
+    }
+  }
+
+  const temporaryDirectory = `${cacheDirectory}.tmp-${process.pid}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`
+  await ensureDirectory(path.dirname(cacheDirectory))
+  await cp(sourceDirectory, temporaryDirectory, {
+    recursive: true,
+    force: false,
+    errorOnExist: true
+  })
+
+  try {
+    await rename(temporaryDirectory, cacheDirectory)
+  } catch (error) {
+    if (!isAlreadyCachedError(error)) {
+      throw error
+    }
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
 function escapePowerShell(value) {
   return value.replaceAll("'", "''")
+}
+
+function isMissingPathError(error) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error.code === "ENOENT" || error.code === "ENOTDIR")
+  )
+}
+
+function isAlreadyCachedError(error) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error.code === "EEXIST" || error.code === "ENOTEMPTY")
+  )
 }
