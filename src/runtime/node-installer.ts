@@ -2,6 +2,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import {
+  copyFileFromCache,
+  isDownloadCacheEnabled,
+  resolveDownloadCacheDirectory,
+  storeFileInCache
+} from "./download-cache.js";
+import {
   assertTargetIsEmptyOrMissing,
   extractNodeArchive,
   moveExtractedRootToTarget
@@ -21,6 +27,8 @@ export interface InstallNodeRuntimeOptions {
   fetchImpl?: typeof fetch;
   downloadTimeoutMs?: number;
   verifyTimeoutMs?: number;
+  downloadCacheEnabled?: boolean;
+  downloadCacheDirectory?: string;
   onProgress?: (progress: DownloadProgress) => void;
 }
 
@@ -30,6 +38,8 @@ export interface ResolveManagedNodeRuntimeOptions {
   fetchImpl?: typeof fetch;
   downloadTimeoutMs?: number;
   verifyTimeoutMs?: number;
+  downloadCacheEnabled?: boolean;
+  downloadCacheDirectory?: string;
   verifyRuntime?: typeof verifyNodeRuntime;
   installRuntime?: typeof installNodeRuntime;
   onProgress?: (progress: DownloadProgress) => void;
@@ -79,6 +89,8 @@ export async function resolveManagedNodeRuntime(
     fetchImpl: options.fetchImpl,
     downloadTimeoutMs: options.downloadTimeoutMs,
     verifyTimeoutMs: options.verifyTimeoutMs,
+    downloadCacheEnabled: options.downloadCacheEnabled,
+    downloadCacheDirectory: options.downloadCacheDirectory,
     onProgress: options.onProgress
   });
 
@@ -106,9 +118,21 @@ export async function installNodeRuntime(
     join(dirname(targetDirectory), ".hagiscript-node-")
   );
   const archivePath = join(stagingRoot, archive.fileName);
+  const cacheArchivePath = isDownloadCacheEnabled(options.downloadCacheEnabled)
+    ? join(
+        resolveDownloadCacheDirectory(options.downloadCacheDirectory),
+        "node",
+        archive.version,
+        archive.platform.nodeFileKey,
+        archive.fileName
+      )
+    : undefined;
 
   try {
-    await downloadNodeArchive(archive.url, archivePath, {
+    await materializeNodeArchive({
+      archive,
+      archivePath,
+      cacheArchivePath,
       fetchImpl: options.fetchImpl,
       timeoutMs: options.downloadTimeoutMs,
       onProgress: options.onProgress
@@ -138,6 +162,42 @@ export async function installNodeRuntime(
     await rm(stagingRoot, { recursive: true, force: true }).catch(
       () => undefined
     );
+  }
+}
+
+async function materializeNodeArchive(options: {
+  archive: {
+    fileName: string;
+    url: string;
+  };
+  archivePath: string;
+  cacheArchivePath?: string;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  onProgress?: (progress: DownloadProgress) => void;
+}): Promise<void> {
+  if (options.cacheArchivePath) {
+    const cachedSize = await copyFileFromCache(
+      options.cacheArchivePath,
+      options.archivePath
+    );
+    if (cachedSize !== undefined) {
+      options.onProgress?.({
+        receivedBytes: cachedSize,
+        totalBytes: cachedSize
+      });
+      return;
+    }
+  }
+
+  await downloadNodeArchive(options.archive.url, options.archivePath, {
+    fetchImpl: options.fetchImpl,
+    timeoutMs: options.timeoutMs,
+    onProgress: options.onProgress
+  });
+
+  if (options.cacheArchivePath) {
+    await storeFileInCache(options.archivePath, options.cacheArchivePath);
   }
 }
 
