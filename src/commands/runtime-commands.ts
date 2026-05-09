@@ -14,6 +14,8 @@ interface RuntimeBaseOptions {
   runtimeRoot?: string
   components?: string[]
   verbose?: boolean
+  downloadCache?: boolean
+  downloadCacheDir?: string
 }
 
 interface RuntimeInstallOptions extends RuntimeBaseOptions {
@@ -53,6 +55,11 @@ export function registerRuntimeCommands(program: Command): void {
       parseComponentList
     )
     .option("--dry-run", "print the install plan without mutating managed files")
+    .option("--no-download-cache", "disable reuse of the shared download cache")
+    .option(
+      "--download-cache-dir <path>",
+      "override the shared download cache directory"
+    )
     .option("--force", "force reinstall of mutable managed components")
     .option("--verbose", "print detailed lifecycle output")
     .action(async (options: RuntimeInstallOptions, command: Command) => {
@@ -89,6 +96,11 @@ export function registerRuntimeCommands(program: Command): void {
     )
     .option("--dry-run", "print the update plan without mutating managed files")
     .option("--check-only", "report components that would be updated")
+    .option("--no-download-cache", "disable reuse of the shared download cache")
+    .option(
+      "--download-cache-dir <path>",
+      "override the shared download cache directory"
+    )
     .option("--force", "force update execution for mutable managed components")
     .option("--verbose", "print detailed lifecycle output")
     .action(async (options: RuntimeUpdateOptions, command: Command) => {
@@ -133,6 +145,11 @@ async function runLifecycleCommand(
     purge: "purge" in options ? options.purge ?? false : false,
     checkOnly: "checkOnly" in options ? options.checkOnly ?? false : false,
     verbose: options.verbose ?? false,
+    downloadCache: options.downloadCache,
+    downloadCacheDir: validatePathOption(
+      options.downloadCacheDir,
+      "--download-cache-dir"
+    ),
     logger: (message) => process.stdout.write(`${message}\n`)
   }
 

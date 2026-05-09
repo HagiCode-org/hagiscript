@@ -20,6 +20,8 @@ interface NpmSyncCommandOptions {
   runtime?: string;
   manifest?: string;
   managedRuntime?: string;
+  downloadCache?: boolean;
+  downloadCacheDir?: string;
   registryMirror?: string;
   prefix?: string;
   mirrorOnly?: boolean;
@@ -38,6 +40,11 @@ export function registerNpmSyncCommand(program: Command): void {
     .option(
       "--managed-runtime <path>",
       "HagiScript-managed runtime directory to verify or install before sync"
+    )
+    .option("--no-download-cache", "disable reuse of the shared download cache")
+    .option(
+      "--download-cache-dir <path>",
+      "override the shared download cache directory"
     )
     .option("--manifest <path>", "npm-sync manifest JSON file")
     .option(
@@ -104,7 +111,11 @@ export function registerNpmSyncCommand(program: Command): void {
 
       try {
         const runtimePath = explicitRuntime ?? (await resolveManagedNodeRuntime({
-          targetDirectory: managedRuntimePath
+          targetDirectory: managedRuntimePath,
+          downloadCacheEnabled: options.downloadCache,
+          downloadCacheDirectory: options.downloadCacheDir
+            ? validatePathOption(options.downloadCacheDir, "--download-cache-dir")
+            : undefined
         })).targetDirectory;
         const fallbackPolicy = options.mirrorOnly ? "mirror-only" : "auto";
 

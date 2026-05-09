@@ -6,6 +6,8 @@ import { verifyNodeRuntime } from "../runtime/node-verify.js";
 interface InstallNodeOptions {
   target?: string;
   version?: string;
+  downloadCache?: boolean;
+  downloadCacheDir?: string;
 }
 
 interface CheckNodeOptions {
@@ -25,6 +27,11 @@ export function registerNodeRuntimeCommands(program: Command): void {
       "Node.js selector: lts, latest, current, 22, 22.11.0, or v22.11.0",
       validateVersionOption
     )
+    .option("--no-download-cache", "disable reuse of the shared download cache")
+    .option(
+      "--download-cache-dir <path>",
+      "override the shared download cache directory"
+    )
     .action(async (options: InstallNodeOptions, command: Command) => {
       const target = validateTargetOption(options.target);
       const versionSelector = options.version;
@@ -36,6 +43,11 @@ export function registerNodeRuntimeCommands(program: Command): void {
         const result = await installNodeRuntime({
           targetDirectory: target,
           versionSelector,
+          downloadCacheEnabled: options.downloadCache,
+          downloadCacheDirectory: validateOptionalPathOption(
+            options.downloadCacheDir,
+            "--download-cache-dir"
+          ),
           onProgress: (progress) => {
             if (progress.totalBytes && progress.totalBytes > 0) {
               const percent = Math.floor(
@@ -112,6 +124,26 @@ function validateTargetOption(value: string | undefined): string {
   }
 
   return target;
+}
+
+function validateOptionalPathOption(
+  value: string | undefined,
+  optionName: string
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new InvalidArgumentError(`${optionName} must be a non-empty path.`);
+  }
+
+  if (normalized.includes("\0")) {
+    throw new InvalidArgumentError(`${optionName} contains an invalid null byte.`);
+  }
+
+  return normalized;
 }
 
 function formatCommandError(prefix: string, error: unknown): string {
