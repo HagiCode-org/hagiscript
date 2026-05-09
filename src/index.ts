@@ -22,6 +22,10 @@ export function createRuntimeInfo(): HagiscriptRuntimeInfo {
 }
 
 export {
+  getDefaultDownloadCacheDirectory,
+  resolveDownloadCacheDirectory
+} from "./runtime/download-cache.js";
+export {
   getDefaultManagedNodeRuntimeDirectory,
   installNodeRuntime,
   resolveManagedNodeRuntime,

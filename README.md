@@ -60,6 +60,8 @@ Install the full runtime:
 hagiscript runtime install
 ```
 
+Runtime installs reuse a shared download cache by default. Disable it with `--no-download-cache`, or relocate it with `--download-cache-dir <path>`.
+
 Install selected components only:
 
 ```bash
@@ -223,6 +225,8 @@ hagiscript install-node --target /opt/hagiscript/node
 hagiscript install-node --target /opt/hagiscript/node22 --version 22
 ```
 
+Standalone Node installs also reuse the shared download cache by default. Pass `--no-download-cache` to force a fresh download, or `--download-cache-dir <path>` to share a custom cache location across installs.
+
 Validate an existing managed Node.js runtime:
 
 ```bash
@@ -238,6 +242,8 @@ hagiscript npm-sync --manifest ./manifest.json
 hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
 hagiscript npm-sync --managed-runtime ~/.hagicode/runtime/program/components/node/runtime --prefix ~/.hagicode/runtime/program/npm --manifest ./manifest.json
 ```
+
+When `npm-sync` has to provision a managed Node runtime first, it uses the same shared download cache by default.
 
 This is the path for installing `pm2` and any other scenario-specific global tools. The package list is data, not a built-in runtime component.
 
