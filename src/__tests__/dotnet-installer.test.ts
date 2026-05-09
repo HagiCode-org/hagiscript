@@ -157,6 +157,7 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}\\shared\\Microsoft.AspNe
     const root = await makeTempRoot();
     const cacheDirectory = join(root, "download-cache");
     const version = "10.0.5";
+    const platform = process.platform;
     let installInvocations = 0;
 
     const runner = async (command: string, args: string[]) => {
@@ -175,15 +176,43 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}\\shared\\Microsoft.AspNe
         };
       }
 
-      if (command.endsWith("/dotnet")) {
+      if (command === "pwsh") {
+        throw new CommandExecutionError("pwsh missing", {
+          command,
+          args,
+          stdout: "",
+          stderr: "'pwsh' is not recognized as an internal or external command",
+          timedOut: false,
+          failed: true
+        });
+      }
+
+      if (command === "powershell.exe") {
+        installInvocations += 1;
+        const installDir = args[args.indexOf("-InstallDir") + 1];
+        const runtimeKind = args[args.indexOf("-Runtime") + 1];
+        await seedFakeWindowsRuntime(installDir, version, runtimeKind);
+        return {
+          command,
+          args,
+          stdout: `installed ${runtimeKind}`,
+          stderr: "",
+          exitCode: 0,
+          timedOut: false
+        };
+      }
+
+      if (command.endsWith("dotnet") || command.endsWith("dotnet.exe")) {
         const targetDirectory = dirname(command);
+        const pathSeparator = platform === "win32" ? "\\" : "/";
+        const runtimeBasePath = `${targetDirectory}${pathSeparator}shared`;
         return {
           command,
           args,
           stdout:
             args[0] === "--list-runtimes"
-              ? `Microsoft.NETCore.App ${version} [${targetDirectory}/shared/Microsoft.NETCore.App]
-Microsoft.AspNetCore.App ${version} [${targetDirectory}/shared/Microsoft.AspNetCore.App]
+              ? `Microsoft.NETCore.App ${version} [${runtimeBasePath}${pathSeparator}Microsoft.NETCore.App]
+Microsoft.AspNetCore.App ${version} [${runtimeBasePath}${pathSeparator}Microsoft.AspNetCore.App]
 `
               : ".NET SDK (fake)\n",
           stderr: "",
@@ -204,6 +233,7 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}/shared/Microsoft.AspNetC
     await installManagedDotnetRuntime({
       targetDirectory: join(root, "managed-dotnet-a"),
       version,
+      platform,
       runner,
       fetchImpl,
       downloadCacheDirectory: cacheDirectory
@@ -211,6 +241,7 @@ Microsoft.AspNetCore.App ${version} [${targetDirectory}/shared/Microsoft.AspNetC
     await installManagedDotnetRuntime({
       targetDirectory: join(root, "managed-dotnet-b"),
       version,
+      platform,
       runner,
       fetchImpl,
       downloadCacheDirectory: cacheDirectory
