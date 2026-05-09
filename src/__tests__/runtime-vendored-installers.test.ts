@@ -216,6 +216,7 @@ function createRuntimeScriptEnv(
     HAGISCRIPT_RUNTIME_COMPONENT_VERSION:
       componentName === "code-server" ? "4.117.0" : "3.6.9",
     HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY: "HagiCode-org/vendered",
+    HAGISCRIPT_RUNTIME_VENDORED_TAG: releaseTag,
     HAGISCRIPT_RUNTIME_VENDORED_BASE_URL: baseUrl
   }
 }
