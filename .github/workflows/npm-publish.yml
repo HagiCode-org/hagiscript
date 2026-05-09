@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
       - name: Verify npm publish prerequisites
         run: npm run publish:check-prereqs
 
@@ -67,13 +70,47 @@ jobs:
         run: npm run integration:installed-runtime
 
       - name: Publish to npm dev dist-tag
-        run: npm publish --tag dev --access public
+        id: publish
+        env:
+          DEV_VERSION: ${{ steps.version.outputs.version }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          if npm view "@hagicode/hagiscript@$DEV_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Version $DEV_VERSION is already published on npm; skipping dev publish."
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Publish gate"
+              echo
+              echo "Version $DEV_VERSION already exists on npm. Skipped duplicate dev publish."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          publish_log="$(mktemp)"
+          set +e
+          npm publish --tag dev --provenance --access public 2>&1 | tee "$publish_log"
+          publish_exit="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$publish_exit" -ne 0 ]; then
+            {
+              echo "### npm publish output"
+              echo
+              echo '```text'
+              tail -n 200 "$publish_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$publish_exit"
+          fi
+
+          echo "result=published" >> "$GITHUB_OUTPUT"
 
       - name: Summarize publish result
         if: always()
         env:
           RESOLVED_VERSION: ${{ steps.version.outputs.version || 'n/a' }}
           JOB_STATUS: ${{ job.status }}
+          PUBLISH_RESULT: ${{ steps.publish.outputs.result || '' }}
         run: |
           {
             echo "## npm dev publish"
@@ -82,8 +119,10 @@ jobs:
             echo "- Dist-tag: dev"
             echo "- Registry: npmjs.org"
 
-            if [ "$JOB_STATUS" = "success" ]; then
+            if [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "published" ]; then
               echo "- Result: published with provenance enabled."
+            elif [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "skipped" ]; then
+              echo "- Result: skipped because this version is already present on npm."
             else
               echo "- Result: failed before publish completed. Check the failed gate above."
             fi
@@ -107,6 +146,12 @@ jobs:
           cache-dependency-path: package-lock.json
           registry-url: https://registry.npmjs.org
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
       - name: Verify release tag matches package version
         id: version
         env:
@@ -115,9 +160,6 @@ jobs:
           version="$(npm run --silent publish:verify-release -- "$RELEASE_TAG_NAME")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated release version: $version"
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Stamp stable package version
         env:
@@ -140,7 +182,40 @@ jobs:
         run: npm run integration:installed-runtime
 
       - name: Publish to npm latest dist-tag
-        run: npm publish --tag latest --access public
+        id: publish
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          NPM_CONFIG_PROVENANCE: "true"
+        run: |
+          if npm view "@hagicode/hagiscript@$RELEASE_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Version $RELEASE_VERSION is already published on npm; skipping stable publish."
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Publish gate"
+              echo
+              echo "Version $RELEASE_VERSION already exists on npm. Skipped duplicate stable publish."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          publish_log="$(mktemp)"
+          set +e
+          npm publish --tag latest --provenance --access public 2>&1 | tee "$publish_log"
+          publish_exit="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$publish_exit" -ne 0 ]; then
+            {
+              echo "### npm publish output"
+              echo
+              echo '```text'
+              tail -n 200 "$publish_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$publish_exit"
+          fi
+
+          echo "result=published" >> "$GITHUB_OUTPUT"
 
       - name: Summarize publish result
         if: always()
@@ -149,6 +224,7 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           RELEASE_URL: ${{ github.event.release.html_url }}
           TAG_NAME: ${{ github.event.release.tag_name }}
+          PUBLISH_RESULT: ${{ steps.publish.outputs.result || '' }}
         run: |
           {
             echo "## npm stable publish"
@@ -159,8 +235,10 @@ jobs:
             echo "- Tag: $TAG_NAME"
             echo "- Registry: npmjs.org"
 
-            if [ "$JOB_STATUS" = "success" ]; then
+            if [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "published" ]; then
               echo "- Result: published with provenance enabled."
+            elif [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "skipped" ]; then
+              echo "- Result: skipped because this version is already present on npm."
             else
               echo "- Result: failed before publish completed. Check the failed gate above."
             fi
