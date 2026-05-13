@@ -49,6 +49,8 @@ export interface RuntimeLifecycleOptions {
   verbose?: boolean
   downloadCache?: boolean
   downloadCacheDir?: string
+  npmRegistryMirror?: string
+  pm2VersionOverride?: string
   logger?: (message: string) => void
   now?: () => Date
 }
@@ -604,7 +606,9 @@ async function executeScriptComponent(
       purge: options.purge,
       verbose: options.verbose,
       downloadCache: options.downloadCache,
-      downloadCacheDir: options.downloadCacheDir
+      downloadCacheDir: options.downloadCacheDir,
+      npmRegistryMirror: options.npmRegistryMirror,
+      pm2VersionOverride: options.pm2VersionOverride
     })
 
     if (action.phase !== "remove" && component.scripts.configure) {
@@ -619,7 +623,9 @@ async function executeScriptComponent(
         purge: options.purge,
         verbose: options.verbose,
         downloadCache: options.downloadCache,
-        downloadCacheDir: options.downloadCacheDir
+        downloadCacheDir: options.downloadCacheDir,
+        npmRegistryMirror: options.npmRegistryMirror,
+        pm2VersionOverride: options.pm2VersionOverride
       })
     }
 
@@ -635,7 +641,9 @@ async function executeScriptComponent(
         purge: options.purge,
         verbose: options.verbose,
         downloadCache: options.downloadCache,
-        downloadCacheDir: options.downloadCacheDir
+        downloadCacheDir: options.downloadCacheDir,
+        npmRegistryMirror: options.npmRegistryMirror,
+        pm2VersionOverride: options.pm2VersionOverride
       })
     }
   } else {

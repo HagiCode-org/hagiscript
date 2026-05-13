@@ -1,9 +1,10 @@
-import { cp, mkdtemp, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { createHash } from "node:crypto"
 import process from "node:process"
 import semver from "semver"
+import { parse as parseYaml } from "yaml"
 import {
   copyFileFromCache,
   isDownloadCacheEnabled,
@@ -12,15 +13,12 @@ import {
 } from "./download-cache.js"
 import { runCommand, type CommandRunner } from "./command-launch.js"
 import {
-  syncNpmGlobals,
-  validateRegistryMirror,
-  type NpmSyncSummary
-} from "./npm-sync.js"
-import {
   resolveManagedPm2Environment,
   runManagedPm2Command,
+  supportedPm2Services,
   type ManagedPm2Action,
   type ManagedPm2CommandResult,
+  type ManagedPm2ServiceName,
   type ManagedPm2EnvironmentResult
 } from "./pm2-manager.js"
 import {
@@ -28,7 +26,9 @@ import {
   type RuntimeComponentDefinition
 } from "./runtime-manifest.js"
 import {
-  getComponentManagedRoot,
+  getComponentConfigDirectory,
+  getServerSharedDataRoot,
+  getServerVersionRoot,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime-paths.js"
@@ -38,9 +38,20 @@ import {
   type RuntimeLifecycleResult,
   type RuntimeStateReport
 } from "./runtime-manager.js"
+import { getManagedServerConfig } from "./server-config.js"
+import {
+  listManagedServerVersions as listManagedServerVersionSummaries,
+  readManagedServerVersionState,
+  registerManagedServerVersion,
+  removeManagedServerVersion as removeInstalledManagedServerVersion,
+  resolveManagedServerVersionStateContext,
+  setActiveManagedServerVersion,
+  type ManagedServerVersionSummary
+} from "./server-version-state.js"
 
 export type ManagedServerSourceKind =
   | "github-release"
+  | "http-index"
   | "direct-url"
   | "local-archive"
   | "local-folder"
@@ -51,6 +62,9 @@ export interface ManagedServerInstallOptions {
   archivePath?: string
   packageDirectory?: string
   url?: string
+  indexUrl?: string
+  indexChannel?: string
+  indexVersion?: string
   githubRepository?: string
   githubTag?: string
   assetName?: string
@@ -71,7 +85,6 @@ export interface ManagedServerInstallOptions {
   ) => Promise<void>
   installRuntimeFn?: typeof installRuntime
   queryRuntimeStateFn?: typeof queryRuntimeState
-  syncNpmGlobalsFn?: typeof syncNpmGlobals
 }
 
 export interface ManagedServerInstallResult {
@@ -81,14 +94,17 @@ export interface ManagedServerInstallResult {
     version: string | null
     assetName: string
   }
+  installedVersion: string
+  activeVersion: string
   stagedPath: string
   stagedDllPath: string
+  statePath: string
+  sharedDataRoot: string
   runtimeLifecycle: RuntimeLifecycleResult
   runtimeState: RuntimeStateReport
   pm2: {
     ensured: boolean
     versionRange: string | null
-    summary?: NpmSyncSummary
   }
 }
 
@@ -96,6 +112,48 @@ export interface ManagedServerLifecycleOptions {
   manifestPath?: string
   runtimeRoot?: string
   instanceName?: string
+}
+
+export interface ManagedServerEnvironmentResult {
+  host: string
+  port: number
+  aspNetCoreUrls: string
+  configPath: string
+  sharedDataRoot: string
+  environment: Record<string, string>
+}
+
+export interface ManagedServerVersionOptions {
+  manifestPath?: string
+  runtimeRoot?: string
+}
+
+export interface ManagedServerUseVersionOptions extends ManagedServerVersionOptions {
+  version: string
+}
+
+export interface ManagedServerRemoveVersionOptions extends ManagedServerVersionOptions {
+  version: string
+}
+
+export interface ManagedServerListResult {
+  activeVersion: string | null
+  versions: ManagedServerVersionSummary[]
+  statePath: string
+  sharedDataRoot: string
+}
+
+export interface ManagedServerUseVersionResult {
+  previousActiveVersion: string | null
+  activeVersion: string
+  statePath: string
+}
+
+export interface ManagedServerRemoveVersionResult {
+  activeVersion: string | null
+  removedVersion: string
+  removedPath: string
+  statePath: string
 }
 
 export class ManagedServerError extends Error {
@@ -114,9 +172,66 @@ interface ResolvedServerArchive {
   cleanup(): Promise<void>
 }
 
+interface HttpIndexAssetDownloadSource {
+  kind?: unknown
+  label?: unknown
+  url?: unknown
+  primary?: unknown
+}
+
+interface HttpIndexAssetEntry {
+  name?: unknown
+  url?: unknown
+  directUrl?: unknown
+  browser_download_url?: unknown
+  browserDownloadUrl?: unknown
+  downloadUrl?: unknown
+  downloadSources?: unknown
+  sources?: unknown
+}
+
+interface HttpIndexVersionEntry {
+  version?: unknown
+  tag?: unknown
+  channel?: unknown
+  channels?: unknown
+  assets?: unknown
+  files?: unknown
+}
+
+interface HttpIndexDocument {
+  versions?: unknown
+  assets?: unknown
+}
+
+interface NormalizedHttpIndexAsset {
+  assetName: string
+  downloadUrl: string
+}
+
+interface NormalizedHttpIndexVersion {
+  version: string | null
+  channels: Set<string>
+  assets: NormalizedHttpIndexAsset[]
+}
+
 const DEFAULT_GITHUB_REPOSITORY = "HagiCode-org/releases"
 const DEFAULT_GITHUB_TAG = "latest"
-const DEFAULT_PM2_INSTANCE = "hagicode"
+const DEFAULT_SERVER_HTTP_INDEX_URL = "https://index.hagicode.com/server/index.json"
+const LEGACY_SERVER_HTTP_INDEX_URLS = new Set([
+  "https://server.dl.hagicode.com/index.json"
+])
+const DEFAULT_CODE_SERVER_HOST = "127.0.0.1"
+const DEFAULT_CODE_SERVER_PORT = 8080
+const DEFAULT_CODE_SERVER_AUTH_MODE = "none"
+const DEFAULT_OMNIROUTE_HOST = "127.0.0.1"
+const DEFAULT_OMNIROUTE_PORT = 39001
+const MANAGED_SERVER_INTEGRATION_DEPENDENCIES: readonly ManagedPm2ServiceName[] = [
+  "code-server",
+  "omniroute"
+]
+const VSCODE_SERVER_SOURCE_EXTERNAL = "external"
+const VSCODE_SERVER_SECRET_SOURCE_BOOTSTRAP = "bootstrap"
 
 export async function installManagedServer(
   options: ManagedServerInstallOptions = {}
@@ -126,43 +241,51 @@ export async function installManagedServer(
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
   const serverComponent = assertServerComponent(manifest.componentMap.get("server"))
-  const resolvedRegistryMirror = validateRegistryMirror(
-    options.registryMirror,
-    "registryMirror"
-  )
   const archive = await resolveServerArchive(options, logger)
+  const installedVersion = resolveManagedServerVersion(archive)
 
   try {
     const staged = await stageServerArchive({
       archivePath: archive.archivePath,
+      version: installedVersion,
       paths,
       runner,
       serverComponent,
+      force: options.force ?? false,
       extractArchive: options.extractArchive
     })
 
     const installRuntimeFn = options.installRuntimeFn ?? installRuntime
+    const runtimeDependencyComponents = (options.ensurePm2 ?? true)
+      ? [...serverComponent.lifecycleDependencies]
+      : serverComponent.lifecycleDependencies.filter((componentName) => componentName !== "pm2")
     const runtimeLifecycle = await installRuntimeFn({
       manifestPath: options.manifestPath,
       runtimeRoot: options.runtimeRoot,
-      components: ["server"],
+      components: runtimeDependencyComponents,
       force: options.force ?? false,
       downloadCache: options.downloadCache,
       downloadCacheDir: options.downloadCacheDir,
+      npmRegistryMirror: options.registryMirror,
+      pm2VersionOverride: options.pm2Version,
       logger
     })
 
-    let pm2Summary: NpmSyncSummary | undefined
-    if (options.ensurePm2 ?? true) {
-      pm2Summary = await ensureManagedPm2({
-        paths,
-        pm2Version: options.pm2Version,
-        registryMirror: resolvedRegistryMirror,
-        force: options.force ?? false,
-        logger,
-        syncNpmGlobalsFn: options.syncNpmGlobalsFn
-      })
-    }
+    const versionStateContext = await resolveManagedServerVersionStateContext({
+      manifestPath: options.manifestPath,
+      runtimeRoot: options.runtimeRoot
+    })
+    const sharedDataRoot = getServerSharedDataRoot(versionStateContext.paths)
+    await registerManagedServerVersion(versionStateContext.statePath, {
+      version: installedVersion,
+      installPath: staged.stagedPath,
+      installedAt: new Date().toISOString(),
+      source: {
+        kind: archive.kind,
+        locator: archive.locator,
+        assetName: archive.assetName
+      }
+    })
 
     const queryRuntimeStateFn = options.queryRuntimeStateFn ?? queryRuntimeState
     const runtimeState = await queryRuntimeStateFn({
@@ -177,14 +300,17 @@ export async function installManagedServer(
         version: archive.version,
         assetName: archive.assetName
       },
+      installedVersion,
+      activeVersion: installedVersion,
       stagedPath: staged.stagedPath,
       stagedDllPath: staged.stagedDllPath,
+      statePath: versionStateContext.statePath,
+      sharedDataRoot,
       runtimeLifecycle,
       runtimeState,
       pm2: {
         ensured: options.ensurePm2 ?? true,
-        versionRange: options.ensurePm2 === false ? null : normalizePm2Version(options.pm2Version),
-        summary: pm2Summary
+        versionRange: options.ensurePm2 === false ? null : normalizePm2Version(options.pm2Version)
       }
     }
   } finally {
@@ -196,6 +322,66 @@ export async function startManagedServer(
   options: ManagedServerLifecycleOptions = {}
 ): Promise<ManagedPm2CommandResult> {
   return runManagedServerAction("start", options)
+}
+
+export async function listManagedServerVersions(
+  options: ManagedServerVersionOptions = {}
+): Promise<ManagedServerListResult> {
+  const context = await resolveManagedServerVersionStateContext(options)
+  const state = await readManagedServerVersionState(context.statePath)
+
+  return {
+    activeVersion: state.activeVersion,
+    versions: await listManagedServerVersionSummaries(context.statePath),
+    statePath: context.statePath,
+    sharedDataRoot: getServerSharedDataRoot(context.paths)
+  }
+}
+
+export async function useManagedServerVersion(
+  options: ManagedServerUseVersionOptions
+): Promise<ManagedServerUseVersionResult> {
+  const version = options.version.trim()
+  if (!version) {
+    throw new ManagedServerError("Managed server version must be a non-empty string.")
+  }
+
+  const context = await resolveManagedServerVersionStateContext(options)
+  const state = await readManagedServerVersionState(context.statePath)
+  const previousActiveVersion = state.activeVersion
+  await setActiveManagedServerVersion(context.statePath, version)
+
+  return {
+    previousActiveVersion,
+    activeVersion: version,
+    statePath: context.statePath
+  }
+}
+
+export async function removeManagedServerInstalledVersion(
+  options: ManagedServerRemoveVersionOptions
+): Promise<ManagedServerRemoveVersionResult> {
+  const version = options.version.trim()
+  if (!version) {
+    throw new ManagedServerError("Managed server version must be a non-empty string.")
+  }
+
+  const context = await resolveManagedServerVersionStateContext(options)
+  const state = await readManagedServerVersionState(context.statePath)
+  const installedVersion = state.versions[version]
+  if (!installedVersion) {
+    throw new ManagedServerError(`Managed server version ${version} is not installed.`)
+  }
+
+  await rm(installedVersion.installPath, { recursive: true, force: true })
+  const nextState = await removeInstalledManagedServerVersion(context.statePath, version)
+
+  return {
+    activeVersion: nextState.activeVersion,
+    removedVersion: version,
+    removedPath: installedVersion.installPath,
+    statePath: context.statePath
+  }
 }
 
 export async function restartManagedServer(
@@ -219,11 +405,13 @@ export async function getManagedServerStatus(
 export async function resolveManagedServerStartupEnvironment(
   options: ManagedServerLifecycleOptions = {}
 ): Promise<ManagedPm2EnvironmentResult> {
+  const environmentOverrides = (await resolveManagedServerEnvironment(options)).environment
   return resolveManagedPm2Environment({
     manifestPath: options.manifestPath,
     runtimeRoot: options.runtimeRoot,
     service: "server",
-    nameIdentifierValue: options.instanceName?.trim() || DEFAULT_PM2_INSTANCE
+    nameIdentifierValue: options.instanceName?.trim(),
+    environmentOverrides
   })
 }
 
@@ -231,23 +419,207 @@ async function runManagedServerAction(
   action: ManagedPm2Action,
   options: ManagedServerLifecycleOptions
 ): Promise<ManagedPm2CommandResult> {
+  if (action === "start") {
+    await ensureManagedServerDependenciesStarted(options)
+  }
+
+  const environmentOverrides = (await resolveManagedServerEnvironment(options)).environment
   return runManagedPm2Command({
     manifestPath: options.manifestPath,
     runtimeRoot: options.runtimeRoot,
     service: "server",
     action,
-    nameIdentifierValue: options.instanceName?.trim() || DEFAULT_PM2_INSTANCE
+    nameIdentifierValue: options.instanceName?.trim(),
+    environmentOverrides
   })
+}
+
+async function ensureManagedServerDependenciesStarted(
+  options: ManagedServerLifecycleOptions
+): Promise<void> {
+  const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
+  const managedPm2ServiceNames = new Set<string>(supportedPm2Services)
+  const dependencyServices = MANAGED_SERVER_INTEGRATION_DEPENDENCIES.filter(
+    (service) => service !== "server" && managedPm2ServiceNames.has(service) && manifest.componentMap.has(service)
+  )
+
+  for (const service of dependencyServices) {
+    await runManagedPm2Command({
+      manifestPath: options.manifestPath,
+      runtimeRoot: options.runtimeRoot,
+      service,
+      action: "start",
+      nameIdentifierValue: options.instanceName?.trim()
+    })
+  }
+}
+
+export async function resolveManagedServerEnvironment(
+  options: ManagedServerLifecycleOptions
+): Promise<ManagedServerEnvironmentResult> {
+  const serverConfig = await getManagedServerConfig({
+    manifestPath: options.manifestPath,
+    runtimeRoot: options.runtimeRoot
+  })
+  const sharedDataRoot = dirname(dirname(serverConfig.configPath))
+  const systemDataRoot = join(sharedDataRoot, "data")
+  const integrationEnvironment = await resolveManagedServerIntegrationEnvironment(options)
+
+  return {
+    host: serverConfig.host,
+    port: serverConfig.port,
+    aspNetCoreUrls: serverConfig.aspNetCoreUrls,
+    configPath: serverConfig.configPath,
+    sharedDataRoot,
+    environment: {
+      ASPNETCORE_URLS: serverConfig.aspNetCoreUrls,
+      Urls: serverConfig.aspNetCoreUrls,
+      DATADIR: systemDataRoot,
+      ...integrationEnvironment
+    }
+  }
+}
+
+async function resolveManagedServerIntegrationEnvironment(
+  options: ManagedServerLifecycleOptions
+): Promise<Record<string, string>> {
+  const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
+  const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
+
+  return {
+    ...(await resolveManagedVsCodeServerEnvironment(manifest.componentMap.get("code-server"), paths)),
+    ...(await resolveManagedOmniRouteEnvironment(manifest.componentMap.get("omniroute"), paths))
+  }
+}
+
+async function resolveManagedVsCodeServerEnvironment(
+  component: RuntimeComponentDefinition | undefined,
+  paths: ResolvedRuntimePaths
+): Promise<Record<string, string>> {
+  if (!component) {
+    return {}
+  }
+
+  const config = await readYamlObject(
+    join(getComponentConfigDirectory(paths, component.name, component.runtimeDataDir), "config.yaml")
+  )
+  const address = parseConfiguredAddress(
+    readConfigString(config, "bind-addr"),
+    DEFAULT_CODE_SERVER_HOST,
+    DEFAULT_CODE_SERVER_PORT
+  )
+  const authMode = readConfigString(config, "auth") ?? DEFAULT_CODE_SERVER_AUTH_MODE
+  const secret = readConfigString(config, "password")
+
+  return {
+    VsCodeServer__Host: address.host,
+    VsCodeServer__Port: String(address.port),
+    VsCodeServer__AuthMode: authMode,
+    VsCodeServer__Source: VSCODE_SERVER_SOURCE_EXTERNAL,
+    VsCodeServer__SourceLocked: "true",
+    ...(secret
+      ? {
+          VsCodeServer__Secret: secret,
+          VsCodeServer__SecretSource: VSCODE_SERVER_SECRET_SOURCE_BOOTSTRAP
+        }
+      : {})
+  }
+}
+
+async function resolveManagedOmniRouteEnvironment(
+  component: RuntimeComponentDefinition | undefined,
+  paths: ResolvedRuntimePaths
+): Promise<Record<string, string>> {
+  if (!component) {
+    return {}
+  }
+
+  const config = await readYamlObject(
+    join(getComponentConfigDirectory(paths, component.name, component.runtimeDataDir), "config.yaml")
+  )
+  const address = parseConfiguredAddress(
+    readConfigString(config, "listen"),
+    DEFAULT_OMNIROUTE_HOST,
+    DEFAULT_OMNIROUTE_PORT
+  )
+  const baseUrl = buildHttpBaseUrl(address.host, address.port)
+
+  return {
+    OmniRoute__Enabled: "true",
+    OmniRoute__EnabledManagedStartup: "false",
+    OmniRoute__ApiEndpoint: baseUrl,
+    OmniRoute__DefaultBaseUrl: baseUrl
+  }
+}
+
+async function readYamlObject(filePath: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const content = await readFile(filePath, "utf8")
+    const parsed = parseYaml(content)
+    return isRecord(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function parseConfiguredAddress(
+  value: string | undefined,
+  defaultHost: string,
+  defaultPort: number
+): { host: string; port: number } {
+  if (!value) {
+    return { host: defaultHost, port: defaultPort }
+  }
+
+  try {
+    const parsed = new URL(value.includes("://") ? value : `http://${value}`)
+    const host = parsed.hostname || defaultHost
+    const port = Number(parsed.port || String(defaultPort))
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return { host: defaultHost, port: defaultPort }
+    }
+
+    return { host, port }
+  } catch {
+    return { host: defaultHost, port: defaultPort }
+  }
+}
+
+function buildHttpBaseUrl(host: string, port: number): string {
+  return new URL(`http://${host}:${port}`).toString()
+}
+
+function readConfigString(
+  config: Record<string, unknown> | undefined,
+  key: string
+): string | undefined {
+  const value = config?.[key]
+  if (typeof value !== "string") {
+    return undefined
+  }
+
+  const normalized = value.trim()
+  return normalized ? normalized : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 async function resolveServerArchive(
   options: ManagedServerInstallOptions,
   logger: (message: string) => void
 ): Promise<ResolvedServerArchive> {
+  const useHttpIndex =
+    options.indexUrl !== undefined ||
+    options.indexChannel !== undefined ||
+    options.indexVersion !== undefined
   const selectedModes = [
     options.archivePath ? "archive" : null,
     options.packageDirectory ? "package-directory" : null,
-    options.url ? "url" : null
+    options.url ? "url" : null,
+    useHttpIndex ? "index-url" : null
   ].filter(Boolean)
 
   if (selectedModes.length > 1) {
@@ -297,7 +669,73 @@ async function resolveServerArchive(
     )
   }
 
+  if (useHttpIndex) {
+    return resolveHttpIndexArchive(options)
+  }
+
+  try {
+    return await resolveHttpIndexArchive(options)
+  } catch (error) {
+    logger(
+      `Default HTTP index ${DEFAULT_SERVER_HTTP_INDEX_URL} unavailable. Falling back to GitHub release source.`
+    )
+    if (error instanceof ManagedServerError) {
+      logger(`HTTP index resolution detail: ${error.message}`)
+    }
+  }
+
   return resolveGitHubReleaseArchive(options)
+}
+
+async function resolveHttpIndexArchive(
+  options: ManagedServerInstallOptions
+): Promise<ResolvedServerArchive> {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch
+  if (typeof fetchImpl !== "function") {
+    throw new ManagedServerError("Global fetch is unavailable for HTTP index download.")
+  }
+
+  const indexUrl = normalizeOfficialServerHttpIndexUrl(options.indexUrl)
+
+  const response = await fetchImpl(indexUrl, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "@hagicode/hagiscript"
+    }
+  })
+
+  if (!response.ok) {
+    throw new ManagedServerError(
+      `Failed to read HTTP index from ${indexUrl}: HTTP ${response.status}`
+    )
+  }
+
+  const indexPayload = (await response.json()) as HttpIndexDocument
+  const selection = selectArchiveFromHttpIndex(indexPayload, {
+    indexUrl,
+    channel: options.indexChannel,
+    version: options.indexVersion,
+    assetName: options.assetName
+  })
+
+  return downloadRemoteArchive(
+    {
+      kind: "http-index",
+      locator: selection.locator,
+      assetName: selection.assetName,
+      version: selection.version,
+      url: selection.downloadUrl
+    },
+    options
+  )
+}
+
+function normalizeOfficialServerHttpIndexUrl(indexUrl?: string): string {
+  const normalized = indexUrl?.trim() || DEFAULT_SERVER_HTTP_INDEX_URL
+
+  return LEGACY_SERVER_HTTP_INDEX_URLS.has(normalized)
+    ? DEFAULT_SERVER_HTTP_INDEX_URL
+    : normalized
 }
 
 async function resolveGitHubReleaseArchive(
@@ -363,7 +801,7 @@ async function resolveGitHubReleaseArchive(
 
 async function downloadRemoteArchive(
   source: {
-    kind: "github-release" | "direct-url"
+    kind: "github-release" | "direct-url" | "http-index"
     locator: string
     assetName: string
     version: string | null
@@ -422,11 +860,250 @@ async function downloadRemoteArchive(
   }
 }
 
+function selectArchiveFromHttpIndex(
+  payload: HttpIndexDocument,
+  options: {
+    indexUrl: string
+    channel?: string
+    version?: string
+    assetName?: string
+  }
+): {
+  locator: string
+  version: string | null
+  assetName: string
+  downloadUrl: string
+} {
+  const desiredVersion = options.version?.trim() || null
+  const desiredChannel = options.channel?.trim() || null
+  const desiredAssetName = options.assetName?.trim() || null
+  const defaultSuffix = getDefaultManagedServerAssetSuffix()
+
+  const versionEntries = asArray(payload.versions)
+    .map((entry) => normalizeHttpIndexVersionEntry(entry))
+    .filter((entry): entry is NormalizedHttpIndexVersion => entry !== null)
+
+  const indexLevelAssets = asArray(payload.assets)
+    .map((entry) => normalizeHttpIndexAssetEntry(entry))
+    .filter((entry): entry is NormalizedHttpIndexAsset => entry !== null)
+
+  const candidateVersions = versionEntries.filter((entry) => {
+    if (desiredVersion && entry.version !== desiredVersion) {
+      return false
+    }
+
+    if (desiredChannel && !entry.channels.has(desiredChannel)) {
+      return false
+    }
+
+    return true
+  })
+
+  const orderedVersions = candidateVersions
+    .slice()
+    .sort((left, right) => compareVersionValues(left.version, right.version))
+
+  for (const versionEntry of orderedVersions) {
+    const match = selectHttpIndexAsset(versionEntry.assets, {
+      desiredAssetName,
+      defaultSuffix
+    })
+    if (match) {
+      return {
+        locator: `${options.indexUrl}@${versionEntry.version ?? "unknown"}`,
+        version: versionEntry.version,
+        assetName: match.assetName,
+        downloadUrl: match.downloadUrl
+      }
+    }
+  }
+
+  if (!desiredVersion && !desiredChannel && indexLevelAssets.length > 0) {
+    const match = selectHttpIndexAsset(indexLevelAssets, {
+      desiredAssetName,
+      defaultSuffix
+    })
+    if (match) {
+      return {
+        locator: `${options.indexUrl}@index`,
+        version: null,
+        assetName: match.assetName,
+        downloadUrl: match.downloadUrl
+      }
+    }
+  }
+
+  const scope = [
+    desiredVersion ? `version=${desiredVersion}` : null,
+    desiredChannel ? `channel=${desiredChannel}` : null,
+    desiredAssetName ? `asset=${desiredAssetName}` : null
+  ]
+    .filter(Boolean)
+    .join(", ")
+
+  throw new ManagedServerError(
+    `HTTP index ${options.indexUrl} does not expose a matching server archive${scope ? ` (${scope})` : ""}.`
+  )
+}
+
+function normalizeHttpIndexVersionEntry(value: unknown): NormalizedHttpIndexVersion | null {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const entry = value as HttpIndexVersionEntry
+  const version = normalizeString(entry.version) ?? normalizeString(entry.tag) ?? null
+  const channels = new Set<string>()
+
+  const singleChannel = normalizeString(entry.channel)
+  if (singleChannel) {
+    channels.add(singleChannel)
+  }
+
+  for (const item of asArray(entry.channels)) {
+    const normalized = normalizeString(item)
+    if (normalized) {
+      channels.add(normalized)
+    }
+  }
+
+  const assets = [...asArray(entry.assets), ...asArray(entry.files)]
+    .map((item) => normalizeHttpIndexAssetEntry(item))
+    .filter((item): item is NormalizedHttpIndexAsset => item !== null)
+
+  return {
+    version,
+    channels,
+    assets
+  }
+}
+
+function normalizeHttpIndexAssetEntry(value: unknown): NormalizedHttpIndexAsset | null {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const entry = value as HttpIndexAssetEntry
+  const assetName = normalizeString(entry.name)
+  const directUrl =
+    normalizeString(entry.url) ??
+    normalizeString(entry.directUrl) ??
+    normalizeString(entry.downloadUrl) ??
+    normalizeString(entry.browser_download_url) ??
+    normalizeString(entry.browserDownloadUrl)
+
+  if (assetName && directUrl) {
+    return {
+      assetName,
+      downloadUrl: directUrl
+    }
+  }
+
+  const sourceUrl = resolveHttpIndexDownloadSourceUrl(entry.downloadSources ?? entry.sources)
+  if (!assetName || !sourceUrl) {
+    return null
+  }
+
+  return {
+    assetName,
+    downloadUrl: sourceUrl
+  }
+}
+
+function resolveHttpIndexDownloadSourceUrl(value: unknown): string | null {
+  const sources = asArray(value)
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null
+      }
+      const source = entry as HttpIndexAssetDownloadSource
+      const url = normalizeString(source.url)
+      if (!url) {
+        return null
+      }
+
+      return {
+        url,
+        primary: source.primary === true
+      }
+    })
+    .filter((entry): entry is { url: string; primary: boolean } => !!entry)
+
+  if (sources.length === 0) {
+    return null
+  }
+
+  return sources.find((entry) => entry.primary)?.url ?? sources[0].url
+}
+
+function selectHttpIndexAsset(
+  assets: NormalizedHttpIndexAsset[],
+  options: {
+    desiredAssetName: string | null
+    defaultSuffix: string
+  }
+): NormalizedHttpIndexAsset | null {
+  if (options.desiredAssetName) {
+    return assets.find((entry) => entry.assetName === options.desiredAssetName) ?? null
+  }
+
+  return (
+    assets.find((entry) => entry.assetName.endsWith(options.defaultSuffix)) ??
+    assets[0] ??
+    null
+  )
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function normalizeString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined
+  }
+
+  const normalized = value.trim()
+  return normalized ? normalized : undefined
+}
+
+function compareVersionValues(left: string | null, right: string | null): number {
+  if (left && right) {
+    const normalizedLeft = normalizeSemverLike(left)
+    const normalizedRight = normalizeSemverLike(right)
+
+    if (normalizedLeft && normalizedRight) {
+      return semver.rcompare(normalizedLeft, normalizedRight)
+    }
+  }
+
+  if (left === right) {
+    return 0
+  }
+
+  if (left === null) {
+    return 1
+  }
+
+  if (right === null) {
+    return -1
+  }
+
+  return right.localeCompare(left)
+}
+
+function normalizeSemverLike(value: string): string | null {
+  const normalized = value.startsWith("v") ? value.slice(1) : value
+  return semver.valid(normalized)
+}
+
 async function stageServerArchive(options: {
   archivePath: string
+  version: string
   paths: ResolvedRuntimePaths
   runner: CommandRunner
   serverComponent: RuntimeComponentDefinition
+  force: boolean
   extractArchive?: (
     archivePath: string,
     extractRoot: string,
@@ -437,8 +1114,7 @@ async function stageServerArchive(options: {
   stagedDllPath: string
 }> {
   const extractRoot = await mkdtemp(join(tmpdir(), "hagiscript-server-extract-"))
-  const componentRoot = getComponentManagedRoot(options.paths, options.serverComponent.name)
-  const targetCurrentRoot = join(componentRoot, "current")
+  const targetVersionRoot = getServerVersionRoot(options.paths, options.version)
 
   try {
     await (options.extractArchive ?? extractManagedServerArchive)(
@@ -448,74 +1124,26 @@ async function stageServerArchive(options: {
     )
 
     const payloadRoot = await locateManagedServerPayloadRoot(extractRoot)
-    const stagedDllPath = join(targetCurrentRoot, "lib", "PCode.Web.dll")
-    await mkdir(componentRoot, { recursive: true })
-    await rm(targetCurrentRoot, { recursive: true, force: true })
-    await cp(payloadRoot, targetCurrentRoot, {
+    const stagedDllPath = join(targetVersionRoot, "lib", "PCode.Web.dll")
+    if ((await pathExists(targetVersionRoot)) && !options.force) {
+      throw new ManagedServerError(
+        `Managed server version ${options.version} is already installed at ${targetVersionRoot}. Use --force to replace it.`
+      )
+    }
+    await mkdir(targetVersionRoot, { recursive: true })
+    await rm(targetVersionRoot, { recursive: true, force: true })
+    await cp(payloadRoot, targetVersionRoot, {
       recursive: true,
       force: true
     })
-    await assertValidManagedServerPayload(targetCurrentRoot)
+    await assertValidManagedServerPayload(targetVersionRoot)
 
     return {
-      stagedPath: targetCurrentRoot,
+      stagedPath: targetVersionRoot,
       stagedDllPath
     }
   } finally {
     await rm(extractRoot, { recursive: true, force: true }).catch(() => undefined)
-  }
-}
-
-async function ensureManagedPm2(options: {
-  paths: ResolvedRuntimePaths
-  pm2Version?: string
-  registryMirror?: string
-  force: boolean
-  logger: (message: string) => void
-  syncNpmGlobalsFn?: typeof syncNpmGlobals
-}): Promise<NpmSyncSummary> {
-  const syncNpmGlobalsFn = options.syncNpmGlobalsFn ?? syncNpmGlobals
-  const tempDirectory = await mkdtemp(join(tmpdir(), "hagiscript-pm2-manifest-"))
-  const manifestPath = join(tempDirectory, "manifest.json")
-  const versionRange = normalizePm2Version(options.pm2Version)
-
-  try {
-    await writeFile(
-      manifestPath,
-      `${JSON.stringify(
-        {
-          packages: {
-            pm2: {
-              version: versionRange,
-              ...(semver.valid(versionRange) ? { target: versionRange } : {})
-            }
-          }
-        },
-        null,
-        2
-      )}\n`
-    )
-
-    const summary = await syncNpmGlobalsFn({
-      runtimePath: options.paths.nodeRuntime,
-      manifestPath,
-      registryMirror: options.registryMirror,
-      force: options.force,
-      npmOptions: {
-        prefix: options.paths.npmPrefix
-      },
-      onLog: (event) => {
-        if (event.type === "summary") {
-          options.logger(
-            `Managed pm2 ready in ${options.paths.npmPrefix} (${event.summary.changedCount} change(s))`
-          )
-        }
-      }
-    })
-
-    return summary
-  } finally {
-    await rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -679,6 +1307,20 @@ function extractVersionFromServerAssetName(assetName: string): string | null {
   const suffix = getDefaultManagedServerAssetSuffix().replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
   const match = new RegExp(`^hagicode-(.+)-${suffix}$`, "u").exec(assetName)
   return match?.[1] ?? null
+}
+
+function resolveManagedServerVersion(archive: ResolvedServerArchive): string {
+  const detectedVersion = archive.version ?? extractVersionFromServerAssetName(archive.assetName)
+  const normalizedSemver = detectedVersion ? normalizeSemverLike(detectedVersion) : null
+  const normalizedVersion = normalizedSemver ?? detectedVersion?.trim() ?? ""
+
+  if (!normalizedVersion) {
+    throw new ManagedServerError(
+      `Unable to determine a concrete server version from ${archive.assetName}. Use a versioned archive name such as hagicode-1.2.3-${getDefaultManagedServerAssetSuffix()}.`
+    )
+  }
+
+  return normalizedVersion
 }
 
 function inferArchiveNameFromUrl(urlValue: string): string {

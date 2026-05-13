@@ -1,5 +1,5 @@
 import { appendFile, mkdir } from "node:fs/promises"
-import { basename, dirname, extname } from "node:path"
+import { basename, dirname, extname, join } from "node:path"
 import process from "node:process"
 import { CommandExecutionError, runCommand, type CommandRunner } from "./command-launch.js"
 import { getRuntimeExecutablePaths } from "./node-verify.js"
@@ -29,6 +29,8 @@ export interface RuntimeScriptExecutionContext {
   verbose?: boolean
   downloadCache?: boolean
   downloadCacheDir?: string
+  npmRegistryMirror?: string
+  pm2VersionOverride?: string
   runner?: CommandRunner
 }
 
@@ -49,6 +51,8 @@ export interface ManagedRuntimeEnvironmentContext {
   verbose?: boolean
   downloadCache?: boolean
   downloadCacheDir?: string
+  npmRegistryMirror?: string
+  pm2VersionOverride?: string
   scriptBasename?: string
 }
 
@@ -181,6 +185,8 @@ function buildRuntimeScriptEnvironment(
     phase: context.phase,
     purge: context.purge,
     verbose: context.verbose,
+    npmRegistryMirror: context.npmRegistryMirror,
+    pm2VersionOverride: context.pm2VersionOverride,
     scriptBasename: basename(scriptPathForEnv(context.component, context.phase))
   })
 }
@@ -189,6 +195,12 @@ export function buildManagedRuntimeEnvironment(
   context: ManagedRuntimeEnvironmentContext,
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
+  const runtimeExecutables = getRuntimeExecutablePaths(context.paths.nodeRuntime)
+  const bundledNpmBinDirectory = getManagedNpmBinDirectory(context.paths.npmPrefix)
+  const bundledNpmModulesDirectory = getManagedNpmModulesDirectory(context.paths.npmPrefix)
+  const managedNpmPackagesPrefix = getManagedNpmPackagesPrefix(context.paths)
+  const managedNpmBinDirectory = getManagedNpmBinDirectory(managedNpmPackagesPrefix)
+  const managedNpmModulesDirectory = getManagedNpmModulesDirectory(managedNpmPackagesPrefix)
   const componentDataHome =
     context.componentDataHome ??
     getComponentRuntimeDataHome(
@@ -236,6 +248,21 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR: context.paths.nodeRuntime,
       HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR: context.paths.dotnetRuntime,
       HAGISCRIPT_RUNTIME_NPM_PREFIX: context.paths.npmPrefix,
+      HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX: managedNpmPackagesPrefix,
+      NODE_PATH: prependNodePathEntries(baseEnv.NODE_PATH, [
+        managedNpmModulesDirectory,
+        bundledNpmModulesDirectory
+      ]),
+      NODE: runtimeExecutables.nodePath,
+      npm_node_execpath: runtimeExecutables.nodePath,
+      npm_execpath: runtimeExecutables.npmPath,
+      HAGICODE_AGENT_CLI_PATH: managedNpmBinDirectory,
+      HAGICODE_NPM_GLOBAL_PATH: managedNpmPackagesPrefix,
+      HAGICODE_NPM_GLOBAL_PREFIX: managedNpmPackagesPrefix,
+      HAGICODE_NPM_GLOBAL_BIN_ROOT: managedNpmBinDirectory,
+      HAGICODE_NPM_GLOBAL_MODULES_ROOT: managedNpmModulesDirectory,
+      NPM_CONFIG_PREFIX: managedNpmPackagesPrefix,
+      npm_config_prefix: managedNpmPackagesPrefix,
       ...buildReleasedServiceEnvironment(context.component.releasedService, context.componentRoot),
       ...(context.phase ? { HAGISCRIPT_RUNTIME_PHASE: context.phase } : {}),
       ...(context.purge !== undefined
@@ -247,6 +274,12 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_DOWNLOAD_CACHE: context.downloadCache === false ? "0" : "1",
       ...(context.downloadCacheDir
         ? { HAGISCRIPT_DOWNLOAD_CACHE_DIR: context.downloadCacheDir }
+        : {}),
+      ...(context.npmRegistryMirror
+        ? { HAGISCRIPT_RUNTIME_NPM_REGISTRY_MIRROR: context.npmRegistryMirror }
+        : {}),
+      ...(context.pm2VersionOverride
+        ? { HAGISCRIPT_RUNTIME_PM2_VERSION_OVERRIDE: context.pm2VersionOverride }
         : {}),
       ...(context.scriptBasename
         ? { HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: context.scriptBasename }
@@ -316,13 +349,54 @@ export function getManagedRuntimePathEntries(paths: ResolvedRuntimePaths): strin
   const nodeExecutables = getRuntimeExecutablePaths(paths.nodeRuntime)
   return [
     dirname(nodeExecutables.nodePath),
+    getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
     getManagedNpmBinDirectory(paths.npmPrefix),
     paths.bin
   ]
 }
 
+export function getManagedNpmPackagesPrefix(paths: ResolvedRuntimePaths): string {
+  return join(paths.runtimeDataRoot, "npm-packages")
+}
+
 export function getManagedNpmBinDirectory(npmPrefix: string): string {
   return process.platform === "win32" ? npmPrefix : `${npmPrefix}/bin`
+}
+
+export function getManagedNpmModulesDirectory(npmPrefix: string): string {
+  return process.platform === "win32"
+    ? `${npmPrefix}/node_modules`
+    : `${npmPrefix}/lib/node_modules`
+}
+
+function prependNodePathEntries(
+  currentNodePath: string | undefined,
+  pathEntries: readonly string[],
+  platform: NodeJS.Platform = process.platform
+): string {
+  const delimiter = platform === "win32" ? ";" : ":"
+  const normalizedEntries = dedupeEntries(
+    [...pathEntries, ...(currentNodePath?.split(delimiter) ?? [])].filter(Boolean)
+  )
+
+  return normalizedEntries.join(delimiter)
+}
+
+function dedupeEntries(entries: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const unique: string[] = []
+
+  for (const entry of entries) {
+    const normalized = entry.trim()
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+
+    seen.add(normalized)
+    unique.push(normalized)
+  }
+
+  return unique
 }
 
 function getPathValue(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {

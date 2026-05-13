@@ -35,12 +35,21 @@ By default, Hagiscript loads `runtime/manifest.yaml` and manages the runtime und
     data/
     components/
     state.json
+  server/
+    versions/
+  server-data/
+    .pm2/
+    pm2-runtime/
+    config/
+    versions-state.json
 ```
 
 The split is intentional:
 
 - `program/` holds managed executables, vendored payloads, wrappers, and the managed npm prefix.
-- `runtime-data/` holds mutable config, logs, state, PM2 data, and component-specific writable files.
+- `runtime-data/` holds mutable config, logs, state, and component-specific writable files.
+- `server/` holds versioned backend payloads for the released `server` service.
+- `server-data/` holds mutable PM2 state and shared launch assets for that `server` service.
 
 The packaged manifest currently manages:
 
@@ -164,25 +173,31 @@ This means maintenance scripts should call `hagiscript pm2 ...` instead of a sys
 
 ### Released backend `server` contract
 
-The packaged runtime manifest treats `server` as a `released-service` component. The managed runtime expects a published backend package staged under:
+The packaged runtime manifest treats `server` as a `released-service` component. Hagiscript stages released backend payloads under a dedicated versioned server root:
 
 ```text
-<runtime-root>/program/components/server/current/
-  lib/PCode.Web.dll
-  lib/PCode.Web.deps.json
-  lib/PCode.Web.runtimeconfig.json
-  start.sh (or the platform equivalent from the release package)
+<runtime-root>/server/
+  versions/
+    1.2.3/
+      lib/PCode.Web.dll
+      lib/PCode.Web.deps.json
+      lib/PCode.Web.runtimeconfig.json
+      start.sh (or the platform equivalent from the release package)
 ```
 
-Hagiscript keeps mutable launch state for that service under:
+Hagiscript keeps mutable launch state for that service in a single shared data home, regardless of how many server versions are installed:
 
 ```text
-<runtime-root>/runtime-data/components/services/server/
+<runtime-root>/server-data/
   .pm2/
   pm2-runtime/
+  config/
+  versions-state.json
 ```
 
-`hagiscript runtime install --components server` prepares the runtime-owned launch assets and reports whether the published payload is already staged. `hagiscript pm2 server start` then generates the final PM2 ecosystem/env files under `pm2-runtime/` and launches the released backend through the managed `dotnet` runtime. Use `hagiscript pm2 server env` to print the exact resolved working directory, PATH ordering, and environment variables that HagiScript will use for that startup flow.
+`hagiscript server install` stages a concrete backend version, updates the active-version inventory in `versions-state.json`, ensures the fixed runtime dependencies, and keeps PM2 launch files under the shared `server-data` home. `hagiscript pm2 server start` then resolves the active server version, generates the final PM2 ecosystem/env files under `pm2-runtime/`, and launches the released backend through the managed `dotnet` runtime. Use `hagiscript pm2 server env` to print the exact resolved working directory, PATH ordering, and environment variables that HagiScript will use for that startup flow.
+
+For the Desktop -> Hagiscript -> PM2 environment handoff, including variable ownership and precedence, see [docs/desktop-hagiscript-env-contract.md](docs/desktop-hagiscript-env-contract.md).
 
 ## Managed Server Commands
 
@@ -193,15 +208,42 @@ hagiscript server install
 hagiscript server install --package-dir /srv/hagicode/packages
 hagiscript server install --archive ./hagicode-1.2.3-linux-x64-nort.zip
 hagiscript server install --url https://example.com/hagicode-1.2.3-linux-x64-nort.zip
+hagiscript server install --index-url https://index.example.com/hagicode/index.json --index-channel stable
 hagiscript server install --github-repo HagiCode-org/releases --tag v1.2.3
 ```
 
 By default, `server install`:
 
 - selects or downloads a server archive
-- extracts and stages it into `program/components/server/current/`
-- runs `hagiscript runtime install --components server`
+- extracts and stages it into `server/versions/<version>/`
+- installs the fixed runtime dependencies declared by the server contract
 - ensures `pm2` exists in the managed npm prefix
+
+Inspect and switch the installed server inventory with:
+
+```bash
+hagiscript server list
+hagiscript server use 1.2.3
+hagiscript server remove 1.2.2
+```
+
+`server list` shows the active version and every staged payload under `server/versions/`. `server use` switches the active payload that `hagiscript server start` and `hagiscript pm2 server ...` will resolve. `server remove` deletes an inactive installed version while leaving the shared `server-data` directory intact.
+
+Source priority for `server install` is:
+
+1. local archive (`--archive`)
+2. local folder (`--package-dir`)
+3. direct URL (`--url`)
+4. HTTP index (`--index-url`, optional `--index-channel`, `--index-version`)
+5. GitHub release fallback (`--github-repo`, `--tag`, `--asset`)
+
+When no explicit source option is provided, Hagiscript first tries the default official HTTP index:
+
+- `https://index.hagicode.com/server/index.json`
+
+If that index cannot be resolved, Hagiscript automatically falls back to GitHub release discovery.
+
+When index mode is used, Hagiscript reads index JSON, picks the best matching asset for current platform/arch, and then downloads from either a direct URL field or the first marked primary entry in `downloadSources` (falling back to the first source entry).
 
 Once installed, use the higher-level lifecycle wrappers:
 
@@ -214,6 +256,40 @@ hagiscript server env --instance demo
 ```
 
 `--instance <name>` maps to the PM2 name identifier and defaults to `hagicode`, so one host can run multiple managed runtime roots without colliding app names.
+
+## Local Playground Workflow
+
+This repository includes a tracked `playground/` folder with its own `.gitignore`, so runtime artifacts created during local validation do not enter git.
+
+All playground scripts use:
+
+- manifest: `./playground/manifest.yaml`
+- runtime root: `./playground/runtime-root`
+
+Run the local lifecycle test flow:
+
+```bash
+npm run playground:runtime:install
+npm run playground:runtime:state
+npm run playground:server:install
+npm run playground:server:start
+npm run playground:server:status
+npm run playground:server:env
+npm run playground:server:stop
+npm run playground:runtime:remove
+```
+
+Available playground scripts:
+
+- `playground:runtime:install`
+- `playground:runtime:state`
+- `playground:runtime:update`
+- `playground:runtime:remove`
+- `playground:server:install`
+- `playground:server:start`
+- `playground:server:status`
+- `playground:server:stop`
+- `playground:server:env`
 
 ## Runtime Environment Contract
 

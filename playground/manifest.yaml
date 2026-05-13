@@ -1,10 +1,10 @@
 runtime:
-  name: "hagicode-runtime"
+  name: "hagicode-runtime-playground"
   version: "1.0.0"
-  hagicodeInstance: "hagicode"
+  hagicodeInstance: "hagiscript_playground"
 
 paths:
-  runtimeRoot: "~/.hagicode/runtime"
+  runtimeRoot: "./playground/runtime-root"
   runtimeHome: "program"
   runtimeDataRoot: "runtime-data"
   serverProgramRoot: "server"
@@ -28,17 +28,17 @@ components:
   source: "desktop-bundled-node"
   version: "22.22.2"
   channelVersion: "22"
-  installScript: "scripts/install-node.mjs"
-  verifyScript: "scripts/verify-node.mjs"
+  installScript: "../runtime/scripts/install-node.mjs"
+  verifyScript: "../runtime/scripts/verify-node.mjs"
 
 - name: "dotnet"
   type: "runtime"
   source: "desktop-embedded-dotnet"
   version: "10.0.5"
   channelVersion: "10.0"
-  installScript: "scripts/install-dotnet.mjs"
-  verifyScript: "scripts/verify-dotnet.mjs"
-  removeScript: "scripts/remove-dotnet.mjs"
+  installScript: "../runtime/scripts/install-dotnet.mjs"
+  verifyScript: "../runtime/scripts/verify-dotnet.mjs"
+  removeScript: "../runtime/scripts/remove-dotnet.mjs"
 
 - name: "pm2"
   type: "package"
@@ -46,8 +46,8 @@ components:
   version: "7.0.1"
   lifecycleDependencies:
   - "node"
-  installScript: "scripts/install-pm2.mjs"
-  removeScript: "scripts/remove-pm2.mjs"
+  installScript: "../runtime/scripts/install-pm2.mjs"
+  removeScript: "../runtime/scripts/remove-pm2.mjs"
 
 - name: "omniroute"
   type: "bundled-runtime"
@@ -57,8 +57,8 @@ components:
   lifecycleDependencies:
   - "node"
   - "pm2"
-  installScript: "scripts/install-omniroute.mjs"
-  configureScript: "scripts/configure-omniroute.mjs"
+  installScript: "../runtime/scripts/install-omniroute.mjs"
+  configureScript: "../runtime/scripts/configure-omniroute.mjs"
   pm2:
     appName: "hagicode-omniroute"
     cwd: "."
@@ -72,8 +72,8 @@ components:
   lifecycleDependencies:
   - "node"
   - "pm2"
-  installScript: "scripts/install-code-server.mjs"
-  configureScript: "scripts/configure-code-server.mjs"
+  installScript: "../runtime/scripts/install-code-server.mjs"
+  configureScript: "../runtime/scripts/configure-code-server.mjs"
   pm2:
     appName: "hagicode-code-server"
     cwd: "."
@@ -87,14 +87,14 @@ components:
   - "node"
   - "dotnet"
   - "pm2"
-  installScript: "scripts/install-server.mjs"
-  configureScript: "scripts/configure-server.mjs"
-  removeScript: "scripts/remove-server.mjs"
+  installScript: "../runtime/scripts/install-server.mjs"
+  configureScript: "../runtime/scripts/configure-server.mjs"
+  removeScript: "../runtime/scripts/remove-server.mjs"
   pm2:
     appName: "hagicode-server"
     env:
       ASPNETCORE_ENVIRONMENT: "Production"
-      ASPNETCORE_URLS: "http://127.0.0.1:39150"
+      ASPNETCORE_URLS: "http://127.0.0.1:39151"
   releasedService:
     dllPath: "lib/PCode.Web.dll"
     workingDirectory: "lib"

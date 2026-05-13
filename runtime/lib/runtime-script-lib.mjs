@@ -24,8 +24,11 @@ export function readRuntimeScriptContext() {
     componentDataDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR"),
     componentLogsDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR"),
     componentPm2Home: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME"),
+    runtimeNpmPrefix: requiredEnv("HAGISCRIPT_RUNTIME_NPM_PREFIX"),
     templateDir: requiredEnv("HAGISCRIPT_RUNTIME_TEMPLATE_DIR"),
     componentVersion: process.env.HAGISCRIPT_RUNTIME_COMPONENT_VERSION?.trim() || null,
+    npmRegistryMirror: process.env.HAGISCRIPT_RUNTIME_NPM_REGISTRY_MIRROR?.trim() || null,
+    pm2VersionOverride: process.env.HAGISCRIPT_RUNTIME_PM2_VERSION_OVERRIDE?.trim() || null,
     vendoredRepository: process.env.HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY?.trim() || "HagiCode-org/vendered",
     vendoredTag:
       process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0509.0040",
@@ -312,7 +315,7 @@ async function makeExecutable(filePath) {
   await chmod(filePath, 0o755)
 }
 
-function runManagedCommand(command, args, options = {}) {
+export function runManagedCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       env: options.env,

@@ -82,6 +82,10 @@ export {
   getComponentManagedRoot,
   getComponentPm2Home,
   getComponentRuntimeDataHome,
+  getServerProgramRoot,
+  getServerSharedDataRoot,
+  getServerVersionRoot,
+  getServerVersionsRoot,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime/runtime-paths.js";
@@ -112,6 +116,8 @@ export {
 export {
   buildManagedRuntimeEnvironment,
   getManagedNpmBinDirectory,
+  getManagedNpmModulesDirectory,
+  getManagedNpmPackagesPrefix,
   getManagedRuntimePathEntries,
   prependPathEntries
 } from "./runtime/runtime-executor.js";
@@ -131,12 +137,45 @@ export {
 export {
   getManagedServerStatus,
   installManagedServer,
+  listManagedServerVersions,
+  removeManagedServerInstalledVersion,
+  resolveManagedServerEnvironment,
   resolveManagedServerStartupEnvironment,
   restartManagedServer,
   startManagedServer,
   stopManagedServer,
+  useManagedServerVersion,
+  type ManagedServerEnvironmentResult,
   type ManagedServerInstallOptions,
   type ManagedServerInstallResult,
+  type ManagedServerListResult,
   type ManagedServerLifecycleOptions,
-  type ManagedServerSourceKind
+  type ManagedServerRemoveVersionResult,
+  type ManagedServerSourceKind,
+  type ManagedServerUseVersionResult,
+  type ManagedServerVersionOptions,
+  type ManagedServerUseVersionOptions,
+  type ManagedServerRemoveVersionOptions
 } from "./runtime/server-manager.js";
+export {
+  buildAspNetCoreUrls,
+  getManagedServerConfig,
+  setManagedServerConfig,
+  type ManagedServerConfigOptions,
+  type ManagedServerConfigResult,
+  type ManagedServerConfigUpdate
+} from "./runtime/server-config.js";
+export {
+  createInitialManagedServerVersionState,
+  getManagedServerVersionStatePath,
+  listManagedServerVersions as listManagedServerVersionStateEntries,
+  readManagedServerVersionState,
+  registerManagedServerVersion,
+  removeManagedServerVersion,
+  resolveManagedServerVersionStateContext,
+  setActiveManagedServerVersion,
+  writeManagedServerVersionState,
+  type ManagedServerInstalledVersion,
+  type ManagedServerVersionState,
+  type ManagedServerVersionSummary
+} from "./runtime/server-version-state.js";

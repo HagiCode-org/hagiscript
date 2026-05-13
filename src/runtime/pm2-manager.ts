@@ -18,11 +18,16 @@ import {
   getComponentManagedRoot,
   getComponentPm2Home,
   getComponentRuntimeDataHome,
+  getServerSharedDataRoot,
   resolveManagedPath,
   resolveReleasedServicePath,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
 } from "./runtime-paths.js"
+import {
+  getManagedServerVersionStatePath,
+  readManagedServerVersionState
+} from "./server-version-state.js"
 
 export const supportedPm2Services = ["server", "omniroute", "code-server"] as const
 
@@ -36,6 +41,7 @@ export interface ManagedPm2CommandOptions {
   service: ManagedPm2ServiceName
   action: ManagedPm2Action
   nameIdentifierValue?: string
+  environmentOverrides?: Record<string, string | undefined>
   runner?: CommandRunner
 }
 
@@ -49,6 +55,7 @@ export interface ResolvedManagedPm2ServiceDefinition {
   baseAppName: string
   appName: string
   nameIdentifierEnv: string
+  defaultNameIdentifier: string
   nameIdentifier: string
   cwd: string
   script: string
@@ -129,6 +136,7 @@ const DEFAULT_PM2_STATUS_RETRY_DELAY_MS = 500
 const DEFAULT_PM2_STATUS_MAX_RETRIES = 3
 const PM2_NAME_IDENTIFIER_PATTERN = /^[a-z0-9_]+$/u
 const PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT = "hagicode"
+const DEFAULT_PM2_NAME_IDENTIFIER_ENV = "hagicode_instance"
 
 export async function runManagedPm2Command(
   options: ManagedPm2CommandOptions
@@ -139,7 +147,8 @@ export async function runManagedPm2Command(
     manifest,
     paths,
     options.service,
-    options.nameIdentifierValue
+    options.nameIdentifierValue,
+    options.environmentOverrides
   )
   const runner = options.runner ?? runCommand
 
@@ -180,7 +189,8 @@ export async function resolveManagedPm2Environment(
     manifest,
     paths,
     options.service,
-    options.nameIdentifierValue
+    options.nameIdentifierValue,
+    options.environmentOverrides
   )
   const env = buildManagedPm2Environment(definition)
 
@@ -190,7 +200,7 @@ export async function resolveManagedPm2Environment(
     appName: definition.appName,
     nameIdentifierEnv: definition.nameIdentifierEnv,
     nameIdentifier: definition.nameIdentifier,
-    bootstrapNameIdentifierValue: PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT,
+    bootstrapNameIdentifierValue: definition.defaultNameIdentifier,
     cwd: definition.cwd,
     script: definition.script,
     args: [...definition.args],
@@ -216,7 +226,8 @@ export async function resolveManagedPm2ServiceDefinition(
   manifest: LoadedRuntimeManifest,
   paths: ResolvedRuntimePaths,
   service: ManagedPm2ServiceName,
-  nameIdentifierValue?: string
+  nameIdentifierValue?: string,
+  environmentOverrides?: Record<string, string | undefined>
 ): Promise<ResolvedManagedPm2ServiceDefinition> {
   assertSupportedPm2Service(service)
 
@@ -225,29 +236,31 @@ export async function resolveManagedPm2ServiceDefinition(
     throw new ManagedPm2Error(`Runtime manifest does not define the ${service} service.`)
   }
 
-  const componentRoot = getComponentManagedRoot(paths, component.name)
-  const runtimeDataHome = getComponentRuntimeDataHome(
+  const defaultComponentRoot = getComponentManagedRoot(paths, component.name)
+  const defaultRuntimeDataHome = getComponentRuntimeDataHome(
     paths,
     component.name,
     component.runtimeDataDir
   )
-  const componentConfigDir = getComponentConfigDirectory(
+  const defaultComponentConfigDir = getComponentConfigDirectory(
     paths,
     component.name,
     component.runtimeDataDir
-  )
-  const pm2Home = getComponentPm2Home(
-    paths,
-    component.name,
-    component.runtimeDataDir,
-    component.pm2?.pm2Home
   )
   const nodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
   const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix)
-  const { baseAppName, nameIdentifierEnv, nameIdentifier } = resolvePm2NameIdentifier(
+  const { baseAppName, nameIdentifierEnv, defaultNameIdentifier, nameIdentifier } = resolvePm2NameIdentifier(
+    manifest,
     component,
     service,
     nameIdentifierValue
+  )
+  const defaultPm2Home = getComponentPm2Home(
+    paths,
+    component.name,
+    component.runtimeDataDir,
+    component.pm2?.pm2Home,
+    baseAppName
   )
 
   await Promise.all([
@@ -269,9 +282,32 @@ export async function resolveManagedPm2ServiceDefinition(
       )
     }
 
-    const cwd = resolveReleasedServicePath(releasedService.workingDirectory, componentRoot)
-    const script = resolveReleasedServicePath(releasedService.dllPath, componentRoot)
-    const runtimeFilesDir = join(runtimeDataHome, releasedService.runtimeFilesDir ?? "pm2-runtime")
+    const resolvedServerPaths =
+      service === "server"
+        ? await resolveManagedServerActivePaths(
+            paths,
+            baseAppName,
+            component.pm2?.pm2Home
+          )
+        : {
+            componentRoot: defaultComponentRoot,
+            runtimeDataHome: defaultRuntimeDataHome,
+            componentConfigDir: defaultComponentConfigDir,
+            pm2Home: defaultPm2Home
+          }
+
+    const cwd = resolveReleasedServicePath(
+      releasedService.workingDirectory,
+      resolvedServerPaths.componentRoot
+    )
+    const script = resolveReleasedServicePath(
+      releasedService.dllPath,
+      resolvedServerPaths.componentRoot
+    )
+    const runtimeFilesDir = join(
+      resolvedServerPaths.runtimeDataHome,
+      releasedService.runtimeFilesDir ?? "pm2-runtime"
+    )
     const ecosystemPath = join(runtimeFilesDir, "ecosystem.config.cjs")
     const envFilePath = join(runtimeFilesDir, ".env")
     const dotnetPath = join(
@@ -297,16 +333,17 @@ export async function resolveManagedPm2ServiceDefinition(
       baseAppName,
       appName: `${baseAppName}-${nameIdentifier}`,
       nameIdentifierEnv,
+      defaultNameIdentifier,
       nameIdentifier,
       cwd,
       script,
       args: component.pm2?.args ?? [],
-      env: component.pm2?.env ?? {},
+      env: mergeManagedEnvironment(component.pm2?.env, environmentOverrides),
       runtimeHome: paths.runtimeHome,
-      runtimeDataHome,
-      componentRoot,
-      componentConfigDir,
-      pm2Home,
+      runtimeDataHome: resolvedServerPaths.runtimeDataHome,
+      componentRoot: resolvedServerPaths.componentRoot,
+      componentConfigDir: resolvedServerPaths.componentConfigDir,
+      pm2Home: resolvedServerPaths.pm2Home,
       pm2Binary: pm2Entrypoint,
       nodePath,
       launchStrategy: "released-service",
@@ -319,9 +356,9 @@ export async function resolveManagedPm2ServiceDefinition(
 
   const script = resolveManagedPath(
     component.pm2?.script ?? defaultPm2Script(component.name),
-    componentRoot
+    defaultComponentRoot
   )
-  const cwd = resolveManagedPath(component.pm2?.cwd ?? ".", componentRoot)
+  const cwd = resolveManagedPath(component.pm2?.cwd ?? ".", defaultComponentRoot)
 
   await Promise.all([
     validateManagedPath(script, `Managed launcher for ${service} is missing.`),
@@ -336,19 +373,61 @@ export async function resolveManagedPm2ServiceDefinition(
     baseAppName,
     appName: `${baseAppName}-${nameIdentifier}`,
     nameIdentifierEnv,
+    defaultNameIdentifier,
     nameIdentifier,
     cwd,
     script,
     args: component.pm2?.args ?? [],
-    env: component.pm2?.env ?? {},
+    env: mergeManagedEnvironment(component.pm2?.env, environmentOverrides),
     runtimeHome: paths.runtimeHome,
-    runtimeDataHome,
-    componentRoot,
-    componentConfigDir,
-    pm2Home,
+    runtimeDataHome: defaultRuntimeDataHome,
+    componentRoot: defaultComponentRoot,
+    componentConfigDir: defaultComponentConfigDir,
+    pm2Home: defaultPm2Home,
     pm2Binary: pm2Entrypoint,
     nodePath,
     launchStrategy: "node-script"
+  }
+}
+
+async function resolveManagedServerActivePaths(
+  paths: ResolvedRuntimePaths,
+  serviceHomeName: string,
+  pm2HomeOverride?: string
+): Promise<{
+  componentRoot: string
+  runtimeDataHome: string
+  componentConfigDir: string
+  pm2Home: string
+}> {
+  const runtimeDataHome = getServerSharedDataRoot(paths)
+  const state = await readManagedServerVersionState(getManagedServerVersionStatePath(paths))
+  const activeVersion = state.activeVersion
+
+  if (!activeVersion) {
+    throw new ManagedPm2Error(
+      "Managed server does not have an active version. Run `hagiscript server install` or `hagiscript server use <version>` first."
+    )
+  }
+
+  const installedVersion = state.versions[activeVersion]
+  if (!installedVersion) {
+    throw new ManagedPm2Error(
+      `Managed server active version ${activeVersion} is missing from the installed version inventory.`
+    )
+  }
+
+  return {
+    componentRoot: installedVersion.installPath,
+    runtimeDataHome,
+    componentConfigDir: join(runtimeDataHome, "config"),
+    pm2Home: getComponentPm2Home(
+      paths,
+      "server",
+      undefined,
+      pm2HomeOverride,
+      serviceHomeName
+    )
   }
 }
 
@@ -388,8 +467,8 @@ export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentRes
     `App: ${result.appName}`,
     `Name identifier env: ${result.nameIdentifierEnv}`,
     `Name identifier: ${result.nameIdentifier}`,
-    `Bootstrap default: ${result.nameIdentifierEnv}=${result.bootstrapNameIdentifierValue}`,
-    "Override the bootstrap default when running multiple runtime instances on one host.",
+    `Default instance: ${result.nameIdentifierEnv}=${result.bootstrapNameIdentifierValue}`,
+    "Use --instance to override the manifest-defined runtime instance when needed.",
     `Launch strategy: ${result.launchStrategy}`,
     `Working directory: ${result.cwd}`,
     `Script: ${result.script}`,
@@ -541,13 +620,14 @@ async function prepareReleasedServicePm2Files(
   await writeFile(definition.envFilePath, buildPm2EnvFile(definition, env), "utf8")
   await writeFile(
     definition.ecosystemPath,
-    buildReleasedServiceEcosystemConfig(definition),
+    buildReleasedServiceEcosystemConfig(definition, env),
     "utf8"
   )
 }
 
 function buildReleasedServiceEcosystemConfig(
-  definition: ResolvedManagedPm2ServiceDefinition
+  definition: ResolvedManagedPm2ServiceDefinition,
+  env: NodeJS.ProcessEnv
 ): string {
   if (!definition.dotnetPath || !definition.envFilePath) {
     throw new ManagedPm2Error(
@@ -568,6 +648,7 @@ function buildReleasedServiceEcosystemConfig(
     '      exec_mode: "fork",',
     "      autorestart: true,",
     "      watch: false,",
+    `      env: ${serializePm2Environment(env)},`,
     `      env_file: ${JSON.stringify(definition.envFilePath)}`,
     "    }",
     "  ]",
@@ -582,8 +663,8 @@ function buildPm2EnvFile(
 ): string {
   return (
     [
-      `# Bootstrap default: ${definition.nameIdentifierEnv}=${PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT}`,
-      `# Override ${definition.nameIdentifierEnv} when running multiple runtime instances on one host.`,
+      `# Default instance: ${definition.nameIdentifierEnv}=${definition.defaultNameIdentifier}`,
+      `# Use --instance to override the manifest-defined runtime instance when needed.`,
       ...Object.entries(env)
         .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
         .sort(([left], [right]) => left.localeCompare(right))
@@ -592,10 +673,31 @@ function buildPm2EnvFile(
   )
 }
 
+function serializePm2Environment(env: NodeJS.ProcessEnv): string {
+  const normalizedEntries = Object.entries(env)
+    .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+
+  return JSON.stringify(Object.fromEntries(normalizedEntries), null, 8)
+}
+
 function buildManagedPm2Environment(
   definition: ResolvedManagedPm2ServiceDefinition,
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
+  const resolvedBaseEnv: NodeJS.ProcessEnv = {
+    ...baseEnv,
+    ...definition.env,
+    [definition.nameIdentifierEnv]: definition.nameIdentifier
+  }
+
+  if (
+    definition.service === "server" &&
+    !normalizeManagedEnvironmentValue(resolvedBaseEnv.ASPNETCORE_ENVIRONMENT)
+  ) {
+    resolvedBaseEnv.ASPNETCORE_ENVIRONMENT = "Production"
+  }
+
   return buildManagedRuntimeEnvironment(
     {
       component: definition.component,
@@ -607,41 +709,65 @@ function buildManagedPm2Environment(
       pm2Home: definition.pm2Home,
       scriptBasename: basename(definition.script)
     },
-    {
-      ...baseEnv,
-      ...definition.env,
-      [definition.nameIdentifierEnv]: definition.nameIdentifier
-    }
+    resolvedBaseEnv
   )
 }
 
+function mergeManagedEnvironment(
+  baseEnvironment: Record<string, string> | undefined,
+  overrides: Record<string, string | undefined> | undefined
+): Record<string, string> {
+  const merged: Record<string, string> = {
+    ...(baseEnvironment ?? {})
+  }
+
+  if (!overrides) {
+    return merged
+  }
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!key.trim()) {
+      continue
+    }
+
+    if (value === undefined) {
+      delete merged[key]
+      continue
+    }
+
+    merged[key] = value
+  }
+
+  return merged
+}
+
+function normalizeManagedEnvironmentValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim()
+  return normalized ? normalized : undefined
+}
+
 function resolvePm2NameIdentifier(
+  manifest: LoadedRuntimeManifest,
   component: RuntimeComponentDefinition,
   service: ManagedPm2ServiceName,
   nameIdentifierValue?: string
 ): {
   baseAppName: string
   nameIdentifierEnv: string
+  defaultNameIdentifier: string
   nameIdentifier: string
 } {
-  const nameIdentifierEnv = component.pm2?.nameIdentifierEnv?.trim()
-  if (!nameIdentifierEnv) {
-    throw new ManagedPm2Error(
-      `Runtime manifest component ${component.name} must define pm2.nameIdentifierEnv for managed PM2 service ${service}.`
-    )
-  }
+  const nameIdentifierEnv = DEFAULT_PM2_NAME_IDENTIFIER_ENV
 
-  if (!PM2_NAME_IDENTIFIER_PATTERN.test(nameIdentifierEnv)) {
-    throw new ManagedPm2Error(
-      `Runtime manifest component ${component.name} declares invalid pm2.nameIdentifierEnv "${nameIdentifierEnv}". Only lowercase letters, digits, and underscores are allowed.`
-    )
-  }
-
+  const defaultNameIdentifier =
+    manifest.runtime.hagicodeInstance?.trim() || PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT
   const nameIdentifier =
-    nameIdentifierValue?.trim() || process.env[nameIdentifierEnv]?.trim()
+    nameIdentifierValue?.trim() ||
+    manifest.runtime.hagicodeInstance?.trim() ||
+    process.env[nameIdentifierEnv]?.trim()
   if (!nameIdentifier) {
     throw new ManagedPm2Error(
-      `Managed PM2 service ${service} requires environment variable ${nameIdentifierEnv}. Bootstrap with ${nameIdentifierEnv}=${PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT} and override it when running multiple runtime instances on one host.`
+      `Managed PM2 service ${service} requires a runtime instance name. Set runtime.hagicodeInstance in the manifest, pass --instance, or set ${nameIdentifierEnv}.`
     )
   }
 
@@ -654,6 +780,7 @@ function resolvePm2NameIdentifier(
   return {
     baseAppName: component.pm2?.appName ?? `hagicode-${component.name}`,
     nameIdentifierEnv,
+    defaultNameIdentifier,
     nameIdentifier
   }
 }

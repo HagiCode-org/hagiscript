@@ -46,6 +46,8 @@ export interface RuntimeManifestPaths {
   runtimeRoot: string
   runtimeHome: string
   runtimeDataRoot: string
+  serverProgramRoot?: string
+  serverDataRoot?: string
   bin: string
   config: string
   logs: string
@@ -66,7 +68,6 @@ export interface RuntimePm2ServiceDefinition {
   script?: string
   args?: string[]
   env?: Record<string, string>
-  nameIdentifierEnv: string
   pm2Home?: string
 }
 
@@ -84,6 +85,7 @@ export interface LoadedRuntimeManifest {
   runtime: {
     name: string
     version: string
+    hagicodeInstance?: string
   }
   components: RuntimeComponentDefinition[]
   componentMap: ReadonlyMap<string, RuntimeComponentDefinition>
@@ -111,7 +113,7 @@ const supportedComponentTypes = new Set<RuntimeComponentType>([
   "bundled-runtime",
   "released-service"
 ])
-const pm2NameIdentifierEnvPattern = /^[a-z0-9_]+$/u
+const pm2NameIdentifierPattern = /^[a-z0-9_]+$/u
 
 export function getPackageRoot(moduleUrl = import.meta.url): string {
   return resolve(dirname(fileURLToPath(moduleUrl)), "..", "..")
@@ -184,7 +186,12 @@ function validateRuntimeManifest(
 
   const runtime = {
     name: readRequiredString(runtimeObject.name, "runtime.name", errors),
-    version: readRequiredString(runtimeObject.version, "runtime.version", errors)
+    version: readRequiredString(runtimeObject.version, "runtime.version", errors),
+    hagicodeInstance: readOptionalPm2NameIdentifier(
+      runtimeObject.hagicodeInstance ?? runtimeObject.hagicode_instance,
+      "runtime.hagicodeInstance",
+      errors
+    )
   }
   const paths = {
     runtimeRoot: readRequiredString(pathsObject.runtimeRoot, "paths.runtimeRoot", errors),
@@ -192,6 +199,12 @@ function validateRuntimeManifest(
     runtimeDataRoot:
       readOptionalString(pathsObject.runtimeDataRoot, "paths.runtimeDataRoot", errors) ??
       "runtime-data",
+    serverProgramRoot: readOptionalString(
+      pathsObject.serverProgramRoot,
+      "paths.serverProgramRoot",
+      errors
+    ),
+    serverDataRoot: readOptionalString(pathsObject.serverDataRoot, "paths.serverDataRoot", errors),
     bin: readRequiredString(pathsObject.bin, "paths.bin", errors),
     config: readRequiredString(pathsObject.config, "paths.config", errors),
     logs: readRequiredString(pathsObject.logs, "paths.logs", errors),
@@ -490,26 +503,21 @@ function validateRuntimePm2Definition(
     script: readOptionalString(pm2Object.script, `${label}.script`, errors),
     args,
     env,
-    nameIdentifierEnv: readRequiredPm2NameIdentifierEnv(
-      pm2Object.nameIdentifierEnv,
-      `${label}.nameIdentifierEnv`,
-      errors
-    ),
     pm2Home: readOptionalString(pm2Object.pm2Home, `${label}.pm2Home`, errors)
   }
 }
 
-function readRequiredPm2NameIdentifierEnv(
+function readOptionalPm2NameIdentifier(
   value: unknown,
   label: string,
   errors: string[]
-): string {
-  const envName = readRequiredString(value, label, errors)
-  if (envName && !pm2NameIdentifierEnvPattern.test(envName)) {
+): string | undefined {
+  const identifier = readOptionalString(value, label, errors)
+  if (identifier && !pm2NameIdentifierPattern.test(identifier)) {
     errors.push(`${label} must match ^[a-z0-9_]+$`)
   }
 
-  return envName
+  return identifier
 }
 
 function validateRuntimeReleasedServiceDefinition(

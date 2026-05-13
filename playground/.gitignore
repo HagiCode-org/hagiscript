@@ -1,0 +1,6 @@
+# Keep this folder tracked, but ignore all playground runtime artifacts.
+*
+!.gitignore
+!manifest.yaml
+!templates/
+!templates/*.yaml

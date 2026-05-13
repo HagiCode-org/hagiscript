@@ -8,6 +8,8 @@ export interface ResolvedRuntimePaths {
   root: string
   runtimeHome: string
   runtimeDataRoot: string
+  serverProgramRoot: string
+  serverDataRoot: string
   bin: string
   config: string
   logs: string
@@ -35,11 +37,19 @@ export function resolveRuntimePaths(
   )
   const runtimeHome = resolveManagedPath(manifest.paths.runtimeHome, root)
   const runtimeDataRoot = resolveManagedPath(manifest.paths.runtimeDataRoot, root)
+  const serverProgramRoot = manifest.paths.serverProgramRoot
+    ? resolveManagedPath(manifest.paths.serverProgramRoot, root)
+    : join(runtimeHome, "server")
+  const serverDataRoot = manifest.paths.serverDataRoot
+    ? resolveManagedPath(manifest.paths.serverDataRoot, root)
+    : join(runtimeDataRoot, "server")
 
   return {
     root,
     runtimeHome,
     runtimeDataRoot,
+    serverProgramRoot,
+    serverDataRoot,
     bin: resolveManagedPath(manifest.paths.bin, runtimeHome),
     config: resolveManagedPath(manifest.paths.config, runtimeDataRoot),
     logs: resolveManagedPath(manifest.paths.logs, runtimeDataRoot),
@@ -86,9 +96,30 @@ export function getComponentManagedRoot(
     case "omniroute":
     case "code-server":
       return join(paths.vendoredRoot, componentName)
+    case "server":
+      return paths.serverProgramRoot
     default:
       return join(paths.componentsRoot, componentName)
   }
+}
+
+export function getServerProgramRoot(paths: ResolvedRuntimePaths): string {
+  return paths.serverProgramRoot
+}
+
+export function getServerVersionsRoot(paths: ResolvedRuntimePaths): string {
+  return join(getServerProgramRoot(paths), "versions")
+}
+
+export function getServerVersionRoot(
+  paths: ResolvedRuntimePaths,
+  version: string
+): string {
+  return join(getServerVersionsRoot(paths), version)
+}
+
+export function getServerSharedDataRoot(paths: ResolvedRuntimePaths): string {
+  return paths.serverDataRoot
 }
 
 export function getComponentConfigDirectory(
@@ -112,6 +143,10 @@ export function getComponentRuntimeDataHome(
   componentName: string,
   runtimeDataDir?: string
 ): string {
+  if (componentName === "server") {
+    return paths.serverDataRoot
+  }
+
   return resolveManagedPath(runtimeDataDir ?? componentName, paths.componentDataRoot)
 }
 
@@ -119,12 +154,17 @@ export function getComponentPm2Home(
   paths: ResolvedRuntimePaths,
   componentName: string,
   runtimeDataDir?: string,
-  pm2Home?: string
+  pm2Home?: string,
+  defaultHomeName?: string
 ): string {
-  return resolveManagedPath(
-    pm2Home ?? paths.defaultPm2Home,
-    getComponentRuntimeDataHome(paths, componentName, runtimeDataDir)
-  )
+  if (pm2Home) {
+    return resolveManagedPath(
+      pm2Home,
+      getComponentRuntimeDataHome(paths, componentName, runtimeDataDir)
+    )
+  }
+
+  return resolveManagedPath(`~/.hagiscript/pm2/${defaultHomeName ?? componentName}`, paths.root)
 }
 
 export function isPathInsideRuntimeRoot(
