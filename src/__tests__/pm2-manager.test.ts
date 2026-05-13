@@ -320,6 +320,25 @@ describe("pm2 manager", () => {
     }
   })
 
+  it("accepts an explicit PM2 name identifier without relying on process.env", async () => {
+    const setup = await createPm2Fixture()
+
+    try {
+      const report = await resolveManagedPm2Environment({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "server",
+        nameIdentifierValue: "custom01"
+      })
+
+      expect(report.nameIdentifier).toBe("custom01")
+      expect(report.appName).toBe("fixture-server-custom01")
+      expect(report.env.hagicode_pm2_name).toBe("custom01")
+    } finally {
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
   it("resolves released-service server definitions from external absolute paths", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const externalRoot = path.join(tmpdir(), "hagiscript-external-local-publishment")
