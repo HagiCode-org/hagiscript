@@ -8,6 +8,7 @@ import { registerNpmSyncCommand } from "./commands/npm-sync-commands.js";
 import { registerNodeRuntimeCommands } from "./commands/node-runtime-commands.js";
 import { registerPm2Commands } from "./commands/pm2-commands.js";
 import { registerRuntimeCommands } from "./commands/runtime-commands.js";
+import { registerServerCommands } from "./commands/server-commands.js";
 
 export function createCli(): Command {
   const program = new Command();
@@ -29,6 +30,7 @@ export function createCli(): Command {
   registerNpmSyncCommand(program);
   registerPm2Commands(program);
   registerRuntimeCommands(program);
+  registerServerCommands(program);
 
   program.action(() => {
     program.outputHelp();

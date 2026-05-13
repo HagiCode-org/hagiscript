@@ -128,3 +128,15 @@ export {
   type RuntimePlannedAction,
   type RuntimeStateReport
 } from "./runtime/runtime-manager.js";
+export {
+  getManagedServerStatus,
+  installManagedServer,
+  resolveManagedServerStartupEnvironment,
+  restartManagedServer,
+  startManagedServer,
+  stopManagedServer,
+  type ManagedServerInstallOptions,
+  type ManagedServerInstallResult,
+  type ManagedServerLifecycleOptions,
+  type ManagedServerSourceKind
+} from "./runtime/server-manager.js";
