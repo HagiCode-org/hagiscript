@@ -184,6 +184,37 @@ Hagiscript keeps mutable launch state for that service under:
 
 `hagiscript runtime install --components server` prepares the runtime-owned launch assets and reports whether the published payload is already staged. `hagiscript pm2 server start` then generates the final PM2 ecosystem/env files under `pm2-runtime/` and launches the released backend through the managed `dotnet` runtime. Use `hagiscript pm2 server env` to print the exact resolved working directory, PATH ordering, and environment variables that HagiScript will use for that startup flow.
 
+## Managed Server Commands
+
+Hagiscript can now stage a released backend package and prepare all startup prerequisites from a single command surface:
+
+```bash
+hagiscript server install
+hagiscript server install --package-dir /srv/hagicode/packages
+hagiscript server install --archive ./hagicode-1.2.3-linux-x64-nort.zip
+hagiscript server install --url https://example.com/hagicode-1.2.3-linux-x64-nort.zip
+hagiscript server install --github-repo HagiCode-org/releases --tag v1.2.3
+```
+
+By default, `server install`:
+
+- selects or downloads a server archive
+- extracts and stages it into `program/components/server/current/`
+- runs `hagiscript runtime install --components server`
+- ensures `pm2` exists in the managed npm prefix
+
+Once installed, use the higher-level lifecycle wrappers:
+
+```bash
+hagiscript server start
+hagiscript server restart --instance demo
+hagiscript server stop --instance demo
+hagiscript server status --json
+hagiscript server env --instance demo
+```
+
+`--instance <name>` maps to the PM2 name identifier and defaults to `hagicode`, so one host can run multiple managed runtime roots without colliding app names.
+
 ## Runtime Environment Contract
 
 Runtime lifecycle scripts and managed services receive a stable environment contract:
