@@ -35,6 +35,7 @@ export interface ManagedPm2CommandOptions {
   runtimeRoot?: string
   service: ManagedPm2ServiceName
   action: ManagedPm2Action
+  nameIdentifierValue?: string
   runner?: CommandRunner
 }
 
@@ -134,7 +135,12 @@ export async function runManagedPm2Command(
 ): Promise<ManagedPm2CommandResult> {
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
-  const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, options.service)
+  const definition = await resolveManagedPm2ServiceDefinition(
+    manifest,
+    paths,
+    options.service,
+    options.nameIdentifierValue
+  )
   const runner = options.runner ?? runCommand
 
   switch (options.action) {
@@ -170,7 +176,12 @@ export async function resolveManagedPm2Environment(
 ): Promise<ManagedPm2EnvironmentResult> {
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
-  const definition = await resolveManagedPm2ServiceDefinition(manifest, paths, options.service)
+  const definition = await resolveManagedPm2ServiceDefinition(
+    manifest,
+    paths,
+    options.service,
+    options.nameIdentifierValue
+  )
   const env = buildManagedPm2Environment(definition)
 
   return {
@@ -204,7 +215,8 @@ export async function resolveManagedPm2Environment(
 export async function resolveManagedPm2ServiceDefinition(
   manifest: LoadedRuntimeManifest,
   paths: ResolvedRuntimePaths,
-  service: ManagedPm2ServiceName
+  service: ManagedPm2ServiceName,
+  nameIdentifierValue?: string
 ): Promise<ResolvedManagedPm2ServiceDefinition> {
   assertSupportedPm2Service(service)
 
@@ -234,7 +246,8 @@ export async function resolveManagedPm2ServiceDefinition(
   const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix)
   const { baseAppName, nameIdentifierEnv, nameIdentifier } = resolvePm2NameIdentifier(
     component,
-    service
+    service,
+    nameIdentifierValue
   )
 
   await Promise.all([
@@ -594,13 +607,18 @@ function buildManagedPm2Environment(
       pm2Home: definition.pm2Home,
       scriptBasename: basename(definition.script)
     },
-    { ...baseEnv, ...definition.env }
+    {
+      ...baseEnv,
+      ...definition.env,
+      [definition.nameIdentifierEnv]: definition.nameIdentifier
+    }
   )
 }
 
 function resolvePm2NameIdentifier(
   component: RuntimeComponentDefinition,
-  service: ManagedPm2ServiceName
+  service: ManagedPm2ServiceName,
+  nameIdentifierValue?: string
 ): {
   baseAppName: string
   nameIdentifierEnv: string
@@ -619,7 +637,8 @@ function resolvePm2NameIdentifier(
     )
   }
 
-  const nameIdentifier = process.env[nameIdentifierEnv]?.trim()
+  const nameIdentifier =
+    nameIdentifierValue?.trim() || process.env[nameIdentifierEnv]?.trim()
   if (!nameIdentifier) {
     throw new ManagedPm2Error(
       `Managed PM2 service ${service} requires environment variable ${nameIdentifierEnv}. Bootstrap with ${nameIdentifierEnv}=${PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT} and override it when running multiple runtime instances on one host.`
