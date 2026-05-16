@@ -25,7 +25,7 @@ export function readRuntimeScriptContext() {
     componentLogsDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR"),
     componentPm2Home: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME"),
     runtimeNpmPrefix: requiredEnv("HAGISCRIPT_RUNTIME_NPM_PREFIX"),
-    templateDir: requiredEnv("HAGISCRIPT_RUNTIME_TEMPLATE_DIR"),
+    templateDir: process.env.HAGISCRIPT_RUNTIME_TEMPLATE_DIR?.trim() || null,
     componentVersion: process.env.HAGISCRIPT_RUNTIME_COMPONENT_VERSION?.trim() || null,
     npmRegistryMirror: process.env.HAGISCRIPT_RUNTIME_NPM_REGISTRY_MIRROR?.trim() || null,
     pm2VersionOverride: process.env.HAGISCRIPT_RUNTIME_PM2_VERSION_OVERRIDE?.trim() || null,
@@ -65,8 +65,13 @@ export async function writeComponentMarker(context, extra = {}) {
   return markerPath
 }
 
-export async function materializeTemplate(templateName, destinationPath, variables) {
-  const templatePath = path.join(readRuntimeScriptContext().templateDir, templateName)
+export async function materializeTemplate(templateName, destinationPath, variables, templateDir) {
+  const resolvedTemplateDir = templateDir || readRuntimeScriptContext().templateDir
+  if (!resolvedTemplateDir) {
+    throw new Error(`No template directory configured for ${templateName}`)
+  }
+
+  const templatePath = path.join(resolvedTemplateDir, templateName)
   const template = await readFile(templatePath, "utf8")
   let rendered = template
 
@@ -201,48 +206,6 @@ export async function installVendoredPackage(context, options) {
 
 export async function writeManagedPackageLauncher(filePath, options) {
   await ensureDirectory(path.dirname(filePath))
-  const configLoader =
-    options.serviceKind === "omniroute"
-      ? `
-const runtimeConfig = await loadOmnirouteConfig()
-const runtimeEnv = {
-  ...(runtimeConfig.dataDir ? { DATA_DIR: runtimeConfig.dataDir } : {}),
-  ...(runtimeConfig.logDir ? { LOG_DIR: runtimeConfig.logDir } : {}),
-  ...(runtimeConfig.port ? { PORT: runtimeConfig.port } : {})
-}
-`
-      : ""
-  const configHelpers =
-    options.serviceKind === "omniroute"
-      ? `
-async function loadOmnirouteConfig() {
-  try {
-    const [{ readFile }, { parse }] = await Promise.all([
-      import("node:fs/promises"),
-      import("yaml")
-    ])
-    const loaded = parse(await readFile(configPath, "utf8"))
-    const listen = typeof loaded?.listen === "string" ? loaded.listen : ""
-    const portMatch = listen.match(/:(\\d+)$/u)
-    return {
-      dataDir: typeof loaded?.dataDir === "string" ? loaded.dataDir : ${JSON.stringify(
-          options.defaultEnv?.DATA_DIR ?? ""
-        )},
-      logDir: typeof loaded?.logDir === "string" ? loaded.logDir : ${JSON.stringify(
-          options.defaultEnv?.LOG_DIR ?? ""
-        )},
-      port: portMatch?.[1] ?? ${JSON.stringify(options.defaultEnv?.PORT ?? "")}
-    }
-  } catch {
-    return {
-      dataDir: ${JSON.stringify(options.defaultEnv?.DATA_DIR ?? "")},
-      logDir: ${JSON.stringify(options.defaultEnv?.LOG_DIR ?? "")},
-      port: ${JSON.stringify(options.defaultEnv?.PORT ?? "")}
-    }
-  }
-}
-`
-      : ""
 
   await writeFile(
     filePath,
@@ -250,10 +213,8 @@ async function loadOmnirouteConfig() {
 import { spawn } from "node:child_process"
 
 const entrypointPath = ${JSON.stringify(options.entrypointPath)}
-const configPath = ${JSON.stringify(options.configPath)}
 const baseArgs = ${JSON.stringify(options.baseArgs ?? [])}
 const baseEnv = ${JSON.stringify(options.defaultEnv ?? {})}
-${configLoader}
 const child = spawn(
   process.execPath,
   [entrypointPath, ...baseArgs, ...process.argv.slice(2)],
@@ -261,8 +222,7 @@ const child = spawn(
     stdio: "inherit",
     env: {
       ...process.env,
-      ...baseEnv,
-      ${options.serviceKind === "omniroute" ? "...runtimeEnv" : ""}
+      ...baseEnv
     }
   }
 )
@@ -289,7 +249,6 @@ child.on("error", (error) => {
   process.stderr.write(String(error?.stack ?? error) + "\\n")
   process.exit(1)
 })
-${configHelpers}
 `,
     "utf8"
   )

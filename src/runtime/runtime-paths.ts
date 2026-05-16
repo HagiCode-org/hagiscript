@@ -26,6 +26,10 @@ export interface ResolvedRuntimePaths {
 
 export interface ResolveRuntimePathsOptions {
   runtimeRoot?: string
+  runtimeHome?: string
+  runtimeDataRoot?: string
+  serverProgramRoot?: string
+  serverDataRoot?: string
 }
 
 export function resolveRuntimePaths(
@@ -35,14 +39,22 @@ export function resolveRuntimePaths(
   const root = normalizeManagedRoot(
     options.runtimeRoot ?? manifest.paths.runtimeRoot ?? defaultRuntimeRoot
   )
-  const runtimeHome = resolveManagedPath(manifest.paths.runtimeHome, root)
-  const runtimeDataRoot = resolveManagedPath(manifest.paths.runtimeDataRoot, root)
-  const serverProgramRoot = manifest.paths.serverProgramRoot
-    ? resolveManagedPath(manifest.paths.serverProgramRoot, root)
-    : join(runtimeHome, "server")
-  const serverDataRoot = manifest.paths.serverDataRoot
-    ? resolveManagedPath(manifest.paths.serverDataRoot, root)
-    : join(runtimeDataRoot, "server")
+  const runtimeHome = options.runtimeHome
+    ? resolveManagedPath(options.runtimeHome, root)
+    : resolveManagedPath(manifest.paths.runtimeHome, root)
+  const runtimeDataRoot = options.runtimeDataRoot
+    ? resolveManagedPath(options.runtimeDataRoot, root)
+    : resolveManagedPath(manifest.paths.runtimeDataRoot, root)
+  const serverProgramRoot = options.serverProgramRoot
+    ? resolveManagedPath(options.serverProgramRoot, root)
+    : manifest.paths.serverProgramRoot
+      ? resolveManagedPath(manifest.paths.serverProgramRoot, root)
+      : join(runtimeHome, "server")
+  const serverDataRoot = options.serverDataRoot
+    ? resolveManagedPath(options.serverDataRoot, root)
+    : manifest.paths.serverDataRoot
+      ? resolveManagedPath(manifest.paths.serverDataRoot, root)
+      : join(runtimeDataRoot, "server")
 
   return {
     root,
@@ -58,7 +70,7 @@ export function resolveRuntimePaths(
     componentsRoot: resolveManagedPath(manifest.paths.componentsRoot, runtimeHome),
     componentDataRoot: resolveManagedPath(manifest.paths.componentDataRoot, runtimeDataRoot),
     defaultPm2Home: manifest.paths.defaultPm2Home,
-    npmPrefix: resolveManagedPath(manifest.paths.npmPrefix, runtimeHome),
+    npmPrefix: resolveManagedPath(manifest.paths.npmPrefix, runtimeDataRoot),
     nodeRuntime: resolveManagedPath(manifest.paths.nodeRuntime, runtimeHome),
     dotnetRuntime: resolveManagedPath(manifest.paths.dotnetRuntime, runtimeHome),
     vendoredRoot: resolveManagedPath(manifest.paths.vendoredRoot, runtimeHome)

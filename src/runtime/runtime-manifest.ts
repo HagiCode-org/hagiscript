@@ -77,6 +77,7 @@ export interface RuntimeReleasedServiceDefinition {
   configRoot?: string
   runtimeFilesDir?: string
   startScript?: string
+  activeVersion?: string
 }
 
 export interface LoadedRuntimeManifest {
@@ -91,6 +92,7 @@ export interface LoadedRuntimeManifest {
   componentMap: ReadonlyMap<string, RuntimeComponentDefinition>
   phases: Record<RuntimeLifecyclePhase, RuntimePhaseDefinition>
   paths: RuntimeManifestPaths
+  npmSync?: Record<string, unknown>
 }
 
 export interface LoadRuntimeManifestOptions {
@@ -178,6 +180,11 @@ function validateRuntimeManifest(
   const runtimeObject = toRecord(value.runtime, "runtime", errors)
   const pathsObject = toRecord(value.paths, "paths", errors)
   const phasesObject = toRecord(value.phases, "phases", errors)
+  const npmSync = readOptionalObject(
+    value.npmSync ?? value["npm-sync"] ?? value.npm_sync,
+    "npmSync",
+    errors
+  )
   const componentValues = Array.isArray(value.components) ? value.components : null
 
   if (!componentValues) {
@@ -265,7 +272,8 @@ function validateRuntimeManifest(
     components,
     componentMap,
     phases,
-    paths
+    paths,
+    npmSync
   }
 }
 
@@ -543,6 +551,11 @@ function validateRuntimeReleasedServiceDefinition(
       `${label}.runtimeFilesDir`,
       errors
     ),
+    activeVersion: readOptionalString(
+      releasedServiceObject.activeVersion,
+      `${label}.activeVersion`,
+      errors
+    ),
     startScript: readOptionalString(
       releasedServiceObject.startScript,
       `${label}.startScript`,
@@ -592,6 +605,23 @@ function readOptionalString(
   }
 
   return value.trim()
+}
+
+function readOptionalObject(
+  value: unknown,
+  label: string,
+  errors: string[]
+): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (!isRecord(value)) {
+    errors.push(`${label} must be an object when provided`)
+    return undefined
+  }
+
+  return value
 }
 
 function readResolvedScript(

@@ -1,7 +1,11 @@
+import path from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createCli, runCli } from "../cli.js";
 import { NpmCommandError } from "../runtime/npm-global.js";
 import { NpmSyncCommandError } from "../runtime/npm-sync.js";
+import type { RuntimeState } from "../runtime/runtime-state.js";
 
 const { syncNpmGlobals } = vi.hoisted(() => ({
   syncNpmGlobals: vi.fn(async ({ onLog, registryMirror, fallbackPolicy }) => {
@@ -90,10 +94,10 @@ vi.mock("../runtime/npm-sync.js", async (importOriginal) => ({
 }));
 
 const { resolveManagedNodeRuntime } = vi.hoisted(() => ({
-  resolveManagedNodeRuntime: vi.fn(async () => ({
-    targetDirectory: "/tmp/managed-runtime",
-    nodePath: "/tmp/managed-runtime/bin/node",
-    npmPath: "/tmp/managed-runtime/bin/npm",
+  resolveManagedNodeRuntime: vi.fn(async ({ targetDirectory }) => ({
+    targetDirectory,
+    nodePath: `${targetDirectory}/bin/node`,
+    npmPath: `${targetDirectory}/bin/npm`,
     nodeVersion: "v22.0.0",
     npmVersion: "10.0.0",
     installed: false
@@ -106,17 +110,201 @@ vi.mock("../runtime/node-installer.js", async (importOriginal) => ({
   resolveManagedNodeRuntime
 }));
 
+const { readRuntimeState } = vi.hoisted(() => ({
+  readRuntimeState: vi.fn(async () => null as RuntimeState | null)
+}));
+
+vi.mock("../runtime/runtime-state.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../runtime/runtime-state.js")>()),
+  readRuntimeState
+}));
+
 describe("npm-sync CLI command", () => {
+  const defaultRuntimeRoot = path.join(homedir(), ".hagicode", "runtime");
+  const defaultRuntimeDataRoot = path.join(defaultRuntimeRoot, "runtime-data");
+  const defaultNodeRuntime = path.join(
+    defaultRuntimeRoot,
+    "program",
+    "components",
+    "node",
+    "runtime"
+  );
+  const fixtureRuntimeManifestPath = path.resolve(
+    fileURLToPath(
+      new URL("../../tests/runtime/fixtures/runtime-manifest.yaml", import.meta.url)
+    )
+  );
+
   it("appears in help output", () => {
     expect(createCli().helpInformation()).toContain("npm-sync");
   });
 
-  it("requires a manifest or inline tool selection", async () => {
+  it("defaults to the packaged runtime manifest when no manifest options are provided", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    readRuntimeState.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli(["node", "hagiscript", "npm-sync"]);
+
+    expect(readRuntimeState).toHaveBeenCalledWith(
+      path.join(defaultRuntimeDataRoot, "state.json")
+    );
+    expect(resolveManagedNodeRuntime).toHaveBeenCalledWith({
+      targetDirectory: defaultNodeRuntime,
+      downloadCacheEnabled: true,
+      downloadCacheDirectory: undefined
+    });
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: defaultNodeRuntime,
+        fallbackPolicy: "auto",
+        force: false
+      })
+    );
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.not.objectContaining({ manifestPath: expect.any(String) })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("defaults to the runtime state's manifest path when no manifest options are provided", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    readRuntimeState.mockClear();
+    readRuntimeState.mockResolvedValueOnce({
+      schemaVersion: 1,
+      runtime: {
+        name: "fixture-runtime",
+        version: "1.0.0",
+        manifestPath: fixtureRuntimeManifestPath
+      },
+      managedRoot: "/tmp/runtime-root",
+      managedPaths: {
+        root: "/tmp/runtime-root",
+        runtimeHome: "/tmp/runtime-root/program",
+        runtimeDataRoot: "/tmp/runtime-root/runtime-data",
+        serverProgramRoot: "/tmp/runtime-root/server",
+        serverDataRoot: "/tmp/runtime-root/server-data",
+        bin: "/tmp/runtime-root/program/bin",
+        config: "/tmp/runtime-root/runtime-data/config",
+        logs: "/tmp/runtime-root/runtime-data/logs",
+        data: "/tmp/runtime-root/runtime-data/data",
+        stateFile: "/tmp/runtime-root/runtime-data/state.json",
+        componentsRoot: "/tmp/runtime-root/program/components",
+        componentDataRoot: "/tmp/runtime-root/runtime-data/components",
+        defaultPm2Home: "pm2",
+        npmPrefix: "/tmp/runtime-root/runtime-data/npm",
+        nodeRuntime: "/tmp/runtime-root/program/components/node/runtime",
+        dotnetRuntime: "/tmp/runtime-root/program/components/dotnet/runtime",
+        vendoredRoot: "/tmp/runtime-root/program/components/bundled"
+      },
+      components: {},
+      lastOperation: null
+    });
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime-root",
+      "/tmp/runtime-root"
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeManifestPath: fixtureRuntimeManifestPath,
+        runtimePath: "/tmp/runtime-root/program/components/node/runtime",
+        npmOptions: {
+          prefix: "/tmp/runtime-root/runtime-data/npm"
+        }
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("keeps manifest lookup on the runtime root even when --managed-runtime is explicit", async () => {
+    syncNpmGlobals.mockClear();
+    resolveManagedNodeRuntime.mockClear();
+    readRuntimeState.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--managed-runtime",
+      "/tmp/runtime-root/program/components/node/runtime"
+    ]);
+
+    expect(readRuntimeState).toHaveBeenCalledWith(
+      path.join(defaultRuntimeDataRoot, "state.json")
+    );
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/runtime-root/program/components/node/runtime",
+        npmOptions: {
+          prefix: path.join(defaultRuntimeDataRoot, "npm")
+        }
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("passes an explicit runtime manifest path into npm-sync", async () => {
+    syncNpmGlobals.mockClear();
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "npm-sync",
+      "--runtime",
+      "/tmp/runtime",
+      "--from-manifest",
+      ` ${fixtureRuntimeManifestPath} `
+    ]);
+
+    expect(syncNpmGlobals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimePath: "/tmp/runtime",
+        runtimeManifestPath: fixtureRuntimeManifestPath,
+        fallbackPolicy: "auto"
+      })
+    );
+
+    stdout.mockRestore();
+  });
+
+  it("fails before npm sync when both manifest sources are provided", async () => {
+    syncNpmGlobals.mockClear();
     const stderr = vi
       .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
 
-    await expect(runCli(["node", "hagiscript", "npm-sync"])).rejects.toThrow();
+    await expect(
+      runCli([
+        "node",
+        "hagiscript",
+        "npm-sync",
+        "--manifest",
+        "/tmp/manifest.json",
+        "--from-manifest",
+        "/tmp/runtime-manifest.yaml"
+      ])
+    ).rejects.toThrow("--manifest and --from-manifest cannot be used together.");
     expect(syncNpmGlobals).not.toHaveBeenCalled();
 
     stderr.mockRestore();
@@ -267,13 +455,13 @@ describe("npm-sync CLI command", () => {
     ]);
 
     expect(resolveManagedNodeRuntime).toHaveBeenCalledWith({
-      targetDirectory: "/tmp/managed-runtime",
+      targetDirectory: defaultNodeRuntime,
       downloadCacheEnabled: true,
       downloadCacheDirectory: "/tmp/download-cache"
     });
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
-        runtimePath: "/tmp/managed-runtime",
+        runtimePath: defaultNodeRuntime,
         manifestPath: "/tmp/manifest.json",
         fallbackPolicy: "auto"
       })
@@ -471,7 +659,7 @@ describe("npm-sync CLI command", () => {
 
     expect(syncNpmGlobals).toHaveBeenCalledWith(
       expect.objectContaining({
-        runtimePath: "/tmp/managed-runtime",
+        runtimePath: defaultNodeRuntime,
         manifestPath: expect.stringContaining("hagiscript-tool-sync-"),
         fallbackPolicy: "auto"
       })

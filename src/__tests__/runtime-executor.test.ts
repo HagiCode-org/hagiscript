@@ -1,9 +1,12 @@
 import path from "node:path"
+import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   buildManagedRuntimeEnvironment,
   getManagedNpmBinDirectory,
+  getManagedNpmModulesDirectory,
+  getManagedNpmPackagesPrefix,
   prependPathEntries
 } from "../runtime/runtime-executor.js"
 import { getRuntimeExecutablePaths } from "../runtime/node-verify.js"
@@ -61,17 +64,10 @@ describe("runtime executor environment", () => {
     expect(env.HAGICODE_RUNTIME_DATA_HOME).toBe(
       path.join(runtimeRoot, "runtime-data", "components", "alpha-data")
     )
-    expect(env.PM2_HOME).toBe(
-      path.join(
-        runtimeRoot,
-        "runtime-data",
-        "components",
-        "alpha-data",
-        "pm2"
-      )
-    )
+    expect(env.PM2_HOME).toBe(path.join(homedir(), ".hagiscript", "pm2", "alpha"))
     const expectedPathPrefix = [
       path.dirname(getRuntimeExecutablePaths(paths.nodeRuntime).nodePath),
+      getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
       getManagedNpmBinDirectory(paths.npmPrefix),
       paths.bin
     ].join(process.platform === "win32" ? ";" : ":")
@@ -80,6 +76,29 @@ describe("runtime executor environment", () => {
         expectedPathPrefix
       )).toBe(true)
     expect(env.CUSTOM_FLAG).toBe("1")
+    expect(env.HAGICODE_AGENT_CLI_PATH).toBe(
+      getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths))
+    )
+    expect(env.HAGICODE_NPM_GLOBAL_PATH).toBe(getManagedNpmPackagesPrefix(paths))
+    expect(env.HAGICODE_NPM_GLOBAL_PREFIX).toBe(getManagedNpmPackagesPrefix(paths))
+    expect(env.HAGICODE_NPM_GLOBAL_BIN_ROOT).toBe(
+      getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths))
+    )
+    expect(env.HAGICODE_NPM_GLOBAL_MODULES_ROOT).toBe(
+      getManagedNpmModulesDirectory(getManagedNpmPackagesPrefix(paths))
+    )
+    expect(env.NODE_PATH?.startsWith(
+      getManagedNpmModulesDirectory(getManagedNpmPackagesPrefix(paths))
+    )).toBe(true)
+    expect(env.NODE).toBe(getRuntimeExecutablePaths(paths.nodeRuntime).nodePath)
+    expect(env.npm_node_execpath).toBe(getRuntimeExecutablePaths(paths.nodeRuntime).nodePath)
+    expect(env.npm_execpath).toBe(getRuntimeExecutablePaths(paths.nodeRuntime).npmPath)
+    expect(env.HAGISCRIPT_RUNTIME_NPM_PREFIX).toBe(paths.npmPrefix)
+    expect(env.HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX).toBe(
+      getManagedNpmPackagesPrefix(paths)
+    )
+    expect(env.NPM_CONFIG_PREFIX).toBe(getManagedNpmPackagesPrefix(paths))
+    expect(env.npm_config_prefix).toBe(getManagedNpmPackagesPrefix(paths))
     expect(env.HAGISCRIPT_DOWNLOAD_CACHE).toBe("1")
   })
 

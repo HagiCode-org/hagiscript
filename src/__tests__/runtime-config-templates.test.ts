@@ -46,7 +46,11 @@ async function renderTemplate(
   templateName: string,
   variables: Record<string, string>
 ): Promise<string> {
-  const template = await readFile(path.join(repoRoot, "runtime", "templates", templateName), "utf8")
+  const templateRoot =
+    templateName === "omniroute-config.yaml"
+      ? path.resolve(repoRoot, "../vendered/packages/omniroute/templates")
+      : path.resolve(repoRoot, "../vendered/packages/code-server/templates")
+  const template = await readFile(path.join(templateRoot, templateName), "utf8")
   let rendered = template
 
   for (const [key, value] of Object.entries(variables)) {

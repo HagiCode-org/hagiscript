@@ -40,15 +40,6 @@ components:
   verifyScript: "scripts/verify-dotnet.mjs"
   removeScript: "scripts/remove-dotnet.mjs"
 
-- name: "pm2"
-  type: "package"
-  source: "runtime-managed-package"
-  version: "7.0.1"
-  lifecycleDependencies:
-  - "node"
-  installScript: "scripts/install-pm2.mjs"
-  removeScript: "scripts/remove-pm2.mjs"
-
 - name: "omniroute"
   type: "bundled-runtime"
   source: "desktop-vendored-runtime"
@@ -56,7 +47,6 @@ components:
   runtimeDataDir: "services/omniroute"
   lifecycleDependencies:
   - "node"
-  - "pm2"
   installScript: "scripts/install-omniroute.mjs"
   configureScript: "scripts/configure-omniroute.mjs"
   pm2:
@@ -71,7 +61,6 @@ components:
   runtimeDataDir: "services/code-server"
   lifecycleDependencies:
   - "node"
-  - "pm2"
   installScript: "scripts/install-code-server.mjs"
   configureScript: "scripts/configure-code-server.mjs"
   pm2:
@@ -86,7 +75,6 @@ components:
   lifecycleDependencies:
   - "node"
   - "dotnet"
-  - "pm2"
   installScript: "scripts/install-server.mjs"
   configureScript: "scripts/configure-server.mjs"
   removeScript: "scripts/remove-server.mjs"
@@ -107,7 +95,6 @@ phases:
     order:
     - "node"
     - "dotnet"
-    - "pm2"
     - "server"
     - "omniroute"
     - "code-server"
@@ -116,14 +103,30 @@ phases:
     - "server"
     - "code-server"
     - "omniroute"
-    - "pm2"
     - "dotnet"
     - "node"
   update:
     order:
     - "node"
     - "dotnet"
-    - "pm2"
     - "server"
     - "omniroute"
     - "code-server"
+
+npmSync:
+  packages:
+    "pm2":
+      version: "7.0.1"
+      target: "7.0.1"
+    "@anthropic-ai/claude-code":
+      version: "2.1.119"
+      target: "2.1.119"
+    "@fission-ai/openspec":
+      version: "1.3.1"
+      target: "1.3.1"
+    "@openai/codex":
+      version: "0.125.0"
+      target: "0.125.0"
+    "skills":
+      version: "1.5.1"
+      target: "1.5.1"

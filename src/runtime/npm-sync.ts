@@ -9,6 +9,11 @@ import {
   type NpmCommandResult,
   type NpmGlobalCommandOptions
 } from "./npm-global.js";
+import {
+  getDefaultRuntimeManifestPath,
+  loadRuntimeManifest,
+  type LoadedRuntimeManifest
+} from "./runtime-manifest.js";
 import { verifyNodeRuntime } from "./node-verify.js";
 import {
   buildToolSyncPackageSet,
@@ -112,7 +117,8 @@ export interface NpmSyncSummary {
 
 export interface NpmSyncOptions {
   runtimePath: string;
-  manifestPath: string;
+  manifestPath?: string;
+  runtimeManifestPath?: string;
   registryMirror?: string;
   fallbackPolicy?: NpmSyncFallbackPolicy;
   force?: boolean;
@@ -222,6 +228,13 @@ export async function loadNpmSyncManifest(
   }
 
   return validateNpmSyncManifest(parsed);
+}
+
+export async function loadNpmSyncManifestFromRuntimeManifest(
+  manifestPath = getDefaultRuntimeManifestPath()
+): Promise<NpmSyncManifest> {
+  const runtimeManifest = await loadRuntimeManifest({ manifestPath });
+  return validateEmbeddedNpmSyncManifest(runtimeManifest);
 }
 
 export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
@@ -408,7 +421,8 @@ interface MirrorAwareCommandExecution {
 export async function syncNpmGlobals(
   options: NpmSyncOptions
 ): Promise<NpmSyncSummary> {
-  const manifest = await loadNpmSyncManifest(options.manifestPath);
+  const manifestSource = await resolveNpmSyncManifestSource(options);
+  const manifest = manifestSource.manifest;
   const registryMirrorOverride = validateRegistryMirror(
     options.registryMirror,
     "--registry-mirror"
@@ -417,7 +431,7 @@ export async function syncNpmGlobals(
   const fallbackPolicy = normalizeFallbackPolicy(options.fallbackPolicy);
   options.onLog?.({
     type: "manifest-loaded",
-    manifestPath: options.manifestPath,
+    manifestPath: manifestSource.manifestPath,
     packageCount: Object.keys(manifest.packages).length,
     syncMode: manifest.syncMode,
     registryMirror
@@ -529,7 +543,7 @@ export async function syncNpmGlobals(
 
   const summary: NpmSyncSummary = {
     runtime,
-    manifestPath: options.manifestPath,
+    manifestPath: manifestSource.manifestPath,
     packageCount: plan.length,
     syncMode: manifest.syncMode,
     registryMirror,
@@ -543,6 +557,44 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "summary", summary });
 
   return summary;
+}
+
+async function resolveNpmSyncManifestSource(options: {
+  manifestPath?: string;
+  runtimeManifestPath?: string;
+}): Promise<{ manifest: NpmSyncManifest; manifestPath: string }> {
+  if (options.manifestPath && options.runtimeManifestPath) {
+    throw new NpmSyncError(
+      "Specify either manifestPath or runtimeManifestPath, not both."
+    );
+  }
+
+  if (options.manifestPath) {
+    return {
+      manifest: await loadNpmSyncManifest(options.manifestPath),
+      manifestPath: options.manifestPath
+    };
+  }
+
+  const runtimeManifestPath =
+    options.runtimeManifestPath ?? getDefaultRuntimeManifestPath();
+
+  return {
+    manifest: await loadNpmSyncManifestFromRuntimeManifest(runtimeManifestPath),
+    manifestPath: runtimeManifestPath
+  };
+}
+
+function validateEmbeddedNpmSyncManifest(
+  runtimeManifest: LoadedRuntimeManifest
+): NpmSyncManifest {
+  if (!runtimeManifest.npmSync) {
+    throw new NpmSyncError(
+      `Runtime manifest ${runtimeManifest.manifestPath} does not define npmSync. Add npmSync.packages or npmSync.tools.`
+    );
+  }
+
+  return validateNpmSyncManifest(runtimeManifest.npmSync);
 }
 
 async function executeMirrorAwareNpmCommand(options: {

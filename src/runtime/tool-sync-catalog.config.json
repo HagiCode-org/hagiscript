@@ -11,24 +11,6 @@
       "requirement": "mandatory"
     },
     {
-      "id": "omniroute",
-      "displayName": "OmniRoute",
-      "packageName": "omniroute",
-      "version": "3.6.9",
-      "target": "3.6.9",
-      "group": "mandatory",
-      "requirement": "mandatory"
-    },
-    {
-      "id": "code-server",
-      "displayName": "code-server",
-      "packageName": "code-server",
-      "version": "4.117.0",
-      "target": "4.117.0",
-      "group": "mandatory",
-      "requirement": "mandatory"
-    },
-    {
       "id": "codex",
       "displayName": "Codex CLI",
       "packageName": "@openai/codex",

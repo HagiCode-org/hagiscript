@@ -20,24 +20,39 @@ paths:
   vendoredRoot: "components/services"
 
 components:
-  - name: "alpha"
-    type: "bundled-runtime"
-    runtimeDataDir: "alpha-data"
-    installScript: "scripts/install-component.mjs"
-    verifyScript: "scripts/verify-component.mjs"
-    version: "1.0.0"
+- name: "alpha"
+  type: "bundled-runtime"
+  runtimeDataDir: "alpha-data"
+  installScript: "scripts/install-component.mjs"
+  verifyScript: "scripts/verify-component.mjs"
+  version: "1.0.0"
 
-  - name: "beta"
-    type: "bundled-runtime"
-    runtimeDataDir: "beta-data"
-    installScript: "scripts/install-component.mjs"
-    verifyScript: "scripts/verify-component.mjs"
-    version: "1.0.0"
+- name: "beta"
+  type: "bundled-runtime"
+  runtimeDataDir: "beta-data"
+  installScript: "scripts/install-component.mjs"
+  verifyScript: "scripts/verify-component.mjs"
+  version: "1.0.0"
 
 phases:
   install:
-    order: ["alpha", "beta"]
+    order: [ "alpha", "beta" ]
   remove:
-    order: ["beta", "alpha"]
+    order: [ "beta", "alpha" ]
   update:
-    order: ["alpha", "beta"]
+    order: [ "alpha", "beta" ]
+
+npmSync:
+  packages:
+    "@anthropic-ai/claude-code":
+      version: "2.1.119"
+      target: "2.1.119"
+    "@fission-ai/openspec":
+      version: "1.3.1"
+      target: "1.3.1"
+    "@openai/codex":
+      version: "0.125.0"
+      target: "0.125.0"
+    "skills":
+      version: "1.5.1"
+      target: "1.5.1"

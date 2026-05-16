@@ -154,11 +154,28 @@ export async function runManagedPm2Command(
 
   switch (options.action) {
     case "start":
-      if (definition.launchStrategy === "released-service") {
-        await prepareReleasedServicePm2Files(definition)
+      {
+        const existingStatus = await readManagedPm2Status(definition, "start", runner)
+        if (existingStatus.status === "online") {
+          return existingStatus
+        }
+
+        if (existingStatus.exists) {
+          if (definition.launchStrategy === "released-service") {
+            await prepareReleasedServicePm2Files(definition)
+          }
+          await executePm2(definition, buildPm2ActionArgs(definition, "restart"), runner, {
+            allowMissingProcess: true
+          })
+          return readManagedPm2Status(definition, "start", runner)
+        }
+
+        if (definition.launchStrategy === "released-service") {
+          await prepareReleasedServicePm2Files(definition)
+        }
+        await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner)
+        return readManagedPm2Status(definition, "start", runner)
       }
-      await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner)
-      return readManagedPm2Status(definition, "start", runner)
     case "restart":
       if (definition.launchStrategy === "released-service") {
         await prepareReleasedServicePm2Files(definition)

@@ -1,6 +1,7 @@
 import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   NpmCommandError,
@@ -9,6 +10,7 @@ import {
 import {
   createNpmSyncPlan,
   loadNpmSyncManifest,
+  loadNpmSyncManifestFromRuntimeManifest,
   normalizeGlobalInventory,
   syncNpmGlobals,
   validateNpmSyncManifest
@@ -53,6 +55,56 @@ describe("npm-sync manifest validation", () => {
     expect(manifest.syncMode).toBe("packages");
   });
 
+  it("loads embedded npmSync manifests from runtime manifests", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-runtime-npm-sync-"));
+    const manifestPath = join(directory, "runtime-manifest.yaml");
+    const existingScriptPath = fileURLToPath(import.meta.url);
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: embedded-npm-sync
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["node"]
+  remove:
+    order: ["node"]
+  update:
+    order: ["node"]
+components:
+  - name: "node"
+    type: "runtime"
+    installScript: "${existingScriptPath.replaceAll("\\", "/")}"
+npmSync:
+  packages:
+    skills:
+      version: "^1.5.0"
+      target: "1.5.1"
+`,
+      "utf8"
+    );
+
+    const manifest = await loadNpmSyncManifestFromRuntimeManifest(manifestPath);
+
+    expect(manifest.syncMode).toBe("packages");
+    expect(manifest.packages.skills).toEqual({
+      version: "^1.5.0",
+      target: "1.5.1"
+    });
+  });
+
   it("loads product-managed tool manifests with mandatory and selected tools", () => {
     const manifest = validateNpmSyncManifest({
       registryMirror: "https://registry.example.com/",
@@ -72,8 +124,6 @@ describe("npm-sync manifest validation", () => {
       "@fission-ai/openspec",
       "@openai/codex",
       "@scope/agent-cli",
-      "code-server",
-      "omniroute",
       "skills"
     ]);
     expect(manifest.packages["@openai/codex"]).toMatchObject({
@@ -99,11 +149,7 @@ describe("npm-sync manifest validation", () => {
       tools: { optionalAgentCliSyncEnabled: true }
     });
 
-    expect(Object.keys(manifest.packages)).toEqual([
-      "code-server",
-      "omniroute",
-      "skills"
-    ]);
+    expect(Object.keys(manifest.packages)).toEqual(["skills"]);
   });
 
   it("rejects manifests without packages", () => {

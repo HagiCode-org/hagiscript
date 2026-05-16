@@ -3,14 +3,16 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import * as pm2ManagerModule from "../runtime/pm2-manager.js"
 import { loadRuntimeManifest } from "../runtime/runtime-manifest.js"
 import {
   installRuntime,
+  removeRuntime,
   planRuntimeLifecycle,
   queryRuntimeState
 } from "../runtime/runtime-manager.js"
-import { createInitialRuntimeState } from "../runtime/runtime-state.js"
+import { createInitialRuntimeState, writeRuntimeState } from "../runtime/runtime-state.js"
 import { resolveRuntimePaths } from "../runtime/runtime-paths.js"
 
 const fixtureManifestPath = path.resolve(
@@ -89,6 +91,31 @@ components:
     await rm(directory, { recursive: true, force: true })
   })
 
+  it("loads optional embedded npmSync configuration from the runtime manifest", async () => {
+    const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
+
+    expect(manifest.npmSync).toEqual({
+      packages: {
+        "@anthropic-ai/claude-code": {
+          version: "2.1.119",
+          target: "2.1.119"
+        },
+        "@fission-ai/openspec": {
+          version: "1.3.1",
+          target: "1.3.1"
+        },
+        "@openai/codex": {
+          version: "0.125.0",
+          target: "0.125.0"
+        },
+        skills: {
+          version: "1.5.1",
+          target: "1.5.1"
+        }
+      }
+    })
+  })
+
   it("rejects PM2 manifests without a required naming env declaration", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-pm2-name-"))
     const manifestPath = path.join(directory, "invalid-pm2-name.yaml")
@@ -130,21 +157,20 @@ components:
       "utf8"
     )
 
-    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
-      /pm2\.nameIdentifierEnv must be a non-empty string/
-    )
+    await expect(loadRuntimeManifest({ manifestPath })).resolves.toBeDefined()
     await rm(directory, { recursive: true, force: true })
   })
 
-  it("rejects PM2 manifests with invalid naming env declarations", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-pm2-name-format-"))
-    const manifestPath = path.join(directory, "invalid-pm2-name-format.yaml")
+  it("rejects manifests with invalid runtime hagicodeInstance", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-instance-format-"))
+    const manifestPath = path.join(directory, "invalid-instance-format.yaml")
 
     await writeFile(
       manifestPath,
       `runtime:
   name: invalid
   version: 1.0.0
+  hagicodeInstance: "Invalid-Instance"
 paths:
   runtimeRoot: "~/.hagicode/runtime"
   bin: "bin"
@@ -170,7 +196,6 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
-      nameIdentifierEnv: "HAGICODE_PM2_NAME"
     releasedService:
       dllPath: "current/lib/PCode.Web.dll"
       workingDirectory: "current/lib"
@@ -179,7 +204,7 @@ components:
     )
 
     await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
-      /pm2\.nameIdentifierEnv must match \^\[a-z0-9_\]\+\$/
+      /runtime\.hagicodeInstance must match \^\[a-z0-9_\]\+\$/
     )
     await rm(directory, { recursive: true, force: true })
   })
@@ -334,15 +359,15 @@ components:
     expect(report.layout.programRoots).toEqual([
       path.join(runtimeRoot, "program"),
       path.join(runtimeRoot, "program", "bin"),
-      path.join(runtimeRoot, "program", "components"),
-      path.join(runtimeRoot, "program", "npm")
+      path.join(runtimeRoot, "program", "components")
     ])
     expect(report.layout.externalDataRoots).toEqual([
       path.join(runtimeRoot, "runtime-data"),
       path.join(runtimeRoot, "runtime-data", "config"),
       path.join(runtimeRoot, "runtime-data", "logs"),
       path.join(runtimeRoot, "runtime-data", "data"),
-      path.join(runtimeRoot, "runtime-data", "components")
+      path.join(runtimeRoot, "runtime-data", "components"),
+      path.join(runtimeRoot, "runtime-data", "npm")
     ])
     expect(report.components.map((item) => item.status)).toEqual([
       "installed",
@@ -359,6 +384,111 @@ components:
     )
 
     await rm(runtimeRoot, { recursive: true, force: true })
+  })
+
+  it("stops and deletes pm2-managed bundled runtimes during remove", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-remove-pm2-"))
+    const runtimeRoot = path.join(directory, "runtime-root")
+    const manifestPath = path.join(directory, "manifest.yaml")
+    const pm2Spy = vi
+      .spyOn(pm2ManagerModule, "runManagedPm2Command")
+      .mockResolvedValue({
+        service: "omniroute",
+        action: "stop",
+        baseAppName: "hagicode-omniroute",
+        appName: "hagicode-omniroute-test",
+        nameIdentifierEnv: "hagicode_instance",
+        nameIdentifier: "test",
+        cwd: runtimeRoot,
+        script: "launcher.mjs",
+        runtimeHome: runtimeRoot,
+        runtimeDataHome: runtimeRoot,
+        pm2Home: runtimeRoot,
+        pm2Binary: "pm2",
+        exists: false,
+        status: "missing",
+        pid: null,
+        stdout: "[]",
+        stderr: "",
+        launchStrategy: "node-script"
+      })
+
+    try {
+      await writeFile(
+        manifestPath,
+        `runtime:
+  name: fixture-runtime
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
+  serverProgramRoot: "server"
+  serverDataRoot: "server-data"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node/runtime"
+  dotnetRuntime: "components/dotnet/runtime"
+  vendoredRoot: "components/bundled"
+phases:
+  install:
+    order: ["omniroute"]
+  remove:
+    order: ["omniroute"]
+  update:
+    order: ["omniroute"]
+components:
+  - name: "omniroute"
+    type: "bundled-runtime"
+    runtimeDataDir: "services/omniroute"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    removeScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "hagicode-omniroute"
+      script: "current/omniroute-launcher.mjs"
+`,
+        "utf8"
+      )
+
+      await mkdir(path.join(directory, "templates"), { recursive: true })
+      await writeFile(
+        path.join(directory, "templates", "service-template.txt"),
+        "component={{COMPONENT_NAME}} root={{RUNTIME_ROOT}} phase={{PHASE}}\n",
+        "utf8"
+      )
+
+      await mkdir(runtimeRoot, { recursive: true })
+      await removeRuntime({ manifestPath, runtimeRoot })
+
+      expect(pm2Spy).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          manifestPath,
+          runtimeRoot,
+          service: "omniroute",
+          action: "stop"
+        })
+      )
+      expect(pm2Spy).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          manifestPath,
+          runtimeRoot,
+          service: "omniroute",
+          action: "delete"
+        })
+      )
+    } finally {
+      pm2Spy.mockRestore()
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it("surfaces script stderr and runtime log paths when a component install fails", async () => {
@@ -390,10 +520,7 @@ components:
     const setup = await createReleasedServiceRuntimeFixture()
 
     try {
-      await installRuntime({
-        manifestPath: setup.manifestPath,
-        runtimeRoot: setup.runtimeRoot
-      })
+      await seedReleasedServiceRuntimeState(setup)
       const report = await queryRuntimeState({
         manifestPath: setup.manifestPath,
         runtimeRoot: setup.runtimeRoot
@@ -402,7 +529,7 @@ components:
 
       expect(server?.status).toBe("installed")
       expect(server?.programPaths).toEqual([
-        path.join(setup.runtimeRoot, "program", "components", "server")
+        path.join(setup.runtimeRoot, "program", "server")
       ])
       expect(server?.externalDataPaths).toContain(
         path.join(setup.runtimeRoot, "runtime-data", "components", "services", "server")
@@ -429,10 +556,7 @@ components:
     const setup = await createReleasedServiceRuntimeFixture({ serviceLocation: "external" })
 
     try {
-      await installRuntime({
-        manifestPath: setup.manifestPath,
-        runtimeRoot: setup.runtimeRoot
-      })
+      await seedReleasedServiceRuntimeState(setup)
       const report = await queryRuntimeState({
         manifestPath: setup.manifestPath,
         runtimeRoot: setup.runtimeRoot
@@ -441,7 +565,7 @@ components:
 
       expect(server?.status).toBe("installed")
       expect(server?.programPaths).toEqual([
-        path.join(setup.runtimeRoot, "program", "components", "server")
+        path.join(setup.runtimeRoot, "program", "server")
       ])
       expect(server?.externalDataPaths).toContain(
         path.join(setup.runtimeRoot, "runtime-data", "components", "services", "server")
@@ -527,7 +651,6 @@ components:
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
-      nameIdentifierEnv: "hagicode_pm2_name"
     releasedService:
       dllPath: "${
         options.serviceLocation === "external"
@@ -560,4 +683,46 @@ components:
 
 function normalizeManifestPath(value: string): string {
   return value.replaceAll("\\", "/")
+}
+
+async function seedReleasedServiceRuntimeState(setup: {
+  manifestPath: string
+  runtimeRoot: string
+  releasedPayloadPath: string
+  releasedWorkingDirectory: string
+}): Promise<void> {
+  const manifest = await loadRuntimeManifest({ manifestPath: setup.manifestPath })
+  const paths = resolveRuntimePaths(manifest, { runtimeRoot: setup.runtimeRoot })
+  const state = createInitialRuntimeState(manifest, paths)
+
+  state.components.server = {
+    name: "server",
+    type: "released-service",
+    status: "installed",
+    version: null,
+    managedProgramPaths: [paths.serverProgramRoot],
+    managedDataPaths: [path.join(paths.componentDataRoot, "services", "server")],
+    managedPaths: [
+      paths.serverProgramRoot,
+      path.join(paths.componentDataRoot, "services", "server")
+    ],
+    lastAction: "install",
+    lastUpdatedAt: new Date().toISOString(),
+    logFile: null,
+    details: {
+      releasedPayloadPath: setup.releasedPayloadPath,
+      releasedWorkingDirectory: setup.releasedWorkingDirectory,
+      launchAssetsDirectory: path.join(
+        setup.runtimeRoot,
+        "runtime-data",
+        "components",
+        "services",
+        "server",
+        "pm2-runtime"
+      ),
+      releasedServiceReady: true
+    }
+  }
+
+  await writeRuntimeState(paths.stateFile, state)
 }

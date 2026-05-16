@@ -136,7 +136,7 @@ export function registerServerCommands(program: Command): void {
 
   server
     .command("install")
-    .description("download or stage a server package and install runtime dependencies, including pm2")
+    .description("download or stage a server package and install runtime dependencies, including managed pm2")
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
     .option("--archive <path>", "install from a local server zip archive")
@@ -162,9 +162,9 @@ export function registerServerCommands(program: Command): void {
     .option("--tag <tag>", "GitHub release tag to download", "latest")
     .option("--asset <name>", "exact archive asset name to install")
     .option("--force", "reinstall runtime dependencies and the server runtime component")
-    .option("--no-ensure-pm2", "skip installation of the managed pm2 runtime component")
-    .option("--pm2-version <range>", "override the pm2 runtime component version or semver range")
-    .option("--registry-mirror <url>", "npm registry mirror to use when installing the pm2 runtime component")
+    .option("--no-ensure-pm2", "skip installation of the managed pm2 npm dependency")
+    .option("--pm2-version <range>", "override the managed pm2 npm version or semver range")
+    .option("--registry-mirror <url>", "npm registry mirror to use when installing managed pm2")
     .option("--no-download-cache", "disable reuse of the shared download cache")
     .option("--download-cache-dir <path>", "override the shared download cache directory")
     .option("--github-token <token>", "GitHub token used for release API and asset downloads")

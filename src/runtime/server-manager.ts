@@ -33,6 +33,7 @@ import {
   type ResolvedRuntimePaths
 } from "./runtime-paths.js"
 import {
+  ensureManagedPm2Package,
   installRuntime,
   queryRuntimeState,
   type RuntimeLifecycleResult,
@@ -232,6 +233,7 @@ const MANAGED_SERVER_INTEGRATION_DEPENDENCIES: readonly ManagedPm2ServiceName[] 
 ]
 const VSCODE_SERVER_SOURCE_EXTERNAL = "external"
 const VSCODE_SERVER_SECRET_SOURCE_BOOTSTRAP = "bootstrap"
+const OMNIROUTE_SOURCE_EXTERNAL = "external"
 
 export async function installManagedServer(
   options: ManagedServerInstallOptions = {}
@@ -239,9 +241,10 @@ export async function installManagedServer(
   const logger = options.logger ?? (() => undefined)
   const runner = options.runner ?? runCommand
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
+  const resolvedInstallOptions = applyManifestServerInstallDefaults(manifest, options)
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
   const serverComponent = assertServerComponent(manifest.componentMap.get("server"))
-  const archive = await resolveServerArchive(options, logger)
+  const archive = await resolveServerArchive(resolvedInstallOptions, logger)
   const installedVersion = resolveManagedServerVersion(archive)
 
   try {
@@ -256,9 +259,7 @@ export async function installManagedServer(
     })
 
     const installRuntimeFn = options.installRuntimeFn ?? installRuntime
-    const runtimeDependencyComponents = (options.ensurePm2 ?? true)
-      ? [...serverComponent.lifecycleDependencies]
-      : serverComponent.lifecycleDependencies.filter((componentName) => componentName !== "pm2")
+    const runtimeDependencyComponents = [...serverComponent.lifecycleDependencies]
     const runtimeLifecycle = await installRuntimeFn({
       manifestPath: options.manifestPath,
       runtimeRoot: options.runtimeRoot,
@@ -270,6 +271,13 @@ export async function installManagedServer(
       pm2VersionOverride: options.pm2Version,
       logger
     })
+
+    if (options.ensurePm2 ?? true) {
+      await ensureManagedPm2Package(manifest, paths, {
+        npmRegistryMirror: options.registryMirror,
+        pm2VersionOverride: options.pm2Version
+      })
+    }
 
     const versionStateContext = await resolveManagedServerVersionStateContext({
       manifestPath: options.manifestPath,
@@ -315,6 +323,33 @@ export async function installManagedServer(
     }
   } finally {
     await archive.cleanup()
+  }
+}
+
+function applyManifestServerInstallDefaults(
+  manifest: Awaited<ReturnType<typeof loadRuntimeManifest>>,
+  options: ManagedServerInstallOptions
+): ManagedServerInstallOptions {
+  if (
+    options.archivePath ||
+    options.packageDirectory ||
+    options.url ||
+    options.indexUrl ||
+    options.indexChannel ||
+    options.indexVersion
+  ) {
+    return options
+  }
+
+  const serverComponent = manifest.componentMap.get("server")
+  const activeVersion = serverComponent?.releasedService?.activeVersion?.trim()
+  if (!activeVersion) {
+    return options
+  }
+
+  return {
+    ...options,
+    indexVersion: activeVersion
   }
 }
 
@@ -546,9 +581,10 @@ async function resolveManagedOmniRouteEnvironment(
 
   return {
     OmniRoute__Enabled: "true",
-    OmniRoute__EnabledManagedStartup: "false",
     OmniRoute__ApiEndpoint: baseUrl,
-    OmniRoute__DefaultBaseUrl: baseUrl
+    OmniRoute__DefaultBaseUrl: baseUrl,
+    OmniRoute__DefaultBaseUrlSource: OMNIROUTE_SOURCE_EXTERNAL,
+    OmniRoute__DefaultBaseUrlLocked: "true"
   }
 }
 

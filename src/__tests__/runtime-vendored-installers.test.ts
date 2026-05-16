@@ -40,6 +40,7 @@ describe("vendored runtime installers", () => {
     const vendoredArch = getVendoredArch()
     const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.tar.gz`
     const assetBuffer = createTarGzArchive("release", {
+      "templates/code-server-config.yaml": "bind-addr: 127.0.0.1:8080\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{DATA_DIR}}/extensions\nlog: info\n",
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
@@ -111,6 +112,7 @@ describe("vendored runtime installers", () => {
     const vendoredArch = getVendoredArch()
     const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.tar.gz`
     const assetBuffer = createTarGzArchive("release", {
+      "templates/code-server-config.yaml": "bind-addr: 127.0.0.1:8080\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{DATA_DIR}}/extensions\nlog: info\n",
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
@@ -155,8 +157,9 @@ describe("vendored runtime installers", () => {
     const assetBuffer = createTarGzArchive(
       `omniroute-${releaseVersion}-${vendoredPlatform}-${vendoredArch}`,
       {
+        "templates/omniroute-config.yaml": "runtimeHome: {{RUNTIME_ROOT}}\nlisten: \"127.0.0.1:39001\"\ndataDir: {{DATA_DIR}}\nlogDir: {{LOGS_DIR}}\n",
         "bin/omniroute.mjs": createRecordedEntrypoint({
-          includeEnvKeys: ["DATA_DIR", "LOG_DIR", "PORT"],
+          includeEnvKeys: [],
           moduleType: "esm"
         })
       }
@@ -206,10 +209,7 @@ describe("vendored runtime installers", () => {
       })
 
       const launched = JSON.parse(await readFile(outputPath, "utf8"))
-      expect(launched.argv).toEqual(["--no-open", "--help"])
-      expect(launched.env.DATA_DIR).toBe(runtimeDataHome)
-      expect(launched.env.LOG_DIR).toBe(path.join(runtimeDataHome, "logs"))
-      expect(launched.env.PORT).toBe("39001")
+      expect(launched.argv).toEqual(["--config", configPath, "--no-open", "--help"])
       expect(await readFile(configPath, "utf8")).toContain('listen: "127.0.0.1:39001"')
     } finally {
       await releaseServer.close()
@@ -256,12 +256,14 @@ function createRuntimeScriptEnv(
     HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR: componentDataHome,
     HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR: path.join(componentDataHome, "logs"),
     HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME: path.join(componentDataHome, "pm2"),
+    HAGISCRIPT_RUNTIME_NPM_PREFIX: path.join(runtimeHome, "npm"),
     HAGISCRIPT_RUNTIME_TEMPLATE_DIR: path.join(repoRoot, "runtime", "templates"),
     HAGISCRIPT_RUNTIME_COMPONENT_VERSION:
       componentName === "code-server" ? "4.117.0" : "3.6.9",
     HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY: "HagiCode-org/vendered",
     HAGISCRIPT_RUNTIME_VENDORED_TAG: releaseTag,
     HAGISCRIPT_RUNTIME_VENDORED_BASE_URL: baseUrl,
+    HAGISCRIPT_DOWNLOAD_CACHE_DIR: downloadCacheDir ?? path.join(runtimeRoot, "download-cache"),
     ...(downloadCacheDir
       ? { HAGISCRIPT_DOWNLOAD_CACHE_DIR: downloadCacheDir }
       : {})

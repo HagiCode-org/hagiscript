@@ -17,27 +17,27 @@ const launcherPath = path.join(currentRoot, "omniroute-launcher.mjs")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
 
 await ensureDirectory(currentRoot)
-await materializeTemplate("omniroute-config.yaml", configPath, {
-  RUNTIME_ROOT: context.runtimeHome,
-  DATA_DIR: context.runtimeDataHome,
-  LOGS_DIR: context.componentLogsDir
-})
 const installedPackage = await installVendoredPackage(context, {
   prefixRoot: currentRoot,
   packageName: "omniroute",
   entrypointRelativePath: path.join("bin", "omniroute.mjs")
 })
+await materializeTemplate(
+  "omniroute-config.yaml",
+  configPath,
+  {
+    RUNTIME_ROOT: context.runtimeHome,
+    DATA_DIR: context.runtimeDataHome,
+    LOGS_DIR: context.componentLogsDir
+  },
+  path.join(currentRoot, "templates")
+)
 await writeManagedPackageLauncher(
   launcherPath,
   {
     entrypointPath: installedPackage.entrypointPath,
     configPath,
-    baseArgs: ["--no-open"],
-    defaultEnv: {
-      DATA_DIR: context.runtimeDataHome,
-      LOG_DIR: context.componentLogsDir,
-      PORT: "39001"
-    },
+    baseArgs: ["--config", configPath, "--no-open"],
     serviceKind: "omniroute"
   }
 )

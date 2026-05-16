@@ -1,11 +1,22 @@
 import { Command, InvalidArgumentError } from "commander";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   getDefaultManagedNodeRuntimeDirectory,
   resolveManagedNodeRuntime
 } from "../runtime/node-installer.js";
+import { getManagedNpmPackagesPrefix } from "../runtime/runtime-executor.js";
+import {
+  getDefaultRuntimeManifestPath,
+  loadRuntimeManifest
+} from "../runtime/runtime-manifest.js";
+import { readRuntimeState } from "../runtime/runtime-state.js";
+import {
+  defaultRuntimeRoot,
+  normalizeManagedRoot,
+  resolveRuntimePaths
+} from "../runtime/runtime-paths.js";
 import {
   NpmManifestValidationError,
   NpmSyncCommandError,
@@ -18,7 +29,9 @@ import {
 
 interface NpmSyncCommandOptions {
   runtime?: string;
+  runtimeRoot?: string;
   manifest?: string;
+  fromManifest?: string;
   managedRuntime?: string;
   downloadCache?: boolean;
   downloadCacheDir?: string;
@@ -37,6 +50,7 @@ export function registerNpmSyncCommand(program: Command): void {
       "sync managed npm tools using HagiScript's Node.js runtime, or an explicit runtime for compatibility"
     )
     .option("--runtime <path>", "explicit Node.js runtime directory")
+    .option("--runtime-root <path>", "managed runtime root used to resolve default manifest and npm prefix")
     .option(
       "--managed-runtime <path>",
       "HagiScript-managed runtime directory to verify or install before sync"
@@ -47,6 +61,10 @@ export function registerNpmSyncCommand(program: Command): void {
       "override the shared download cache directory"
     )
     .option("--manifest <path>", "npm-sync manifest JSON file")
+    .option(
+      "--from-manifest <path>",
+      "runtime manifest YAML file with embedded npmSync configuration"
+    )
     .option(
       "--registry-mirror <url>",
       "npm registry mirror URL to use for this sync run"
@@ -79,10 +97,18 @@ export function registerNpmSyncCommand(program: Command): void {
       const explicitRuntime = options.runtime
         ? validatePathOption(options.runtime, "--runtime")
         : undefined;
+      const runtimeRoot = normalizeManagedRoot(
+        options.runtimeRoot
+          ? validatePathOption(options.runtimeRoot, "--runtime-root")
+          : defaultRuntimeRoot
+      );
       const registryMirror = validateRegistryMirror(
         options.registryMirror,
         "--registry-mirror"
       );
+      const explicitRuntimeManifestPath = options.fromManifest
+        ? validatePathOption(options.fromManifest, "--from-manifest")
+        : undefined;
       const prefix = options.prefix
         ? validatePathOption(options.prefix, "--prefix")
         : undefined;
@@ -99,33 +125,61 @@ export function registerNpmSyncCommand(program: Command): void {
             )
           : undefined;
 
-      if (!manifestPath) {
+      if (manifestPath && explicitRuntimeManifestPath) {
         throw new InvalidArgumentError(
-          "--manifest is required unless --selected-agent-cli or --custom-agent-cli is provided."
+          "--manifest and --from-manifest cannot be used together."
+        );
+      }
+
+      if (explicitRuntimeManifestPath && hasInlineToolSelection) {
+        throw new InvalidArgumentError(
+          "--from-manifest cannot be combined with --selected-agent-cli or --custom-agent-cli."
         );
       }
 
       const managedRuntimePath = options.managedRuntime
         ? validatePathOption(options.managedRuntime, "--managed-runtime")
-        : getDefaultManagedNodeRuntimeDirectory();
+        : undefined;
 
       try {
+        const runtimeState = await resolveRuntimeState(runtimeRoot);
+        const runtimeManifestPath =
+          explicitRuntimeManifestPath ??
+          (!manifestPath && !hasInlineToolSelection
+            ? runtimeState?.runtime.manifestPath
+            : undefined);
+        const resolvedPaths = await resolveRuntimePathsFromManifest(
+          runtimeManifestPath,
+          runtimeRoot
+        );
         const runtimePath = explicitRuntime ?? (await resolveManagedNodeRuntime({
-          targetDirectory: managedRuntimePath,
+          targetDirectory:
+            managedRuntimePath
+              ? managedRuntimePath
+              : runtimeState?.managedPaths?.nodeRuntime ??
+                resolvedPaths?.nodeRuntime ??
+                getDefaultManagedNodeRuntimeDirectory(),
           downloadCacheEnabled: options.downloadCache,
           downloadCacheDirectory: options.downloadCacheDir
             ? validatePathOption(options.downloadCacheDir, "--download-cache-dir")
             : undefined
         })).targetDirectory;
         const fallbackPolicy = options.mirrorOnly ? "mirror-only" : "auto";
+        const resolvedPrefix = prefix ?? (await resolveDefaultPrefix({
+          runtimeManifestPath,
+          runtimeState,
+          resolvedPaths,
+          hasStandaloneManifest: Boolean(manifestPath)
+        }));
 
         await syncNpmGlobals({
           runtimePath,
           manifestPath,
+          runtimeManifestPath,
           registryMirror,
           fallbackPolicy,
           force: options.force ?? false,
-          npmOptions: prefix ? { prefix } : undefined,
+          npmOptions: resolvedPrefix ? { prefix: resolvedPrefix } : undefined,
           onLog: printNpmSyncLog
         });
       } catch (error) {
@@ -136,6 +190,49 @@ export function registerNpmSyncCommand(program: Command): void {
 
 function collectValues(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+async function resolveDefaultPrefix(options: {
+  runtimeManifestPath?: string;
+  runtimeState?: Awaited<ReturnType<typeof readRuntimeState>>;
+  resolvedPaths?: ReturnType<typeof resolveRuntimePaths>;
+  hasStandaloneManifest: boolean;
+}): Promise<string | undefined> {
+  if (options.hasStandaloneManifest) {
+    return undefined;
+  }
+
+  if (options.runtimeState?.managedPaths?.npmPrefix) {
+    return options.runtimeState.managedPaths.npmPrefix;
+  }
+
+  if (options.resolvedPaths?.npmPrefix) {
+    return options.resolvedPaths.npmPrefix;
+  }
+
+  const manifest = await loadRuntimeManifest({
+    manifestPath: options.runtimeManifestPath ?? getDefaultRuntimeManifestPath()
+  });
+
+  return getManagedNpmPackagesPrefix(resolveRuntimePaths(manifest));
+}
+
+async function resolveRuntimeState(
+  runtimeRoot: string
+): Promise<Awaited<ReturnType<typeof readRuntimeState>> | undefined> {
+  const statePath = resolve(runtimeRoot, "runtime-data", "state.json");
+  return (await readRuntimeState(statePath)) ?? undefined;
+}
+
+async function resolveRuntimePathsFromManifest(
+  runtimeManifestPath: string | undefined,
+  runtimeRoot: string
+): Promise<ReturnType<typeof resolveRuntimePaths> | undefined> {
+  const manifest = await loadRuntimeManifest({
+    manifestPath: runtimeManifestPath ?? getDefaultRuntimeManifestPath()
+  });
+
+  return resolveRuntimePaths(manifest, { runtimeRoot });
 }
 
 async function writeInlineToolManifest(

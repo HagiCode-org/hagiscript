@@ -19,14 +19,19 @@ const configPath = path.join(context.componentConfigDir, "config.yaml")
 const entrypointPackageJsonPath = path.join(currentRoot, "out", "node", "package.json")
 
 await ensureDirectory(currentRoot)
-await materializeTemplate("code-server-config.yaml", configPath, {
-  DATA_DIR: context.runtimeDataHome
-})
 const installedPackage = await installVendoredPackage(context, {
   prefixRoot: currentRoot,
   packageName: "code-server",
   entrypointRelativePath: path.join("out", "node", "entry.js")
 })
+await materializeTemplate(
+  "code-server-config.yaml",
+  configPath,
+  {
+    DATA_DIR: context.runtimeDataHome
+  },
+  path.join(currentRoot, "templates")
+)
 await writeFile(
   entrypointPackageJsonPath,
   `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,

@@ -356,7 +356,7 @@ export function getManagedRuntimePathEntries(paths: ResolvedRuntimePaths): strin
 }
 
 export function getManagedNpmPackagesPrefix(paths: ResolvedRuntimePaths): string {
-  return join(paths.runtimeDataRoot, "npm-packages")
+  return paths.npmPrefix
 }
 
 export function getManagedNpmBinDirectory(npmPrefix: string): string {

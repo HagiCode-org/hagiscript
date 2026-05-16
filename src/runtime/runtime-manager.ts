@@ -1,16 +1,29 @@
 import { existsSync } from "node:fs"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
+import process from "node:process"
+import semver from "semver"
+import {
+  installGlobalPackage,
+  listGlobalPackages,
+  type NpmGlobalCommandOptions
+} from "./npm-global.js"
+import { validateNpmSyncManifest } from "./npm-sync.js"
 import {
   installNodeRuntime,
   resolveManagedNodeRuntime
 } from "./node-installer.js"
-import { verifyNodeRuntime } from "./node-verify.js"
+import { getRuntimeExecutablePaths, verifyNodeRuntime } from "./node-verify.js"
 import {
   executeRuntimeScript,
   writeRuntimeLog
 } from "./runtime-executor.js"
-import { ManagedPm2Error, runManagedPm2Command } from "./pm2-manager.js"
+import {
+  ManagedPm2Error,
+  runManagedPm2Command,
+  supportedPm2Services,
+  type ManagedPm2ServiceName
+} from "./pm2-manager.js"
 import {
   loadRuntimeManifest,
   type LoadedRuntimeManifest,
@@ -113,6 +126,8 @@ export class RuntimeLifecycleError extends Error {
     this.name = "RuntimeLifecycleError"
   }
 }
+
+const DEFAULT_MANAGED_PM2_VERSION = "7.0.1"
 
 export async function installRuntime(
   options: RuntimeLifecycleOptions = {}
@@ -260,6 +275,16 @@ export async function runRuntimeLifecycle(
       }
     }
 
+    if (phase !== "remove" && shouldEnsureManagedPm2(plan, manifest)) {
+      const pm2Result = await ensureManagedPm2Package(manifest, paths, options)
+      await writeRuntimeLog(
+        logFilePath,
+        pm2Result.changed
+          ? `Managed pm2 installed into ${pm2Result.prefix} using ${pm2Result.selector}`
+          : `Managed pm2 already satisfied in ${pm2Result.prefix} (${pm2Result.installedVersion ?? "unknown version"})`
+      )
+    }
+
     operationState.finishedAt = now().toISOString()
     state.lastOperation = operationState
     await writeRuntimeState(paths.stateFile, state)
@@ -333,15 +358,15 @@ export async function queryRuntimeState(
   const programRoots = [
     paths.runtimeHome,
     paths.bin,
-    paths.componentsRoot,
-    paths.npmPrefix
+    paths.componentsRoot
   ]
   const externalDataRoots = [
     paths.runtimeDataRoot,
     paths.config,
     paths.logs,
     paths.data,
-    paths.componentDataRoot
+    paths.componentDataRoot,
+    paths.npmPrefix
   ]
 
   return {
@@ -591,8 +616,8 @@ async function executeScriptComponent(
   const scriptPath = resolveScriptForAction(action, component)
 
   if (scriptPath) {
-    if (action.phase === "remove" && component.type === "released-service") {
-      await cleanupReleasedServicePm2(component, manifest, paths, options, logFilePath)
+    if (action.phase === "remove") {
+      await cleanupManagedPm2Service(component, manifest, paths, options, logFilePath)
     }
 
     await executeRuntimeScript(scriptPath, {
@@ -868,6 +893,159 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
   ])
 }
 
+
+  function shouldEnsureManagedPm2(
+    plan: readonly RuntimePlannedAction[],
+    manifest: LoadedRuntimeManifest
+  ): boolean {
+    return plan.some((action) => manifest.componentMap.get(action.componentName)?.pm2)
+  }
+
+  export interface ManagedPm2EnsureResult {
+    changed: boolean
+    installedVersion: string | null
+    selector: string
+    prefix: string
+  }
+
+  export async function ensureManagedPm2Package(
+    manifest: LoadedRuntimeManifest,
+    paths: ResolvedRuntimePaths,
+    options: Pick<RuntimeLifecycleOptions, "npmRegistryMirror" | "pm2VersionOverride"> = {}
+  ): Promise<ManagedPm2EnsureResult> {
+    const verification = await verifyNodeRuntime(paths.nodeRuntime)
+    if (!verification.valid || !verification.npmPath) {
+      throw new RuntimeLifecycleError(
+        "Managed Node runtime is missing. Install the runtime node component before ensuring pm2."
+      )
+    }
+
+    const requirement = resolveManagedPm2Requirement(manifest, options.pm2VersionOverride)
+    await ensureManagedNpmPrefix(paths.npmPrefix)
+
+    const npmOptions: NpmGlobalCommandOptions = {
+      prefix: paths.npmPrefix,
+      registryMirror: options.npmRegistryMirror,
+      env: createManagedNpmInstallEnvironment(paths.nodeRuntime)
+    }
+    const inventoryResult = await listGlobalPackages(verification.npmPath, npmOptions)
+    const installedVersion = parseInstalledGlobalPackageVersion(inventoryResult.stdout, "pm2")
+
+    if (installedVersion && isManagedPm2RequirementSatisfied(installedVersion, requirement.range)) {
+      return {
+        changed: false,
+        installedVersion,
+        selector: requirement.selector,
+        prefix: paths.npmPrefix
+      }
+    }
+
+    await installGlobalPackage(verification.npmPath, requirement.selector, npmOptions)
+    return {
+      changed: true,
+      installedVersion,
+      selector: requirement.selector,
+      prefix: paths.npmPrefix
+    }
+  }
+
+  function resolveManagedPm2Requirement(
+    manifest: LoadedRuntimeManifest,
+    override: string | undefined
+  ): { range: string; selector: string } {
+    const normalizedOverride = override?.trim()
+    if (normalizedOverride) {
+      return {
+        range: normalizedOverride.startsWith("pm2@")
+          ? normalizedOverride.slice("pm2@".length)
+          : normalizedOverride,
+        selector: normalizedOverride.startsWith("pm2@")
+          ? normalizedOverride
+          : `pm2@${normalizedOverride}`
+      }
+    }
+
+    if (manifest.npmSync) {
+      try {
+        const npmManifest = validateNpmSyncManifest(manifest.npmSync)
+        const entry = npmManifest.packages.pm2
+        if (entry) {
+          const target = entry.target?.trim()
+          if (target) {
+            return {
+              range: target.startsWith("pm2@") ? target.slice("pm2@".length) : target,
+              selector: target.startsWith("pm2@") ? target : `pm2@${target}`
+            }
+          }
+
+          return {
+            range: entry.version,
+            selector: `pm2@${entry.version}`
+          }
+        }
+      } catch (error) {
+        throw new RuntimeLifecycleError(
+          "Runtime manifest npmSync configuration is invalid for managed pm2 resolution.",
+          error instanceof Error ? { cause: error } : undefined
+        )
+      }
+    }
+
+    return {
+      range: DEFAULT_MANAGED_PM2_VERSION,
+      selector: `pm2@${DEFAULT_MANAGED_PM2_VERSION}`
+    }
+  }
+
+  async function ensureManagedNpmPrefix(prefix: string): Promise<void> {
+    const requiredDirectories =
+      process.platform === "win32"
+        ? [join(prefix, "node_modules")]
+        : [join(prefix, "lib", "node_modules"), join(prefix, "bin")]
+
+    await Promise.all(requiredDirectories.map((directory) => mkdir(directory, { recursive: true })))
+  }
+
+  function createManagedNpmInstallEnvironment(
+    runtimePath: string,
+    baseEnv: NodeJS.ProcessEnv = process.env
+  ): NodeJS.ProcessEnv {
+    const runtimeBinDirectory = dirname(getRuntimeExecutablePaths(runtimePath).nodePath)
+    const pathKey = process.platform === "win32" ? "Path" : "PATH"
+    const existingPath =
+      process.platform === "win32" ? (baseEnv.Path ?? baseEnv.PATH ?? "") : (baseEnv.PATH ?? "")
+
+    return {
+      ...baseEnv,
+      [pathKey]: [runtimeBinDirectory, existingPath].filter(Boolean).join(
+        process.platform === "win32" ? ";" : ":"
+      )
+    }
+  }
+
+  function parseInstalledGlobalPackageVersion(
+    inventoryOutput: string,
+    packageName: string
+  ): string | null {
+    try {
+      const parsed = JSON.parse(inventoryOutput) as {
+        dependencies?: Record<string, { version?: string }>
+      }
+      return parsed.dependencies?.[packageName]?.version?.trim() || null
+    } catch {
+      return null
+    }
+  }
+
+  function isManagedPm2RequirementSatisfied(installedVersion: string, range: string): boolean {
+    if (range === "*") {
+      return true
+    }
+
+    return semver.validRange(range, { includePrerelease: true })
+      ? semver.satisfies(installedVersion, range, { includePrerelease: true })
+      : installedVersion === range
+  }
 async function cleanupManagedComponent(
   allowedRoots: readonly string[],
   ...paths: string[]
@@ -935,43 +1113,54 @@ function normalizeVersion(value: string | null | undefined): string | null {
   return value.replace(/^v/u, "")
 }
 
-async function cleanupReleasedServicePm2(
+async function cleanupManagedPm2Service(
   component: RuntimeComponentDefinition,
   manifest: LoadedRuntimeManifest,
   paths: ResolvedRuntimePaths,
   options: RuntimeLifecycleOptions,
   logFilePath: string
 ): Promise<void> {
+  const service = asManagedPm2ServiceName(component.name)
+  if (!service || !component.pm2) {
+    return
+  }
+
   try {
     const stopResult = await runManagedPm2Command({
       manifestPath: manifest.manifestPath,
       runtimeRoot: paths.root,
-      service: component.name as "server",
+      service,
       action: "stop"
     })
     await writeRuntimeLog(
       logFilePath,
-      `Released-service PM2 stop result: ${stopResult.status} (${stopResult.appName})`
+      `${component.name} PM2 stop result: ${stopResult.status} (${stopResult.appName})`
     )
 
     const deleteResult = await runManagedPm2Command({
       manifestPath: manifest.manifestPath,
       runtimeRoot: paths.root,
-      service: component.name as "server",
+      service,
       action: "delete"
     })
     await writeRuntimeLog(
       logFilePath,
-      `Released-service PM2 delete result: ${deleteResult.status} (${deleteResult.appName})`
+      `${component.name} PM2 delete result: ${deleteResult.status} (${deleteResult.appName})`
     )
   } catch (error) {
     if (error instanceof ManagedPm2Error && options.verbose) {
-      await writeRuntimeLog(logFilePath, `Released-service PM2 cleanup warning: ${error.message}`)
+      await writeRuntimeLog(logFilePath, `${component.name} PM2 cleanup warning: ${error.message}`)
       return
     }
 
     throw error
   }
+}
+
+function asManagedPm2ServiceName(value: string): ManagedPm2ServiceName | null {
+  return supportedPm2Services.includes(value as ManagedPm2ServiceName)
+    ? (value as ManagedPm2ServiceName)
+    : null
 }
 
 function buildReleasedServiceDetails(

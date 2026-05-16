@@ -22,6 +22,16 @@ export function createRuntimeInfo(): HagiscriptRuntimeInfo {
 }
 
 export {
+  initRuntimeManifest,
+  readRuntimeManifestSummary,
+  renderRuntimeManifestSummaryText,
+  updateRuntimeManifest,
+  type RuntimeManifestSummary,
+  type RuntimeManifestMutationResult,
+  type RuntimeManifestPathUpdates,
+  type RuntimeManifestNpmPackageUpdate
+} from "./runtime/manifest-manager.js";
+export {
   getDefaultDownloadCacheDirectory,
   resolveDownloadCacheDirectory
 } from "./runtime/download-cache.js";
@@ -39,6 +49,7 @@ export {
 export {
   createNpmSyncPlan,
   loadNpmSyncManifest,
+  loadNpmSyncManifestFromRuntimeManifest,
   normalizeGlobalInventory,
   syncNpmGlobals,
   validateNpmSyncManifest,

@@ -4,392 +4,378 @@
 [![npm downloads](https://img.shields.io/npm/dm/%40hagicode%2Fhagiscript?logo=npm&color=2d8cf0)](https://www.npmjs.com/package/@hagicode/hagiscript)
 [![license](https://img.shields.io/badge/license-MIT-ffd43b)](./LICENSE)
 
-`@hagicode/hagiscript` is the runtime management CLI behind the `hagicode-runtime` contract. Use it to install, inspect, update, remove, and operate a managed HagiCode runtime without depending on system Node.js, system PM2, or host-global npm packages.
+`@hagicode/hagiscript` is the CLI used to install and operate a managed HagiCode runtime. It manages the runtime layout, bundled services, managed npm tools, and the released backend server from a manifest-driven workflow.
 
-## Install
+## Install The CLI
 
 ```bash
 npm install -g @hagicode/hagiscript
 ```
 
-Primary entrypoints:
+Check the installed version:
 
-- `hagiscript`
-- `hagicode-runtime` (`hagiscript runtime ...` wrapper)
-
-Node.js 20 or newer is required to run the package itself.
-
-## Runtime Model
-
-By default, Hagiscript loads `runtime/manifest.yaml` and manages the runtime under `~/.hagicode/runtime`.
-
-```text
-<runtime-root>/
-  program/
-    bin/
-    npm/
-    components/
-  runtime-data/
-    config/
-    logs/
-    data/
-    components/
-    state.json
-  server/
-    versions/
-  server-data/
-    .pm2/
-    pm2-runtime/
-    config/
-    versions-state.json
+```bash
+hagiscript --version
 ```
 
-The split is intentional:
+## Quick Start
 
-- `program/` holds managed executables, vendored payloads, wrappers, and the managed npm prefix.
-- `runtime-data/` holds mutable config, logs, state, and component-specific writable files.
-- `server/` holds versioned backend payloads for the released `server` service.
-- `server-data/` holds mutable PM2 state and shared launch assets for that `server` service.
+For a first-time setup, run these commands in order:
 
-The packaged manifest currently manages:
+```bash
+npm install -g @hagicode/hagiscript
+hagiscript runtime install
+hagiscript server install
+hagiscript server start
+hagiscript server status
+```
 
-- `node` - managed Node.js runtime
-- `dotnet` - managed .NET and ASP.NET Core runtime
-- `server` - released backend package metadata and PM2 launch assets for `lib/PCode.Web.dll`
-- `omniroute` - vendored bundled runtime
-- `code-server` - vendored bundled runtime
+If you also want the npm tools declared in your runtime manifest:
 
-The runtime layout still reserves `program/npm/` as the managed npm prefix, but package inventory inside that prefix is not part of the runtime component manifest. Tool installation there is handled separately through `hagiscript npm-sync` or external provisioning.
+```bash
+hagiscript npm-sync --runtime-root ~/.hagicode/runtime
+```
 
-## Core Runtime Commands
+If you are working with a custom manifest or runtime root, use the same flow with explicit paths:
 
-Install the full runtime:
+```bash
+hagiscript runtime install \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
+
+hagiscript server install \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
+
+hagiscript server start \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
+```
+
+## What Hagiscript Manages
+
+The packaged runtime manifest defines these default components:
+
+- `node`: managed Node.js runtime
+- `dotnet`: managed .NET runtime
+- `omniroute`: bundled PM2-managed service
+- `code-server`: bundled PM2-managed service
+- `server`: released backend service package
+
+The managed runtime layout separates immutable program files from mutable data:
+
+- `program/`: installed runtime payloads, wrappers, bundled executables
+- `runtime-data/`: mutable config, logs, PM2 state, managed npm packages
+- `server/`: installed released server versions
+- `server-data/`: server config, logs, PM2 runtime files, version state
+
+By default, the packaged manifest installs into `~/.hagicode/runtime`, but you can override that with `--runtime-root`.
+
+## Runtime Basics
+
+Create a standalone editable manifest from Hagiscript's packaged default:
+
+```bash
+hagiscript manifest init ./hagiscript.manifest.yaml
+```
+
+Generate a manifest and set the managed layout at the same time:
+
+```bash
+hagiscript manifest init ./hagiscript.manifest.yaml \
+	--runtime-home program \
+	--runtime-data-root runtime-data \
+	--server-program-root server \
+	--server-data-root server-data
+```
+
+Update an existing manifest after initialization:
+
+```bash
+hagiscript manifest set ./hagiscript.manifest.yaml \
+	--npm-package-version pm2=7.0.2 \
+	--npm-package-version @openai/codex=0.126.0 \
+	--server-active-version 0.1.0-beta.60
+```
+
+Print the current manifest summary in a friendlier format:
+
+```bash
+hagiscript manifest get ./hagiscript.manifest.yaml
+```
+
+Install the default runtime:
 
 ```bash
 hagiscript runtime install
 ```
 
-Runtime installs reuse a shared download cache by default. Disable it with `--no-download-cache`, or relocate it with `--download-cache-dir <path>`.
-
-Install selected components only:
+Install from an explicit manifest into a specific root:
 
 ```bash
-hagiscript runtime install --components node,omniroute
+hagiscript runtime install \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
 ```
 
-Preview planned changes without mutating files:
-
-```bash
-hagiscript runtime install --dry-run
-hagiscript runtime update --check-only
-```
-
-Inspect the canonical runtime state:
+Show the current runtime state:
 
 ```bash
 hagiscript runtime state
+```
+
+Show machine-readable state:
+
+```bash
 hagiscript runtime state --json
 ```
 
-Update or remove managed components:
+Preview what would be installed without changing files:
+
+```bash
+hagiscript runtime install --dry-run
+```
+
+Update installed components:
 
 ```bash
 hagiscript runtime update
+```
+
+Only check whether updates are needed:
+
+```bash
+hagiscript runtime update --check-only
+```
+
+Remove the runtime but keep retained data where supported:
+
+```bash
+hagiscript runtime remove
+```
+
+Purge runtime data as well:
+
+```bash
+hagiscript runtime remove --purge
+```
+
+Operate on selected components only:
+
+```bash
+hagiscript runtime install --components node,dotnet
+hagiscript runtime update --components code-server,omniroute
 hagiscript runtime remove --components code-server --purge
 ```
 
-Override the runtime root or manifest when needed:
+## Runtime Install Workflow
+
+The typical runtime flow is:
 
 ```bash
-hagiscript runtime install --runtime-root /srv/hagicode/runtime
-hagiscript runtime state --from-manifest /path/to/runtime-manifest.yaml --json
+hagiscript runtime install
+hagiscript runtime state
+hagiscript runtime update
 ```
 
-If you prefer the runtime-oriented wrapper:
+If you want a clean rebuild:
 
 ```bash
-hagicode-runtime install --runtime-root /srv/hagicode/runtime
+hagiscript runtime remove --purge
+hagiscript runtime install
 ```
 
-## Runtime State and Maintenance
+## Server Install And Management
 
-`hagiscript runtime state --json` is the canonical inspection surface for automation. It reports:
+The managed server is installed separately from the core runtime. `hagiscript server install` ensures runtime dependencies are available, resolves a released server package, and makes that version active.
 
-- resolved runtime root
-- `program/` and `runtime-data/` locations
-- per-component install status
-- per-component runtime data homes
-- derived PM2 homes for managed services
-- program/data path separation
-
-Use it before and after maintenance work to confirm the expected component set and writable paths.
-
-Typical maintenance flow:
-
-1. Check current state: `hagiscript runtime state --json`
-2. Apply changes: `hagiscript runtime install`, `update`, or `remove`
-3. Re-check state to confirm the final layout
-4. Operate services through `hagiscript pm2 ...`
-
-Lifecycle commands print the resolved manifest, managed root, changed component count, skipped entries, and log file path when a log is generated.
-
-## Managed PM2 Services
-
-Hagiscript manages runtime-scoped PM2 services for:
-
-- `server`
-- `omniroute`
-- `code-server`
-
-Supported actions:
-
-- `start`
-- `restart`
-- `stop`
-- `status`
-- `env`
-
-Examples:
-
-```bash
-hagiscript pm2 server start
-hagiscript pm2 server restart
-hagiscript pm2 server status
-hagiscript pm2 server env
-hagiscript pm2 server env --json
-hagiscript pm2 omniroute status
-hagiscript pm2 omniroute start
-hagiscript pm2 code-server stop
-```
-
-The PM2 flow is runtime-scoped:
-
-- PM2 is resolved from the managed npm prefix, not the host environment.
-- Hagiscript resolves the runtime manifest before every PM2 action.
-- PM2 runs with the managed Node runtime and managed PATH ordering.
-- `PM2_HOME` is derived from the managed runtime layout, so service state stays inside the runtime data boundary.
-
-This means maintenance scripts should call `hagiscript pm2 ...` instead of a system `pm2` binary, and should ensure `pm2` has been installed into the managed npm prefix beforehand.
-
-### Released backend `server` contract
-
-The packaged runtime manifest treats `server` as a `released-service` component. Hagiscript stages released backend payloads under a dedicated versioned server root:
-
-```text
-<runtime-root>/server/
-  versions/
-    1.2.3/
-      lib/PCode.Web.dll
-      lib/PCode.Web.deps.json
-      lib/PCode.Web.runtimeconfig.json
-      start.sh (or the platform equivalent from the release package)
-```
-
-Hagiscript keeps mutable launch state for that service in a single shared data home, regardless of how many server versions are installed:
-
-```text
-<runtime-root>/server-data/
-  .pm2/
-  pm2-runtime/
-  config/
-  versions-state.json
-```
-
-`hagiscript server install` stages a concrete backend version, updates the active-version inventory in `versions-state.json`, ensures the fixed runtime dependencies, and keeps PM2 launch files under the shared `server-data` home. `hagiscript pm2 server start` then resolves the active server version, generates the final PM2 ecosystem/env files under `pm2-runtime/`, and launches the released backend through the managed `dotnet` runtime. Use `hagiscript pm2 server env` to print the exact resolved working directory, PATH ordering, and environment variables that HagiScript will use for that startup flow.
-
-For the Desktop -> Hagiscript -> PM2 environment handoff, including variable ownership and precedence, see [docs/desktop-hagiscript-env-contract.md](docs/desktop-hagiscript-env-contract.md).
-
-## Managed Server Commands
-
-Hagiscript can now stage a released backend package and prepare all startup prerequisites from a single command surface:
+Install the server from the default source:
 
 ```bash
 hagiscript server install
-hagiscript server install --package-dir /srv/hagicode/packages
-hagiscript server install --archive ./hagicode-1.2.3-linux-x64-nort.zip
-hagiscript server install --url https://example.com/hagicode-1.2.3-linux-x64-nort.zip
-hagiscript server install --index-url https://index.example.com/hagicode/index.json --index-channel stable
-hagiscript server install --github-repo HagiCode-org/releases --tag v1.2.3
 ```
 
-By default, `server install`:
+Install the server against an explicit runtime manifest and root:
 
-- selects or downloads a server archive
-- extracts and stages it into `server/versions/<version>/`
-- installs the fixed runtime dependencies declared by the server contract
-- ensures `pm2` exists in the managed npm prefix
+```bash
+hagiscript server install \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
+```
 
-Inspect and switch the installed server inventory with:
+Install from a local archive:
+
+```bash
+hagiscript server install --archive ./hagicode-server.zip
+```
+
+Install from a specific index version:
+
+```bash
+hagiscript server install --index-version 0.1.0-beta.60
+```
+
+List installed server versions and the active version:
 
 ```bash
 hagiscript server list
-hagiscript server use 1.2.3
-hagiscript server remove 1.2.2
 ```
 
-`server list` shows the active version and every staged payload under `server/versions/`. `server use` switches the active payload that `hagiscript server start` and `hagiscript pm2 server ...` will resolve. `server remove` deletes an inactive installed version while leaving the shared `server-data` directory intact.
+Switch the active version:
 
-Source priority for `server install` is:
+```bash
+hagiscript server use 0.1.0-beta.60
+```
 
-1. local archive (`--archive`)
-2. local folder (`--package-dir`)
-3. direct URL (`--url`)
-4. HTTP index (`--index-url`, optional `--index-channel`, `--index-version`)
-5. GitHub release fallback (`--github-repo`, `--tag`, `--asset`)
+Remove an installed version:
 
-When no explicit source option is provided, Hagiscript first tries the default official HTTP index:
+```bash
+hagiscript server remove 0.1.0-beta.60
+```
 
-- `https://index.hagicode.com/server/index.json`
+## Server Lifecycle
 
-If that index cannot be resolved, Hagiscript automatically falls back to GitHub release discovery.
-
-When index mode is used, Hagiscript reads index JSON, picks the best matching asset for current platform/arch, and then downloads from either a direct URL field or the first marked primary entry in `downloadSources` (falling back to the first source entry).
-
-Once installed, use the higher-level lifecycle wrappers:
+Start the managed server:
 
 ```bash
 hagiscript server start
-hagiscript server restart --instance demo
-hagiscript server stop --instance demo
+```
+
+Stop it:
+
+```bash
+hagiscript server stop
+```
+
+Restart it:
+
+```bash
+hagiscript server restart
+```
+
+Check status:
+
+```bash
+hagiscript server status
+```
+
+Show the startup environment:
+
+```bash
+hagiscript server env
+```
+
+Emit JSON for status or environment:
+
+```bash
 hagiscript server status --json
-hagiscript server env --instance demo
+hagiscript server env --json
 ```
 
-`--instance <name>` maps to the PM2 name identifier and defaults to `hagicode`, so one host can run multiple managed runtime roots without colliding app names.
-
-## Local Playground Workflow
-
-This repository includes a tracked `playground/` folder with its own `.gitignore`, so runtime artifacts created during local validation do not enter git.
-
-All playground scripts use:
-
-- manifest: `./playground/manifest.yaml`
-- runtime root: `./playground/runtime-root`
-
-Run the local lifecycle test flow:
+Override the PM2 instance name used for namespaced app names:
 
 ```bash
-npm run playground:runtime:install
-npm run playground:runtime:state
-npm run playground:server:install
-npm run playground:server:start
-npm run playground:server:status
-npm run playground:server:env
-npm run playground:server:stop
-npm run playground:runtime:remove
+hagiscript server start --instance myruntime
 ```
 
-Available playground scripts:
+## Server Configuration
 
-- `playground:runtime:install`
-- `playground:runtime:state`
-- `playground:runtime:update`
-- `playground:runtime:remove`
-- `playground:server:install`
-- `playground:server:start`
-- `playground:server:status`
-- `playground:server:stop`
-- `playground:server:env`
-
-## Runtime Environment Contract
-
-Runtime lifecycle scripts and managed services receive a stable environment contract:
-
-- `HAGICODE_RUNTIME_HOME` - runtime program home
-- `HAGICODE_RUNTIME_DATA_HOME` - writable runtime data home for the current component
-- `PM2_HOME` - PM2 state directory for the current managed service
-- `PATH` - rebuilt so managed Node, managed npm, and managed wrappers come first
-
-This contract is what keeps installs, updates, wrappers, and PM2-managed services aligned to the same runtime root.
-
-## Manifest Customization
-
-`runtime/manifest.yaml` controls the runtime shape. Common override points:
-
-- `paths.runtimeRoot`
-- `paths.runtimeHome`
-- `paths.runtimeDataRoot`
-- `paths.componentDataRoot`
-- `paths.defaultPm2Home`
-- component `runtimeDataDir`
-- service `pm2.appName`
-- service `pm2.cwd`
-- service `pm2.script`
-- service `pm2.args`
-- service `pm2.env`
-- service `pm2.pm2Home`
-
-For deployment-specific behavior, keep the packaged manifest as the baseline and pass `--from-manifest` with an override manifest rather than mutating the installed package in place.
-
-## Related Runtime Tooling
-
-### Managed Node Runtime
-
-Install a standalone managed Node.js runtime:
+Read the effective managed server config:
 
 ```bash
-hagiscript install-node --target /opt/hagiscript/node
-hagiscript install-node --target /opt/hagiscript/node22 --version 22
+hagiscript server config get
 ```
 
-Standalone Node installs also reuse the shared download cache by default. Pass `--no-download-cache` to force a fresh download, or `--download-cache-dir <path>` to share a custom cache location across installs.
-
-Validate an existing managed Node.js runtime:
+Update host and port:
 
 ```bash
-hagiscript check-node --target /opt/hagiscript/node
+hagiscript server config set --host 127.0.0.1 --port 39150
 ```
 
-### Managed npm Package Sync
-
-Sync npm global packages into the managed npm prefix instead of the host environment:
+Read the config as JSON:
 
 ```bash
-hagiscript npm-sync --manifest ./manifest.json
-hagiscript npm-sync --runtime /opt/hagiscript/node --manifest ./manifest.json
-hagiscript npm-sync --managed-runtime ~/.hagicode/runtime/program/components/node/runtime --prefix ~/.hagicode/runtime/program/npm --manifest ./manifest.json
+hagiscript server config get --json
 ```
 
-When `npm-sync` has to provision a managed Node runtime first, it uses the same shared download cache by default.
+## Managed NPM Tool Sync
 
-This is the path for installing `pm2` and any other scenario-specific global tools. The package list is data, not a built-in runtime component.
+The runtime manifest can also declare managed npm packages under `npmSync`. These packages are installed into the managed npm prefix under `runtime-data/npm`, not into `program/`.
 
-## Development
+If the managed runtime has already been installed, `npm-sync` can read `runtime-data/state.json` under the selected runtime and automatically reuse the recorded `manifestPath` and managed npm prefix. In that case you do not need to pass `--from-manifest`.
 
-Run from `repos/hagiscript/`:
+Sync npm packages by pointing at the runtime root:
 
 ```bash
-npm install
-npm test
-npm run build
-npm run pack:check
+hagiscript npm-sync --runtime-root ~/.hagicode/runtime
 ```
 
-Useful runtime-focused checks:
+Sync npm packages declared in a runtime manifest:
 
 ```bash
-npm run integration:runtime-management
-npm run integration:runtime-key-path
-npm run integration:installed-runtime
+hagiscript npm-sync --from-manifest ./runtime/manifest.yaml
 ```
 
-The dedicated runtime key-path flow validates the critical production sequence with real network downloads: runtime install for fixed components, npm-sync for scenario-specific tools in the managed npm prefix, and PM2 lifecycle commands resolved from that managed prefix. Run the base flow with:
+`npm-sync` does not define its own program/data/server root layout. It reads the runtime manifest associated with the selected runtime root and follows that manifest's `npmSync` definition.
+
+If you want to change the npm tool versions captured in a manifest, update the manifest first:
 
 ```bash
-npm run integration:runtime-key-path
+hagiscript manifest set ./hagiscript.manifest.yaml \
+	--npm-package-version pm2=7.0.2 \
+	--npm-package-version @openai/codex=0.126.0
 ```
 
-The release-oriented key-path mode additionally stages the latest public backend package from GitHub Releases and validates the same managed PM2 contract for `server`:
+Use an explicit managed Node runtime and prefix:
 
 ```bash
-HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST=1 npm run integration:runtime-key-path
+hagiscript npm-sync \
+	--from-manifest ./runtime/manifest.yaml \
+	--managed-runtime ~/.hagicode/runtime/program/components/node/runtime \
+	--prefix ~/.hagicode/runtime/runtime-data/npm
 ```
 
-The broader runtime-management integration path remains available for the existing end-to-end runtime assertions, including the corresponding released-server mode:
+Force re-sync even if installed versions already satisfy the requested target:
 
 ```bash
-HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST=1 npm run integration:runtime-management
+hagiscript npm-sync --from-manifest ./runtime/manifest.yaml --force
 ```
+
+## Common End-To-End Flow
+
+For a fresh machine or a new runtime root, this is the usual sequence:
+
+```bash
+hagiscript runtime install
+hagiscript server install
+hagiscript server start
+hagiscript server status
+```
+
+If you also want the manifest-declared npm tools:
+
+```bash
+hagiscript npm-sync --runtime-root ~/.hagicode/runtime
+```
+
+## Useful Flags
+
+- `manifest init [path]`: generate an editable manifest from the packaged default
+- `manifest get [path]`: print a readable summary of the current manifest
+- `manifest set <path>`: update manifest paths, npmSync package versions, or server defaults
+- `--from-manifest <path>`: use a specific runtime manifest YAML
+- `--runtime-root <path>`: change the managed runtime root
+- `--runtime-home <path>`: set the manifest's program root
+- `--runtime-data-root <path>`: set the manifest's runtime-data root
+- `--server-program-root <path>`: set the manifest's server program root
+- `--server-data-root <path>`: set the manifest's server data root
+- `--npm-package-version <package=version>`: update a manifest npmSync package entry
+- `--server-active-version <version>`: set the manifest's preferred managed server version
+- `--components <list>`: target specific runtime components
+- `--dry-run`: print the plan without mutating files
+- `--force`: force reinstall or update where supported
+- `--purge`: remove retained mutable data during runtime removal
+- `--json`: emit machine-readable output for `manifest get`, state, status, env, and config commands
 
 ## License
 
