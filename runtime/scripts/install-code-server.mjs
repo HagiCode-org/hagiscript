@@ -1,22 +1,25 @@
 #!/usr/bin/env node
 import path from "node:path"
 import process from "node:process"
-import { writeFile } from "node:fs/promises"
 import {
   ensureDirectory,
   installVendoredPackage,
   materializeTemplate,
+  quoteYamlString,
   readRuntimeScriptContext,
   writeCommandWrapper,
-  writeComponentMarker,
-  writeManagedPackageLauncher
+  writeComponentMarker
 } from "../lib/runtime-script-lib.mjs"
 
 const context = readRuntimeScriptContext()
 const currentRoot = path.join(context.componentRoot, "current")
-const launcherPath = path.join(currentRoot, "code-server-launcher.mjs")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
-const entrypointPackageJsonPath = path.join(currentRoot, "out", "node", "package.json")
+const extensionsPath = path.join(context.runtimeDataHome, "extensions")
+const wrapperPath = path.join(
+  currentRoot,
+  "bin",
+  process.platform === "win32" ? "code-server.cmd" : "code-server"
+)
 
 await ensureDirectory(currentRoot)
 const installedPackage = await installVendoredPackage(context, {
@@ -28,30 +31,19 @@ await materializeTemplate(
   "code-server-config.yaml",
   configPath,
   {
-    DATA_DIR: context.runtimeDataHome
+    BIND_ADDR: quoteYamlString("127.0.0.1:8080"),
+    DATA_DIR: quoteYamlString(context.runtimeDataHome),
+    EXTENSIONS_DIR: quoteYamlString(extensionsPath)
   },
   path.join(currentRoot, "templates")
 )
-await writeFile(
-  entrypointPackageJsonPath,
-  `${JSON.stringify({ type: "commonjs" }, null, 2)}\n`,
-  "utf8"
-)
-await writeManagedPackageLauncher(
-  launcherPath,
-  {
-    entrypointPath: installedPackage.entrypointPath,
-    configPath,
-    baseArgs: ["--config", configPath],
-    serviceKind: "code-server"
-  }
-)
-await writeCommandWrapper(context.binDir, "code-server", launcherPath)
+await writeCommandWrapper(context.binDir, "code-server", wrapperPath, {
+  baseArgs: ["--config", configPath]
+})
 await writeComponentMarker(context, {
   configPath,
-  launcherPath,
+  wrapperPath,
   entrypointPath: installedPackage.entrypointPath,
-  entrypointPackageJsonPath,
   vendoredReleaseRepository: installedPackage.releaseRepository,
   vendoredReleaseTag: installedPackage.releaseTag,
   vendoredReleaseName: installedPackage.releaseName,

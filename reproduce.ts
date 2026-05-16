@@ -1,14 +1,13 @@
 import { createServer } from "node:http"
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises"
+import { mkdtemp, readFile } from "node:fs/promises"
 import path from "node:path"
-import { tmpdir, os } from "node:os"
-import { fileURLToPath } from "node:url"
+import { tmpdir } from "node:os"
 import { gzipSync } from "node:zlib"
 import { execa } from "execa"
 
 const repoRoot = process.cwd();
 const installCodeServerScript = path.join(repoRoot, "runtime", "scripts", "install-code-server.mjs");
-const releaseVersion = "2026.0509.0040";
+const releaseVersion = "2026.0516.0063";
 const releaseTag = "v" + releaseVersion;
 
 async function run() {
@@ -37,18 +36,15 @@ async function run() {
       env
     });
 
-    const launcherPath = path.join(
+    const commandWrapperPath = path.join(
       runtimeRoot,
       "program",
-      "components",
-      "bundled",
-      "code-server",
-      "current",
-      "code-server-launcher.mjs"
+      "bin",
+      process.platform === "win32" ? "code-server.cmd" : "code-server"
     );
 
-    console.log("Running launcher:", launcherPath);
-    const launcherResult = await execa(process.execPath, [launcherPath, "--version"], {
+    console.log("Running wrapper:", commandWrapperPath);
+    const launcherResult = await execa(commandWrapperPath, ["--version"], {
       cwd: repoRoot,
       env: {
         ...process.env,
@@ -64,8 +60,11 @@ async function run() {
     try {
       const launched = await readFile(outputPath, "utf8");
       console.log("Output JSON content:", launched);
-    } catch (e: any) {
-      console.log("Failed to read output JSON:", e.message);
+    } catch (error: unknown) {
+      console.log(
+        "Failed to read output JSON:",
+        error instanceof Error ? error.message : String(error)
+      );
     }
   } finally {
     await releaseServer.close();
@@ -110,7 +109,10 @@ async function startVendoredReleaseServer(assets: Array<{ name: string; contents
     response.end("not found");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-  const address = server.address() as any;
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected release test server to expose a TCP address.");
+  }
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve()))

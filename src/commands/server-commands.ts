@@ -22,8 +22,7 @@ import {
 import {
   renderManagedPm2EnvironmentText,
   renderManagedPm2StatusText,
-  type ManagedPm2CommandResult,
-  type ManagedPm2EnvironmentResult
+  type ManagedPm2CommandResult
 } from "../runtime/pm2-manager.js"
 
 interface ServerBaseOptions {

@@ -320,12 +320,17 @@ function readManifestNpmPackages(
   }
 
   return Object.entries(packages)
-    .filter(([, value]) => isRecord(value))
-    .map(([packageName, value]) => ({
-      packageName,
-      version: typeof value.version === "string" ? value.version : undefined,
-      target: typeof value.target === "string" ? value.target : undefined
-    }))
+    .flatMap(([packageName, value]) =>
+      isRecord(value)
+        ? [
+            {
+              packageName,
+              version: typeof value.version === "string" ? value.version : undefined,
+              target: typeof value.target === "string" ? value.target : undefined
+            }
+          ]
+        : []
+    )
     .sort((left, right) => left.packageName.localeCompare(right.packageName))
 }
 

@@ -45,7 +45,7 @@ export interface ManagedPm2CommandOptions {
   runner?: CommandRunner
 }
 
-type ManagedPm2LaunchStrategy = "node-script" | "released-service"
+type ManagedPm2LaunchStrategy = "node-script" | "native-wrapper" | "released-service"
 
 export interface ResolvedManagedPm2ServiceDefinition {
   service: ManagedPm2ServiceName
@@ -378,7 +378,7 @@ export async function resolveManagedPm2ServiceDefinition(
   const cwd = resolveManagedPath(component.pm2?.cwd ?? ".", defaultComponentRoot)
 
   await Promise.all([
-    validateManagedPath(script, `Managed launcher for ${service} is missing.`),
+    validateManagedPath(script, `Managed runtime entrypoint for ${service} is missing.`),
     validateManagedPath(cwd, `Managed working directory for ${service} is missing.`)
   ])
 
@@ -394,7 +394,7 @@ export async function resolveManagedPm2ServiceDefinition(
     nameIdentifier,
     cwd,
     script,
-    args: component.pm2?.args ?? [],
+    args: component.pm2?.args ?? defaultBundledRuntimePm2Args(component.name, defaultComponentConfigDir),
     env: mergeManagedEnvironment(component.pm2?.env, environmentOverrides),
     runtimeHome: paths.runtimeHome,
     runtimeDataHome: defaultRuntimeDataHome,
@@ -403,7 +403,7 @@ export async function resolveManagedPm2ServiceDefinition(
     pm2Home: defaultPm2Home,
     pm2Binary: pm2Entrypoint,
     nodePath,
-    launchStrategy: "node-script"
+    launchStrategy: resolveBundledRuntimeLaunchStrategy(script)
   }
 }
 
@@ -979,11 +979,24 @@ function isPm2ProcessRecord(
 function defaultPm2Script(componentName: string): string {
   switch (componentName) {
     case "omniroute":
-      return "current/omniroute-launcher.mjs"
+      return process.platform === "win32" ? "current/omniroute.cmd" : "current/omniroute.sh"
     case "code-server":
-      return "current/code-server-launcher.mjs"
+      return process.platform === "win32" ? "current/bin/code-server.cmd" : "current/bin/code-server"
     default:
       throw new ManagedPm2Error(`Unsupported PM2 component ${componentName}.`)
+  }
+}
+
+function defaultBundledRuntimePm2Args(componentName: string, componentConfigDir: string): string[] {
+  const configPath = join(componentConfigDir, "config.yaml")
+
+  switch (componentName) {
+    case "omniroute":
+      return ["--config", configPath, "--no-open"]
+    case "code-server":
+      return ["--config", configPath]
+    default:
+      return []
   }
 }
 
@@ -1031,6 +1044,10 @@ function buildPm2ActionArgs(
         ]
       }
 
+      if (definition.launchStrategy === "native-wrapper") {
+        return buildNativeWrapperPm2StartArgs(definition)
+      }
+
       return [
         "start",
         definition.script,
@@ -1050,9 +1067,51 @@ function buildPm2ActionArgs(
   }
 }
 
+function buildNativeWrapperPm2StartArgs(
+  definition: ResolvedManagedPm2ServiceDefinition
+): string[] {
+  if (process.platform === "win32" && isWindowsBatchScript(definition.script)) {
+    const cmdExe = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe"
+    return [
+      "start",
+      cmdExe,
+      "--name",
+      definition.appName,
+      "--cwd",
+      definition.cwd,
+      "--interpreter",
+      "none",
+      "--update-env",
+      ...toPm2Args(["/d", "/s", "/c", definition.script, ...definition.args])
+    ]
+  }
+
+  return [
+    "start",
+    definition.script,
+    "--name",
+    definition.appName,
+    "--cwd",
+    definition.cwd,
+    "--interpreter",
+    "none",
+    "--update-env",
+    ...toPm2Args(definition.args)
+  ]
+}
+
 function isNodeLauncherScript(scriptPath: string): boolean {
   const extension = extname(scriptPath).toLowerCase()
   return extension === ".js" || extension === ".mjs" || extension === ".cjs"
+}
+
+function isWindowsBatchScript(scriptPath: string): boolean {
+  const extension = extname(scriptPath).toLowerCase()
+  return extension === ".cmd" || extension === ".bat"
+}
+
+function resolveBundledRuntimeLaunchStrategy(scriptPath: string): ManagedPm2LaunchStrategy {
+  return isNodeLauncherScript(scriptPath) ? "node-script" : "native-wrapper"
 }
 
 function getManagedPm2Entrypoint(npmPrefix: string): string {

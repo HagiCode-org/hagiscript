@@ -7,6 +7,8 @@ import process from "node:process"
 import { createGunzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
 
+const PLACEHOLDER_PATTERN = /{{([A-Z0-9_]+)}}/g
+
 export function readRuntimeScriptContext() {
   return {
     runtimeRoot: requiredEnv("HAGISCRIPT_RUNTIME_ROOT"),
@@ -31,7 +33,7 @@ export function readRuntimeScriptContext() {
     pm2VersionOverride: process.env.HAGISCRIPT_RUNTIME_PM2_VERSION_OVERRIDE?.trim() || null,
     vendoredRepository: process.env.HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY?.trim() || "HagiCode-org/vendered",
     vendoredTag:
-      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0509.0040",
+      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0516.0063",
     vendoredBaseUrl: process.env.HAGISCRIPT_RUNTIME_VENDORED_BASE_URL?.trim() || "https://github.com",
     downloadCacheEnabled: process.env.HAGISCRIPT_DOWNLOAD_CACHE !== "0",
     downloadCacheDir:
@@ -73,15 +75,32 @@ export async function materializeTemplate(templateName, destinationPath, variabl
 
   const templatePath = path.join(resolvedTemplateDir, templateName)
   const template = await readFile(templatePath, "utf8")
-  let rendered = template
-
-  for (const [key, value] of Object.entries(variables)) {
-    rendered = rendered.replaceAll(`{{${key}}}`, String(value))
-  }
+  const rendered = renderConfigTemplate(template, variables)
 
   await ensureDirectory(path.dirname(destinationPath))
   await writeFile(destinationPath, rendered, "utf8")
   return destinationPath
+}
+
+export function renderConfigTemplate(template, values) {
+  const rendered = String(template).replace(PLACEHOLDER_PATTERN, (match, key) => {
+    if (!Object.hasOwn(values, key)) {
+      throw new Error(`Missing template variable ${key}`)
+    }
+
+    return String(values[key])
+  })
+
+  const unresolved = rendered.match(PLACEHOLDER_PATTERN)
+  if (unresolved) {
+    throw new Error(`Unresolved template variables remain: ${unresolved.join(", ")}`)
+  }
+
+  return rendered.endsWith("\n") ? rendered : `${rendered}\n`
+}
+
+export function quoteYamlString(value) {
+  return JSON.stringify(String(value))
 }
 
 export async function writeNodeEntrypoint(filePath, message) {
@@ -95,17 +114,33 @@ export async function writeNodeEntrypoint(filePath, message) {
   return filePath
 }
 
-export async function writeCommandWrapper(binDir, commandName, scriptPath) {
+export async function writeCommandWrapper(binDir, commandName, scriptPath, options = {}) {
   await ensureDirectory(binDir)
+  const baseArgs = Array.isArray(options.baseArgs) ? options.baseArgs.map((entry) => String(entry)) : []
+  const extension = path.extname(scriptPath).toLowerCase()
   const nodeWrapperPath = path.join(binDir, process.platform === "win32" ? "node.cmd" : "node")
 
   if (process.platform === "win32") {
     const wrapperPath = path.join(binDir, `${commandName}.cmd`)
     const relativeTarget = path.relative(path.dirname(wrapperPath), scriptPath).replaceAll("/", "\\")
-    const relativeNode = path.relative(path.dirname(wrapperPath), nodeWrapperPath).replaceAll("/", "\\")
+    const renderedBaseArgs = renderWindowsWrapperArgs(baseArgs)
+
+    if (isNodeScriptExtension(extension)) {
+      const relativeNode = path.relative(path.dirname(wrapperPath), nodeWrapperPath).replaceAll("/", "\\")
+      await writeFile(
+        wrapperPath,
+        `@echo off\r\nset "HAGISCRIPT_NODE=%~dp0\\${relativeNode}"\r\nif exist "%HAGISCRIPT_NODE%" (\r\n  "%HAGISCRIPT_NODE%" "%~dp0\\${relativeTarget}"${renderedBaseArgs} %*\r\n) else (\r\n  node "%~dp0\\${relativeTarget}"${renderedBaseArgs} %*\r\n)\r\n`,
+        "utf8"
+      )
+      return wrapperPath
+    }
+
+    const invokeTarget = isWindowsBatchExtension(extension)
+      ? `call "%~dp0\\${relativeTarget}"`
+      : `"%~dp0\\${relativeTarget}"`
     await writeFile(
       wrapperPath,
-      `@echo off\r\nset "HAGISCRIPT_NODE=%~dp0\\${relativeNode}"\r\nif exist "%HAGISCRIPT_NODE%" (\r\n  "%HAGISCRIPT_NODE%" "%~dp0\\${relativeTarget}" %*\r\n) else (\r\n  node "%~dp0\\${relativeTarget}" %*\r\n)\r\n`,
+      `@echo off\r\n${invokeTarget}${renderedBaseArgs} %*\r\nexit /b %ERRORLEVEL%\r\n`,
       "utf8"
     )
     return wrapperPath
@@ -113,18 +148,34 @@ export async function writeCommandWrapper(binDir, commandName, scriptPath) {
 
   const wrapperPath = path.join(binDir, commandName)
   const relativeTarget = path.relative(path.dirname(wrapperPath), scriptPath).replaceAll("\\", "/")
-  const relativeNode = path.relative(path.dirname(wrapperPath), nodeWrapperPath).replaceAll("\\", "/")
-  await writeFile(
-    wrapperPath,
-    `#!/usr/bin/env sh
+  const renderedBaseArgs = renderShellWrapperArgs(baseArgs)
+  const targetPathExpression = `"$(dirname "$0")/${relativeTarget}"`
+
+  if (isNodeScriptExtension(extension)) {
+    const relativeNode = path.relative(path.dirname(wrapperPath), nodeWrapperPath).replaceAll("\\", "/")
+    await writeFile(
+      wrapperPath,
+      `#!/usr/bin/env sh
 node_cmd="$(dirname "$0")/${relativeNode}"
 if [ -x "$node_cmd" ]; then
-  exec "$node_cmd" "$(dirname "$0")/${relativeTarget}" "$@"
+  exec "$node_cmd" ${targetPathExpression}${renderedBaseArgs} "$@"
 fi
-exec node "$(dirname "$0")/${relativeTarget}" "$@"
+exec node ${targetPathExpression}${renderedBaseArgs} "$@"
 `,
-    "utf8"
-  )
+      "utf8"
+    )
+  } else {
+    const launchCommand = shouldInvokeWithShell(extension)
+      ? `exec sh ${targetPathExpression}${renderedBaseArgs} "$@"`
+      : `exec ${targetPathExpression}${renderedBaseArgs} "$@"`
+    await writeFile(
+      wrapperPath,
+      `#!/usr/bin/env sh
+${launchCommand}
+`,
+      "utf8"
+    )
+  }
   await makeExecutable(wrapperPath)
   return wrapperPath
 }
@@ -254,6 +305,34 @@ child.on("error", (error) => {
   )
   await makeExecutable(filePath)
   return filePath
+}
+
+function isNodeScriptExtension(extension) {
+  return extension === ".js" || extension === ".mjs" || extension === ".cjs"
+}
+
+function isWindowsBatchExtension(extension) {
+  return extension === ".cmd" || extension === ".bat"
+}
+
+function shouldInvokeWithShell(extension) {
+  return extension === "" || extension === ".sh"
+}
+
+function renderShellWrapperArgs(args) {
+  if (args.length === 0) {
+    return ""
+  }
+
+  return ` ${args.map((entry) => JSON.stringify(entry)).join(" ")}`
+}
+
+function renderWindowsWrapperArgs(args) {
+  if (args.length === 0) {
+    return ""
+  }
+
+  return ` ${args.map((entry) => `"${String(entry).replaceAll('"', '""')}"`).join(" ")}`
 }
 
 function requiredEnv(name) {
@@ -518,7 +597,21 @@ function safeArchiveJoin(root, entryName) {
 async function replaceDirectory(sourceDirectory, targetDirectory) {
   await rm(targetDirectory, { recursive: true, force: true })
   await ensureDirectory(path.dirname(targetDirectory))
-  await rename(sourceDirectory, targetDirectory)
+  try {
+    await rename(sourceDirectory, targetDirectory)
+  } catch (error) {
+    if (!isCrossDeviceRenameError(error)) {
+      throw error
+    }
+
+    await cp(sourceDirectory, targetDirectory, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      preserveTimestamps: true
+    })
+    await rm(sourceDirectory, { recursive: true, force: true })
+  }
 }
 
 async function restoreVendoredPackageFromCache(cacheRoot, prefixRoot, entrypointRelativePath) {
@@ -606,4 +699,8 @@ function isAlreadyCachedError(error) {
       "code" in error &&
       (error.code === "EEXIST" || error.code === "ENOTEMPTY")
   )
+}
+
+function isCrossDeviceRenameError(error) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "EXDEV")
 }

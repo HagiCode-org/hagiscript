@@ -215,6 +215,7 @@ function validateManagedServerVersionState(
     )
   }
 
+  const versions: Record<string, ManagedServerInstalledVersion> = {}
   for (const [version, entry] of Object.entries(value.versions)) {
     if (!isRecord(entry)) {
       throw new ManagedServerVersionStateError(
@@ -227,7 +228,7 @@ function validateManagedServerVersionState(
       typeof entry.installPath !== "string" ||
       typeof entry.installedAt !== "string" ||
       !isRecord(entry.source) ||
-      typeof entry.source.kind !== "string" ||
+      !isManagedServerSourceKind(entry.source.kind) ||
       typeof entry.source.locator !== "string" ||
       typeof entry.source.assetName !== "string"
     ) {
@@ -235,11 +236,36 @@ function validateManagedServerVersionState(
         `Managed server version ${version} in ${statePath} is invalid.`
       )
     }
+
+    versions[version] = {
+      version,
+      installPath: entry.installPath,
+      installedAt: entry.installedAt,
+      source: {
+        kind: entry.source.kind,
+        locator: entry.source.locator,
+        assetName: entry.source.assetName
+      }
+    }
   }
 
-  return value as ManagedServerVersionState
+  return {
+    schemaVersion: 1,
+    activeVersion: value.activeVersion,
+    versions
+  }
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isManagedServerSourceKind(value: unknown): value is ManagedServerSourceKind {
+  return (
+    value === "github-release" ||
+    value === "http-index" ||
+    value === "direct-url" ||
+    value === "local-archive" ||
+    value === "local-folder"
+  )
 }

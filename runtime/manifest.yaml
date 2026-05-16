@@ -51,8 +51,7 @@ components:
   configureScript: "scripts/configure-omniroute.mjs"
   pm2:
     appName: "hagicode-omniroute"
-    cwd: "."
-    script: "current/omniroute-launcher.mjs"
+    cwd: "current"
 
 - name: "code-server"
   type: "bundled-runtime"
@@ -65,8 +64,7 @@ components:
   configureScript: "scripts/configure-code-server.mjs"
   pm2:
     appName: "hagicode-code-server"
-    cwd: "."
-    script: "current/code-server-launcher.mjs"
+    cwd: "current"
 
 - name: "server"
   type: "released-service"

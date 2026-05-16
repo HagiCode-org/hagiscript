@@ -1,5 +1,5 @@
 import { appendFile, mkdir } from "node:fs/promises"
-import { basename, dirname, extname, join } from "node:path"
+import { basename, dirname, extname } from "node:path"
 import process from "node:process"
 import { CommandExecutionError, runCommand, type CommandRunner } from "./command-launch.js"
 import { getRuntimeExecutablePaths } from "./node-verify.js"
@@ -196,7 +196,6 @@ export function buildManagedRuntimeEnvironment(
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
   const runtimeExecutables = getRuntimeExecutablePaths(context.paths.nodeRuntime)
-  const bundledNpmBinDirectory = getManagedNpmBinDirectory(context.paths.npmPrefix)
   const bundledNpmModulesDirectory = getManagedNpmModulesDirectory(context.paths.npmPrefix)
   const managedNpmPackagesPrefix = getManagedNpmPackagesPrefix(context.paths)
   const managedNpmBinDirectory = getManagedNpmBinDirectory(managedNpmPackagesPrefix)

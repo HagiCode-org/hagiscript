@@ -20,7 +20,7 @@ const installOmnirouteScript = path.join(
   "scripts",
   "install-omniroute.mjs"
 )
-const releaseVersion = "2026.0509.0040"
+const releaseVersion = "2026.0516.0063"
 const releaseTag = `v${releaseVersion}`
 const runTest = process.platform === "win32" ? it.skip : it
 
@@ -40,7 +40,13 @@ describe("vendored runtime installers", () => {
     const vendoredArch = getVendoredArch()
     const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.tar.gz`
     const assetBuffer = createTarGzArchive("release", {
-      "templates/code-server-config.yaml": "bind-addr: 127.0.0.1:8080\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{DATA_DIR}}/extensions\nlog: info\n",
+      "templates/code-server-config.yaml":
+        "bind-addr: {{BIND_ADDR}}\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{EXTENSIONS_DIR}}\nlog: info\n",
+      "bin/code-server": {
+        content: createCodeServerWrapper(),
+        mode: 0o755
+      },
+      "bin/code-server.cmd": createWindowsBatchStub(),
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
@@ -56,14 +62,11 @@ describe("vendored runtime installers", () => {
         env: createRuntimeScriptEnv(runtimeRoot, "code-server", releaseServer.baseUrl)
       })
 
-      const launcherPath = path.join(
+      const commandWrapperPath = path.join(
         runtimeRoot,
         "program",
-        "components",
-        "bundled",
-        "code-server",
-        "current",
-        "code-server-launcher.mjs"
+        "bin",
+        process.platform === "win32" ? "code-server.cmd" : "code-server"
       )
       const configPath = path.join(
         runtimeRoot,
@@ -75,7 +78,7 @@ describe("vendored runtime installers", () => {
         "config.yaml"
       )
 
-      await execa(process.execPath, [launcherPath, "--version"], {
+      await execa(commandWrapperPath, ["--version"], {
         cwd: repoRoot,
         env: {
           ...process.env,
@@ -98,6 +101,7 @@ describe("vendored runtime installers", () => {
       expect(marker.vendoredReleaseRepository).toBe("HagiCode-org/vendered")
       expect(marker.vendoredReleaseTag).toBe(releaseTag)
       expect(marker.vendoredAssetName).toBe(assetName)
+      expect(marker.wrapperPath).toContain(path.join("current", "bin", "code-server"))
       expect(marker.entrypointPath).toContain(path.join("current", "out", "node", "entry.js"))
     } finally {
       await releaseServer.close()
@@ -112,7 +116,13 @@ describe("vendored runtime installers", () => {
     const vendoredArch = getVendoredArch()
     const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.tar.gz`
     const assetBuffer = createTarGzArchive("release", {
-      "templates/code-server-config.yaml": "bind-addr: 127.0.0.1:8080\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{DATA_DIR}}/extensions\nlog: info\n",
+      "templates/code-server-config.yaml":
+        "bind-addr: {{BIND_ADDR}}\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{EXTENSIONS_DIR}}\nlog: info\n",
+      "bin/code-server": {
+        content: createCodeServerWrapper(),
+        mode: 0o755
+      },
+      "bin/code-server.cmd": createWindowsBatchStub(),
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
@@ -157,7 +167,13 @@ describe("vendored runtime installers", () => {
     const assetBuffer = createTarGzArchive(
       `omniroute-${releaseVersion}-${vendoredPlatform}-${vendoredArch}`,
       {
-        "templates/omniroute-config.yaml": "runtimeHome: {{RUNTIME_ROOT}}\nlisten: \"127.0.0.1:39001\"\ndataDir: {{DATA_DIR}}\nlogDir: {{LOGS_DIR}}\n",
+        "templates/omniroute-config.yaml":
+          "runtimeHome: {{RUNTIME_ROOT}}\nlisten: {{LISTEN_ADDR}}\ndataDir: {{DATA_DIR}}\nlogDir: {{LOGS_DIR}}\n",
+        "omniroute.sh": {
+          content: createOmnirouteWrapper(),
+          mode: 0o755
+        },
+        "omniroute.cmd": createWindowsBatchStub(),
         "bin/omniroute.mjs": createRecordedEntrypoint({
           includeEnvKeys: [],
           moduleType: "esm"
@@ -174,14 +190,11 @@ describe("vendored runtime installers", () => {
         env: createRuntimeScriptEnv(runtimeRoot, "omniroute", releaseServer.baseUrl)
       })
 
-      const launcherPath = path.join(
+      const commandWrapperPath = path.join(
         runtimeRoot,
         "program",
-        "components",
-        "bundled",
-        "omniroute",
-        "current",
-        "omniroute-launcher.mjs"
+        "bin",
+        process.platform === "win32" ? "omniroute.cmd" : "omniroute"
       )
       const configPath = path.join(
         runtimeRoot,
@@ -192,15 +205,7 @@ describe("vendored runtime installers", () => {
         "config",
         "config.yaml"
       )
-      const runtimeDataHome = path.join(
-        runtimeRoot,
-        "runtime-data",
-        "components",
-        "services",
-        "omniroute"
-      )
-
-      await execa(process.execPath, [launcherPath, "--help"], {
+      await execa(commandWrapperPath, ["--help"], {
         cwd: repoRoot,
         env: {
           ...process.env,
@@ -317,17 +322,24 @@ async function startVendoredReleaseServer(
   }
 }
 
-function createTarGzArchive(rootDirectory: string, files: Record<string, string>): Buffer {
-  const entries = Object.entries(files).map(([relativePath, content]) =>
-    createTarFileEntry(`${rootDirectory}/${relativePath}`, Buffer.from(content, "utf8"))
+function createTarGzArchive(
+  rootDirectory: string,
+  files: Record<string, string | { content: string; mode?: number }>
+): Buffer {
+  const entries = Object.entries(files).map(([relativePath, descriptor]) =>
+    createTarFileEntry(
+      `${rootDirectory}/${relativePath}`,
+      Buffer.from(typeof descriptor === "string" ? descriptor : descriptor.content, "utf8"),
+      typeof descriptor === "string" ? 0o644 : descriptor.mode ?? 0o644
+    )
   )
   return gzipSync(Buffer.concat([...entries, Buffer.alloc(1024)]))
 }
 
-function createTarFileEntry(name: string, content: Buffer): Buffer {
+function createTarFileEntry(name: string, content: Buffer, mode = 0o644): Buffer {
   const header = Buffer.alloc(512, 0)
   writeTarString(header, name, 0, 100)
-  writeTarOctal(header, 0o644, 100, 8)
+  writeTarOctal(header, mode, 100, 8)
   writeTarOctal(header, 0, 108, 8)
   writeTarOctal(header, 0, 116, 8)
   writeTarOctal(header, content.length, 124, 12)
@@ -396,6 +408,26 @@ main().catch((error) => {
   process.exit(1)
 })
 `
+}
+
+function createCodeServerWrapper(): string {
+  return `#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$SCRIPT_DIR/../out/node/entry.js" "$@"
+`
+}
+
+function createOmnirouteWrapper(): string {
+  return `#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$SCRIPT_DIR/bin/omniroute.mjs" "$@"
+`
+}
+
+function createWindowsBatchStub(): string {
+  return "@echo off\r\nexit /b 0\r\n"
 }
 
 function getVendoredPlatform() {

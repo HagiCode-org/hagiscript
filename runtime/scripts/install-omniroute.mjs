@@ -5,16 +5,19 @@ import {
   ensureDirectory,
   installVendoredPackage,
   materializeTemplate,
+  quoteYamlString,
   readRuntimeScriptContext,
   writeCommandWrapper,
-  writeComponentMarker,
-  writeManagedPackageLauncher
+  writeComponentMarker
 } from "../lib/runtime-script-lib.mjs"
 
 const context = readRuntimeScriptContext()
 const currentRoot = path.join(context.componentRoot, "current")
-const launcherPath = path.join(currentRoot, "omniroute-launcher.mjs")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
+const wrapperPath = path.join(
+  currentRoot,
+  process.platform === "win32" ? "omniroute.cmd" : "omniroute.sh"
+)
 
 await ensureDirectory(currentRoot)
 const installedPackage = await installVendoredPackage(context, {
@@ -26,25 +29,19 @@ await materializeTemplate(
   "omniroute-config.yaml",
   configPath,
   {
-    RUNTIME_ROOT: context.runtimeHome,
-    DATA_DIR: context.runtimeDataHome,
-    LOGS_DIR: context.componentLogsDir
+    RUNTIME_ROOT: quoteYamlString(context.runtimeHome),
+    LISTEN_ADDR: quoteYamlString("127.0.0.1:39001"),
+    DATA_DIR: quoteYamlString(context.runtimeDataHome),
+    LOGS_DIR: quoteYamlString(context.componentLogsDir)
   },
   path.join(currentRoot, "templates")
 )
-await writeManagedPackageLauncher(
-  launcherPath,
-  {
-    entrypointPath: installedPackage.entrypointPath,
-    configPath,
-    baseArgs: ["--config", configPath, "--no-open"],
-    serviceKind: "omniroute"
-  }
-)
-await writeCommandWrapper(context.binDir, "omniroute", launcherPath)
+await writeCommandWrapper(context.binDir, "omniroute", wrapperPath, {
+  baseArgs: ["--config", configPath, "--no-open"]
+})
 await writeComponentMarker(context, {
   configPath,
-  launcherPath,
+  wrapperPath,
   entrypointPath: installedPackage.entrypointPath,
   vendoredReleaseRepository: installedPackage.releaseRepository,
   vendoredReleaseTag: installedPackage.releaseTag,

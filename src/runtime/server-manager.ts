@@ -1253,7 +1253,7 @@ async function extractManagedServerArchive(
 
   try {
     await runner("unzip", ["-q", archivePath, "-d", extractRoot])
-  } catch (error) {
+  } catch {
     await runner("bsdtar", ["-xf", archivePath, "-C", extractRoot], {
       maxBuffer: 10 * 1024 * 1024
     })
