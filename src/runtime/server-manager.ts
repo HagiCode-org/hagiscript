@@ -166,8 +166,8 @@ export class ManagedServerError extends Error {
   }
 }
 
-const MANAGED_SERVER_REMOVE_RETRY_COUNT = 8
-const MANAGED_SERVER_REMOVE_RETRY_DELAY_MS = 250
+const MANAGED_SERVER_REMOVE_RETRY_COUNT = 30
+const MANAGED_SERVER_REMOVE_RETRY_DELAY_MS = 1_000
 
 interface ResolvedServerArchive {
   kind: ManagedServerSourceKind
