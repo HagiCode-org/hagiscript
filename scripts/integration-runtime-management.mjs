@@ -750,6 +750,8 @@ try {
           "server version retained after deactivation"
         );
 
+        await killManagedPm2(managedRoot, "server");
+
         const removeOutput = await runCapture(
           process.execPath,
           [
