@@ -398,22 +398,40 @@ try {
         process.execPath,
         [
           "dist/cli.js",
-          "runtime",
+          "server",
           "install",
           "--from-manifest",
           runtimeManifestPath,
           "--runtime-root",
           managedRoot,
-          "--components",
-          "server"
+          "--archive",
+          releasedServer.archivePath
         ],
         repoRoot
       );
       assertIncludes(
         installOutput,
-        "Runtime install complete.",
+        "Server install complete.",
         "server runtime install"
       );
+      const listOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "server",
+          "list",
+          "--from-manifest",
+          runtimeManifestPath,
+          "--runtime-root",
+          managedRoot,
+          "--json"
+        ],
+        repoRoot
+      );
+      const listReport = JSON.parse(listOutput);
+      if (!listReport.activeVersion) {
+        throw new Error(`Expected server install to activate a version. Output:\n${listOutput}`);
+      }
 
       try {
         const startOutput = await runCapture(
@@ -443,8 +461,9 @@ try {
         releasedServerLines.push(
           `- Release tag: ${releasedServer.tagName}`,
           `- Asset: ${releasedServer.assetName}`,
-          `- Payload root: ${releasedServer.targetRoot}`,
-          "- Lifecycle: runtime install -> npm-sync provisioned pm2 -> pm2 start -> online"
+          `- Archive: ${releasedServer.archivePath}`,
+          `- Active version: ${listReport.activeVersion}`,
+          "- Lifecycle: server install -> npm-sync provisioned pm2 -> pm2 start -> online"
         );
       } finally {
         await killManagedPm2(managedRoot, "server");
@@ -708,22 +727,11 @@ async function prepareReleasedServerPayload(options) {
 
   const archivePath = path.join(options.tempRoot, asset.name);
   const extractRoot = path.join(options.tempRoot, "released-server");
-  const targetRoot = path.join(
-    options.managedRoot,
-    "program",
-    "components",
-    "server",
-    "current"
-  );
   await downloadFile(asset.browser_download_url, archivePath);
   fs.rmSync(extractRoot, { recursive: true, force: true });
   fs.mkdirSync(extractRoot, { recursive: true });
   await extractZipArchive(archivePath, extractRoot, options.repoRoot);
-  fs.rmSync(targetRoot, { recursive: true, force: true });
-  fs.mkdirSync(targetRoot, { recursive: true });
-  fs.cpSync(extractRoot, targetRoot, { recursive: true });
-
-  const dllPath = path.join(targetRoot, "lib", "PCode.Web.dll");
+  const dllPath = path.join(extractRoot, "lib", "PCode.Web.dll");
   if (!fs.existsSync(dllPath)) {
     throw new Error(`Expected released server payload to contain ${dllPath}`);
   }
@@ -731,7 +739,8 @@ async function prepareReleasedServerPayload(options) {
   return {
     tagName: release.tag_name,
     assetName: asset.name,
-    targetRoot,
+    archivePath,
+    extractRoot,
     dllPath
   };
 }

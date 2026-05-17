@@ -576,7 +576,7 @@ try {
       releasedServerLines.push(
         `- Release tag: ${releasedServer.tagName}`,
         `- Asset: ${releasedServer.assetName}`,
-        `- Payload root: ${releasedServer.targetRoot}`,
+        `- Archive: ${releasedServer.archivePath}`,
         `- DLL: ${releasedServer.dllPath}`
       );
 
@@ -584,21 +584,40 @@ try {
         process.execPath,
         [
           "dist/cli.js",
-          "runtime",
+          "server",
           "install",
           "--from-manifest",
           pm2ManifestPath,
           "--runtime-root",
           managedRoot,
-          "--components",
-          "server"
+          "--archive",
+          releasedServer.archivePath
         ],
         repoRoot
       );
       assertIncludes(
         installOutput,
-        "Runtime install complete.",
+        "Server install complete.",
         "released server install output"
+      );
+      const listOutput = await runCapture(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "server",
+          "list",
+          "--from-manifest",
+          pm2ManifestPath,
+          "--runtime-root",
+          managedRoot,
+          "--json"
+        ],
+        repoRoot
+      );
+      const listReport = JSON.parse(listOutput);
+      assert(
+        typeof listReport.activeVersion === "string" && listReport.activeVersion.length > 0,
+        `Expected server install to activate a version. Output:\n${listOutput}`
       );
 
       const envOutput = await runCapture(
@@ -681,29 +700,97 @@ try {
         );
         assertIncludes(stopOutput, "Status: stopped", "server stop output");
 
-        const removeOutput = await runCapture(
+        const activeRemoveFailure = await runExpectFailure(
           process.execPath,
           [
             "dist/cli.js",
-            "runtime",
+            "server",
             "remove",
+            listReport.activeVersion,
             "--from-manifest",
             pm2ManifestPath,
             "--runtime-root",
             managedRoot,
-            "--components",
-            "server",
-            "--purge"
+            "--json"
           ],
           repoRoot
         );
         assertIncludes(
-          removeOutput,
-          "Runtime remove complete.",
-          "server remove output"
+          activeRemoveFailure,
+          "currently active and cannot be removed",
+          "active server remove failure"
         );
 
-        const statusOutput = await runCapture(
+        deactivateManagedServerVersion(listReport.statePath);
+
+        const postDeactivateListOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "server",
+            "list",
+            "--from-manifest",
+            pm2ManifestPath,
+            "--runtime-root",
+            managedRoot,
+            "--json"
+          ],
+          repoRoot
+        );
+        const postDeactivateListReport = JSON.parse(postDeactivateListOutput);
+        assertEqual(
+          postDeactivateListReport.activeVersion,
+          null,
+          "server active version after deactivation"
+        );
+        assertEqual(postDeactivateListReport.versions.length, 1, "server versions after deactivation");
+        assertEqual(
+          postDeactivateListReport.versions[0]?.version,
+          listReport.activeVersion,
+          "server version retained after deactivation"
+        );
+
+        const removeOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "server",
+            "remove",
+            listReport.activeVersion,
+            "--from-manifest",
+            pm2ManifestPath,
+            "--runtime-root",
+            managedRoot,
+            "--json"
+          ],
+          repoRoot
+        );
+        const removeReport = JSON.parse(removeOutput);
+        assertEqual(
+          removeReport.removedVersion,
+          listReport.activeVersion,
+          "server remove version"
+        );
+
+        const finalListOutput = await runCapture(
+          process.execPath,
+          [
+            "dist/cli.js",
+            "server",
+            "list",
+            "--from-manifest",
+            pm2ManifestPath,
+            "--runtime-root",
+            managedRoot,
+            "--json"
+          ],
+          repoRoot
+        );
+        const finalListReport = JSON.parse(finalListOutput);
+        assertEqual(finalListReport.activeVersion, null, "server active version after removal");
+        assertArrayEquals(finalListReport.versions, [], "server versions after removal");
+
+        const statusOutput = await runExpectFailure(
           process.execPath,
           [
             "dist/cli.js",
@@ -719,11 +806,12 @@ try {
         );
         assertIncludes(
           statusOutput,
-          "Status: missing",
+          "Managed server does not have an active version",
           "server status after removal"
         );
         releasedServerLines.push(
-          "- Lifecycle: install -> start -> online -> restart -> stop -> runtime remove --purge -> status missing"
+          `- Active version: ${listReport.activeVersion}`,
+          "- Lifecycle: server install -> pm2 env -> start -> online -> restart -> stop -> active server remove fails -> deactivate active version -> server remove -> pm2 status reports missing active version"
         );
       } finally {
         await killManagedPm2(managedRoot, "server");
@@ -864,8 +952,8 @@ try {
             : ["- Not captured"]),
           `- Runtime home: ${path.join(managedRoot, "program")}`,
           `- Runtime data root: ${path.join(managedRoot, "runtime-data")}`,
-          `- Program roots: ${path.join(managedRoot, "program")}, ${path.join(managedRoot, "program", "bin")}, ${path.join(managedRoot, "program", "components")}, ${path.join(managedRoot, "program", "npm")}`,
-          `- External data roots: ${path.join(managedRoot, "runtime-data")}, ${path.join(managedRoot, "runtime-data", "config")}, ${path.join(managedRoot, "runtime-data", "logs")}, ${path.join(managedRoot, "runtime-data", "data")}, ${path.join(managedRoot, "runtime-data", "components")}`,
+          `- Program roots: ${path.join(managedRoot, "program")}, ${path.join(managedRoot, "program", "bin")}, ${path.join(managedRoot, "program", "components")}`,
+          `- External data roots: ${path.join(managedRoot, "runtime-data")}, ${path.join(managedRoot, "runtime-data", "config")}, ${path.join(managedRoot, "runtime-data", "logs")}, ${path.join(managedRoot, "runtime-data", "data")}, ${path.join(managedRoot, "runtime-data", "components")}, ${path.join(managedRoot, "runtime-data", "npm")}`,
           "- Verified that program paths and external data paths remain separated in runtime state output"
         ],
         details: [
@@ -1098,6 +1186,12 @@ function assertFile(filePath) {
   }
 }
 
+function deactivateManagedServerVersion(statePath) {
+  const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  state.activeVersion = null;
+  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
 function assertArrayEquals(actual, expected, label) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
@@ -1163,27 +1257,17 @@ async function prepareReleasedServerPayload(options) {
 
   const archivePath = path.join(options.tempRoot, asset.name);
   const extractRoot = path.join(options.tempRoot, "released-server");
-  const targetRoot = path.join(
-    options.managedRoot,
-    "program",
-    "components",
-    "server",
-    "current"
-  );
   await downloadFile(asset.browser_download_url, archivePath);
   fs.rmSync(extractRoot, { recursive: true, force: true });
   fs.mkdirSync(extractRoot, { recursive: true });
   await extractZipArchive(archivePath, extractRoot, options.repoRoot);
-  fs.rmSync(targetRoot, { recursive: true, force: true });
-  fs.mkdirSync(targetRoot, { recursive: true });
-  fs.cpSync(extractRoot, targetRoot, { recursive: true });
-
-  const dllPath = path.join(targetRoot, "lib", "PCode.Web.dll");
+  const dllPath = path.join(extractRoot, "lib", "PCode.Web.dll");
   assertFile(dllPath);
   return {
     tagName: release.tag_name,
     assetName: asset.name,
-    targetRoot,
+    archivePath,
+    extractRoot,
     dllPath
   };
 }

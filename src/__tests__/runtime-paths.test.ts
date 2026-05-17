@@ -172,22 +172,26 @@ describe("runtime path helpers", () => {
   })
 
   it("supports explicit root overrides for program and data trees", () => {
+    const customProgramRoot = "/custom/program"
+    const customRuntimeDataRoot = "/custom/runtime-data"
     const resolvedPaths = resolveRuntimePaths(createManifest({}), {
       runtimeRoot: "/override-root",
-      runtimeHome: "/custom/program",
-      runtimeDataRoot: "/custom/runtime-data",
+      runtimeHome: customProgramRoot,
+      runtimeDataRoot: customRuntimeDataRoot,
       serverProgramRoot: "/custom/server",
       serverDataRoot: "/custom/server-data"
     })
 
     expect(resolvedPaths.root).toBe(path.resolve("/override-root"))
-    expect(resolvedPaths.runtimeHome).toBe("/custom/program")
-    expect(resolvedPaths.runtimeDataRoot).toBe("/custom/runtime-data")
+    expect(resolvedPaths.runtimeHome).toBe(customProgramRoot)
+    expect(resolvedPaths.runtimeDataRoot).toBe(customRuntimeDataRoot)
     expect(resolvedPaths.serverProgramRoot).toBe("/custom/server")
     expect(resolvedPaths.serverDataRoot).toBe("/custom/server-data")
-    expect(resolvedPaths.componentsRoot).toBe("/custom/program/components")
-    expect(resolvedPaths.nodeRuntime).toBe("/custom/program/components/node/runtime")
-    expect(resolvedPaths.componentDataRoot).toBe("/custom/runtime-data/components")
-    expect(resolvedPaths.npmPrefix).toBe("/custom/runtime-data/npm")
+    expect(resolvedPaths.componentsRoot).toBe(path.resolve(customProgramRoot, "components"))
+    expect(resolvedPaths.nodeRuntime).toBe(
+      path.resolve(customProgramRoot, "components", "node", "runtime")
+    )
+    expect(resolvedPaths.componentDataRoot).toBe(path.resolve(customRuntimeDataRoot, "components"))
+    expect(resolvedPaths.npmPrefix).toBe(path.resolve(customRuntimeDataRoot, "npm"))
   })
 })
