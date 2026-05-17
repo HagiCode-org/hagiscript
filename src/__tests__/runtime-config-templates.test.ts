@@ -59,7 +59,7 @@ async function renderTemplate(
   templateName: string,
   variables: Record<string, string>
 ): Promise<string> {
-  const templatePath = path.resolve(repoRoot, "fixtures/runtime-templates", templateName)
+  const templatePath = path.resolve(repoRoot, "runtime/templates", templateName)
   const template = await readFile(templatePath, "utf8")
   return renderConfigTemplate(template, variables)
 }
