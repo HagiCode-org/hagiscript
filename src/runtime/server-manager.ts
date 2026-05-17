@@ -135,6 +135,8 @@ export interface ManagedServerUseVersionOptions extends ManagedServerVersionOpti
 
 export interface ManagedServerRemoveVersionOptions extends ManagedServerVersionOptions {
   version: string
+  removeDirectoryFn?: typeof rm
+  retryDelayMs?: number
 }
 
 export interface ManagedServerListResult {
@@ -163,6 +165,9 @@ export class ManagedServerError extends Error {
     this.name = "ManagedServerError"
   }
 }
+
+const MANAGED_SERVER_REMOVE_RETRY_COUNT = 8
+const MANAGED_SERVER_REMOVE_RETRY_DELAY_MS = 250
 
 interface ResolvedServerArchive {
   kind: ManagedServerSourceKind
@@ -413,7 +418,7 @@ export async function removeManagedServerInstalledVersion(
     )
   }
 
-  await rm(installedVersion.installPath, { recursive: true, force: true })
+  await removeManagedServerInstallPath(installedVersion.installPath, options)
   const nextState = await removeInstalledManagedServerVersion(context.statePath, version)
 
   return {
@@ -422,6 +427,39 @@ export async function removeManagedServerInstalledVersion(
     removedPath: installedVersion.installPath,
     statePath: context.statePath
   }
+}
+
+async function removeManagedServerInstallPath(
+  installPath: string,
+  options: Pick<ManagedServerRemoveVersionOptions, "removeDirectoryFn" | "retryDelayMs">
+): Promise<void> {
+  const removeDirectoryFn = options.removeDirectoryFn ?? rm
+  const retryDelayMs = options.retryDelayMs ?? MANAGED_SERVER_REMOVE_RETRY_DELAY_MS
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await removeDirectoryFn(installPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (
+        !isRetryableManagedServerRemoveError(error) ||
+        attempt >= MANAGED_SERVER_REMOVE_RETRY_COUNT - 1
+      ) {
+        throw error
+      }
+
+      await delay(retryDelayMs)
+    }
+  }
+}
+
+function isRetryableManagedServerRemoveError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === "EBUSY" || code === "EPERM" || code === "ENOTEMPTY"
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms))
 }
 
 export async function restartManagedServer(

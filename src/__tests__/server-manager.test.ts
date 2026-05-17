@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -975,6 +975,71 @@ components:
 
       await expect(stat(installPath)).resolves.toBeDefined()
       await expect(stat(statePath)).resolves.toBeDefined()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("retries transient directory removal failures before removing an inactive version", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-server-remove-retry-"))
+    const runtimeRoot = path.join(directory, "runtime-root")
+    const installPath = path.join(runtimeRoot, "server", "versions", "1.2.3")
+    const statePath = path.join(runtimeRoot, "server-data", "versions-state.json")
+    const removeDirectoryFn = vi.fn<typeof rm>(async (targetPath, options) => {
+      if (removeDirectoryFn.mock.calls.length < 3) {
+        throw Object.assign(new Error("locked"), { code: "EBUSY" })
+      }
+
+      return rm(targetPath, options)
+    })
+
+    await mkdir(path.join(installPath, "lib"), { recursive: true })
+    await mkdir(path.dirname(statePath), { recursive: true })
+    await Promise.all([
+      writeFile(path.join(installPath, "lib", "PCode.Web.dll"), "dll", "utf8"),
+      writeFile(
+        statePath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            activeVersion: null,
+            versions: {
+              "1.2.3": {
+                version: "1.2.3",
+                installPath,
+                installedAt: "2026-05-17T10:00:00.000Z",
+                source: {
+                  kind: "local-archive",
+                  locator: "/tmp/hagicode-1.2.3-win-x64-nort.zip",
+                  assetName: "hagicode-1.2.3-win-x64-nort.zip"
+                }
+              }
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      )
+    ])
+
+    try {
+      const result = await removeManagedServerInstalledVersion({
+        runtimeRoot,
+        version: "1.2.3",
+        removeDirectoryFn,
+        retryDelayMs: 0
+      })
+
+      expect(result.removedVersion).toBe("1.2.3")
+      expect(removeDirectoryFn).toHaveBeenCalledTimes(3)
+      await expect(stat(installPath)).rejects.toMatchObject({ code: "ENOENT" })
+      await expect(
+        readFile(statePath, "utf8").then((content) => JSON.parse(content))
+      ).resolves.toMatchObject({
+        activeVersion: null,
+        versions: {}
+      })
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
