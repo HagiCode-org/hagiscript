@@ -16,24 +16,30 @@ import {
 } from "../runtime/runtime-paths.js"
 import type { LoadedRuntimeManifest } from "../runtime/runtime-manifest.js"
 
+const managedRoot = path.resolve("/managed-runtime")
+const managedProgramRoot = path.join(managedRoot, "program")
+const managedRuntimeDataRoot = path.join(managedRoot, "runtime-data")
+const managedServerProgramRoot = path.join(managedRoot, "server")
+const managedServerDataRoot = path.join(managedRoot, "server-data")
+
 const runtimePaths: ResolvedRuntimePaths = {
-  root: "/managed-runtime",
-  runtimeHome: "/managed-runtime/program",
-  runtimeDataRoot: "/managed-runtime/runtime-data",
-  serverProgramRoot: "/managed-runtime/server",
-  serverDataRoot: "/managed-runtime/server-data",
-  bin: "/managed-runtime/runtime-data/bin",
-  config: "/managed-runtime/runtime-data/config",
-  logs: "/managed-runtime/runtime-data/logs",
-  data: "/managed-runtime/runtime-data/data",
-  stateFile: "/managed-runtime/runtime-data/state.json",
-  componentsRoot: "/managed-runtime/program/components",
-  componentDataRoot: "/managed-runtime/runtime-data/components",
+  root: managedRoot,
+  runtimeHome: managedProgramRoot,
+  runtimeDataRoot: managedRuntimeDataRoot,
+  serverProgramRoot: managedServerProgramRoot,
+  serverDataRoot: managedServerDataRoot,
+  bin: path.join(managedRuntimeDataRoot, "bin"),
+  config: path.join(managedRuntimeDataRoot, "config"),
+  logs: path.join(managedRuntimeDataRoot, "logs"),
+  data: path.join(managedRuntimeDataRoot, "data"),
+  stateFile: path.join(managedRuntimeDataRoot, "state.json"),
+  componentsRoot: path.join(managedProgramRoot, "components"),
+  componentDataRoot: path.join(managedRuntimeDataRoot, "components"),
   defaultPm2Home: "pm2",
-  npmPrefix: "/managed-runtime/runtime-data/npm",
-  nodeRuntime: "/managed-runtime/program/components/node/runtime",
-  dotnetRuntime: "/managed-runtime/program/components/dotnet/runtime",
-  vendoredRoot: "/managed-runtime/program/components/bundled"
+  npmPrefix: path.join(managedRuntimeDataRoot, "npm"),
+  nodeRuntime: path.join(managedProgramRoot, "components", "node", "runtime"),
+  dotnetRuntime: path.join(managedProgramRoot, "components", "dotnet", "runtime"),
+  vendoredRoot: path.join(managedProgramRoot, "components", "bundled")
 }
 
 function createManifest(pathOverrides: Partial<LoadedRuntimeManifest["paths"]>): LoadedRuntimeManifest {
@@ -94,18 +100,18 @@ describe("runtime path helpers", () => {
   })
 
   it("builds dedicated server program and shared data roots", () => {
-    expect(getComponentManagedRoot(runtimePaths, "server")).toBe("/managed-runtime/server")
+    expect(getComponentManagedRoot(runtimePaths, "server")).toBe(managedServerProgramRoot)
     expect(getComponentRuntimeDataHome(runtimePaths, "server", "services/server")).toBe(
-      "/managed-runtime/server-data"
+      managedServerDataRoot
     )
-    expect(getServerProgramRoot(runtimePaths)).toBe("/managed-runtime/server")
-    expect(getServerVersionsRoot(runtimePaths)).toBe("/managed-runtime/server/versions")
+    expect(getServerProgramRoot(runtimePaths)).toBe(managedServerProgramRoot)
+    expect(getServerVersionsRoot(runtimePaths)).toBe(path.join(managedServerProgramRoot, "versions"))
     expect(getServerVersionRoot(runtimePaths, "1.2.3")).toBe(
-      "/managed-runtime/server/versions/1.2.3"
+      path.join(managedServerProgramRoot, "versions", "1.2.3")
     )
-    expect(getServerSharedDataRoot(runtimePaths)).toBe("/managed-runtime/server-data")
+    expect(getServerSharedDataRoot(runtimePaths)).toBe(managedServerDataRoot)
     expect(getComponentPm2Home(runtimePaths, "server", "services/server", ".pm2")).toBe(
-      "/managed-runtime/server-data/.pm2"
+      path.join(managedServerDataRoot, ".pm2")
     )
   })
 
@@ -150,19 +156,19 @@ describe("runtime path helpers", () => {
       })
     )
 
-    expect(resolvedPaths.serverProgramRoot).toBe("/managed-runtime/server")
-    expect(resolvedPaths.serverDataRoot).toBe("/managed-runtime/server-data")
+    expect(resolvedPaths.serverProgramRoot).toBe(path.join(managedRoot, "server"))
+    expect(resolvedPaths.serverDataRoot).toBe(path.join(managedRoot, "server-data"))
   })
 
   it("falls back to legacy server roots when standalone paths are not configured", () => {
     const resolvedPaths = resolveRuntimePaths(createManifest({}))
 
-    expect(getComponentManagedRoot(resolvedPaths, "server")).toBe("/managed-runtime/program/server")
+    expect(getComponentManagedRoot(resolvedPaths, "server")).toBe(path.join(managedRoot, "program", "server"))
     expect(getComponentRuntimeDataHome(resolvedPaths, "server", "services/server")).toBe(
-      "/managed-runtime/runtime-data/server"
+      path.join(managedRoot, "runtime-data", "server")
     )
-    expect(resolvedPaths.serverProgramRoot).toBe("/managed-runtime/program/server")
-    expect(resolvedPaths.serverDataRoot).toBe("/managed-runtime/runtime-data/server")
+    expect(resolvedPaths.serverProgramRoot).toBe(path.join(managedRoot, "program", "server"))
+    expect(resolvedPaths.serverDataRoot).toBe(path.join(managedRoot, "runtime-data", "server"))
   })
 
   it("supports explicit root overrides for program and data trees", () => {
@@ -174,7 +180,7 @@ describe("runtime path helpers", () => {
       serverDataRoot: "/custom/server-data"
     })
 
-    expect(resolvedPaths.root).toBe("/override-root")
+    expect(resolvedPaths.root).toBe(path.resolve("/override-root"))
     expect(resolvedPaths.runtimeHome).toBe("/custom/program")
     expect(resolvedPaths.runtimeDataRoot).toBe("/custom/runtime-data")
     expect(resolvedPaths.serverProgramRoot).toBe("/custom/server")

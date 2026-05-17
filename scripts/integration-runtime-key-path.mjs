@@ -823,7 +823,7 @@ function getFixturePm2Entrypoint(runtimeRoot) {
   return process.platform === "win32"
     ? path.join(
         runtimeRoot,
-        "program",
+        "runtime-data",
         "npm",
         "node_modules",
         "pm2",
@@ -832,7 +832,7 @@ function getFixturePm2Entrypoint(runtimeRoot) {
       )
     : path.join(
         runtimeRoot,
-        "program",
+        "runtime-data",
         "npm",
         "lib",
         "node_modules",

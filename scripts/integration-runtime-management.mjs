@@ -225,8 +225,7 @@ try {
       [
         path.join(managedRoot, "program"),
         path.join(managedRoot, "program", "bin"),
-        path.join(managedRoot, "program", "components"),
-        path.join(managedRoot, "program", "npm")
+        path.join(managedRoot, "program", "components")
       ],
       "runtime program roots"
     );
@@ -237,7 +236,8 @@ try {
         path.join(managedRoot, "runtime-data", "config"),
         path.join(managedRoot, "runtime-data", "logs"),
         path.join(managedRoot, "runtime-data", "data"),
-        path.join(managedRoot, "runtime-data", "components")
+        path.join(managedRoot, "runtime-data", "components"),
+        path.join(managedRoot, "runtime-data", "npm")
       ],
       "runtime external data roots"
     );
@@ -385,15 +385,23 @@ try {
           .map((line) => `  - ${line}`)
       ];
     }
-    assertIncludes(
-      fs.readFileSync(omnirouteConfig, "utf8"),
-      `runtimeHome: ${path.join(managedRoot, "program")}`,
-      "omniroute config output"
+    const omnirouteConfigObject = parse(fs.readFileSync(omnirouteConfig, "utf8"));
+    const codeServerConfigObject = parse(fs.readFileSync(codeServerConfig, "utf8"));
+    assertEqual(
+      omnirouteConfigObject?.runtimeHome,
+      path.join(managedRoot, "program"),
+      "omniroute config runtimeHome"
     );
-    assertIncludes(
-      fs.readFileSync(codeServerConfig, "utf8"),
-      "user-data-dir:",
-      "code-server config output"
+    assertEqual(
+      codeServerConfigObject?.["user-data-dir"],
+      path.join(
+        managedRoot,
+        "runtime-data",
+        "components",
+        "services",
+        "code-server"
+      ),
+      "code-server config user-data-dir"
     );
 
     installedTreeLines = renderDirectoryTree(managedRoot);
@@ -490,7 +498,7 @@ try {
           );
           assertIncludes(
             startOutput,
-            `App: hagicode-${service}-${pm2NameIdentifier}`,
+            `App: hagicode-${service}-hagicode`,
             `${service} start app`
           );
 
@@ -1095,6 +1103,12 @@ function assertArrayEquals(actual, expected, label) {
     throw new Error(
       `Expected ${label} to equal ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
     );
+  }
+}
+
+function assertEqual(actual, expected, label) {
+  if (actual !== expected) {
+    throw new Error(`Expected ${label} to equal ${expected}, got ${actual}`);
   }
 }
 

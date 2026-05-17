@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
+import { parse } from "yaml"
 import {
   initRuntimeManifest,
   readRuntimeManifestSummary,
@@ -34,12 +35,16 @@ describe("manifest manager", () => {
       })
 
       const content = await readFile(manifestPath, "utf8")
+      const manifest = parse(content) as {
+        components?: Array<{ name?: string; installScript?: string }>
+      }
+      const nodeComponent = manifest.components?.find((component) => component.name === "node")
       expect(result.manifest.manifestPath).toBe(manifestPath)
       expect(result.changedFields).toContain("paths.runtimeHome")
       expect(content).toContain('runtimeHome: program-alt')
       expect(content).toContain('serverProgramRoot: server-alt')
       expect(content).toContain('activeVersion: 1.2.3')
-      expect(content).toContain('installScript: /')
+      expect(nodeComponent?.installScript).toBe(path.resolve("runtime/scripts/install-node.mjs"))
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

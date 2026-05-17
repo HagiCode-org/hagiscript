@@ -14,7 +14,7 @@ describe("server manager", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-server-manager-"))
     const manifestPath = path.join(directory, "manifest.yaml")
     const runtimeRoot = path.join(directory, "runtime-root")
-    const archivePath = path.join(directory, "hagicode-1.2.3-linux-x64-nort.zip")
+    const archivePath = path.join(directory, getManagedServerAssetName("1.2.3"))
     const runtimeManagerModule = await import("../runtime/runtime-manager.js")
     const ensureManagedPm2Package = vi
       .spyOn(runtimeManagerModule, "ensureManagedPm2Package")
@@ -169,6 +169,9 @@ npmSync:
   })
 
   it("passes the default or explicit instance name into PM2 operations", async () => {
+    const runtimeRoot = "/tmp/runtime-root"
+    const runtimeDataRoot = path.join(runtimeRoot, "runtime-data", "server")
+    const configPath = path.join(runtimeDataRoot, "config", "server-config.json")
     const pm2Module = await import("../runtime/pm2-manager.js")
     const serverConfigModule = await import("../runtime/server-config.js")
     const runManagedPm2Command = vi
@@ -183,41 +186,41 @@ npmSync:
         host: "127.0.0.1",
         port: 39150,
         aspNetCoreUrls: "http://127.0.0.1:39150",
-        configPath: "/tmp/runtime-root/runtime-data/server/config/server-config.json",
+        configPath,
         source: "config-file"
       })
 
     try {
-      await startManagedServer({ runtimeRoot: "/tmp/runtime-root" })
+      await startManagedServer({ runtimeRoot })
       await resolveManagedServerStartupEnvironment({
-        runtimeRoot: "/tmp/runtime-root",
+        runtimeRoot,
         instanceName: "demo"
       })
 
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(1, {
         manifestPath: undefined,
-        runtimeRoot: "/tmp/runtime-root",
+        runtimeRoot,
         service: "code-server",
         action: "start",
         nameIdentifierValue: undefined
       })
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(2, {
         manifestPath: undefined,
-        runtimeRoot: "/tmp/runtime-root",
+        runtimeRoot,
         service: "omniroute",
         action: "start",
         nameIdentifierValue: undefined
       })
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(3, {
         manifestPath: undefined,
-        runtimeRoot: "/tmp/runtime-root",
+        runtimeRoot,
         service: "server",
         action: "start",
         nameIdentifierValue: undefined,
         environmentOverrides: {
           ASPNETCORE_URLS: "http://127.0.0.1:39150",
           Urls: "http://127.0.0.1:39150",
-          DATADIR: "/tmp/runtime-root/runtime-data/server/data",
+          DATADIR: path.join(runtimeDataRoot, "data"),
           VsCodeServer__Host: "127.0.0.1",
           VsCodeServer__Port: "8080",
           VsCodeServer__AuthMode: "none",
@@ -232,13 +235,13 @@ npmSync:
       })
       expect(resolveManagedPm2Environment).toHaveBeenCalledWith({
         manifestPath: undefined,
-        runtimeRoot: "/tmp/runtime-root",
+        runtimeRoot,
         service: "server",
         nameIdentifierValue: "demo",
         environmentOverrides: {
           ASPNETCORE_URLS: "http://127.0.0.1:39150",
           Urls: "http://127.0.0.1:39150",
-          DATADIR: "/tmp/runtime-root/runtime-data/server/data",
+          DATADIR: path.join(runtimeDataRoot, "data"),
           VsCodeServer__Host: "127.0.0.1",
           VsCodeServer__Port: "8080",
           VsCodeServer__AuthMode: "none",
@@ -259,6 +262,9 @@ npmSync:
   })
 
   it("resolves managed server environment details inside hagiscript", async () => {
+    const runtimeRoot = "/tmp/runtime-root"
+    const configPath = path.join(runtimeRoot, "runtime-data", "server", "config", "server-config.json")
+    const sharedDataRoot = path.dirname(path.dirname(configPath))
     const serverConfigModule = await import("../runtime/server-config.js")
     const getManagedServerConfig = vi
       .spyOn(serverConfigModule, "getManagedServerConfig")
@@ -266,25 +272,25 @@ npmSync:
         host: "127.0.0.1",
         port: 39150,
         aspNetCoreUrls: "http://127.0.0.1:39150",
-        configPath: "/tmp/runtime-root/runtime-data/server/config/server-config.json",
+        configPath,
         source: "config-file"
       })
 
     try {
       const result = await resolveManagedServerEnvironment({
-        runtimeRoot: "/tmp/runtime-root"
+        runtimeRoot
       })
 
       expect(result).toEqual({
         host: "127.0.0.1",
         port: 39150,
         aspNetCoreUrls: "http://127.0.0.1:39150",
-        configPath: "/tmp/runtime-root/runtime-data/server/config/server-config.json",
-        sharedDataRoot: "/tmp/runtime-root/runtime-data/server",
+        configPath,
+        sharedDataRoot,
         environment: {
           ASPNETCORE_URLS: "http://127.0.0.1:39150",
           Urls: "http://127.0.0.1:39150",
-          DATADIR: "/tmp/runtime-root/runtime-data/server/data",
+          DATADIR: path.join(sharedDataRoot, "data"),
           VsCodeServer__Host: "127.0.0.1",
           VsCodeServer__Port: "8080",
           VsCodeServer__AuthMode: "none",
@@ -536,18 +542,18 @@ components:
               channels: ["stable"],
               assets: [
                 {
-                  name: "hagicode-1.2.3-linux-x64-nort.zip",
+                  name: getManagedServerAssetName("1.2.3"),
                   downloadSources: [
                     {
                       kind: "mirror",
                       label: "cn",
-                      url: "https://cn.example.com/hagicode-1.2.3-linux-x64-nort.zip"
+                      url: `https://cn.example.com/${getManagedServerAssetName("1.2.3")}`
                     },
                     {
                       kind: "github",
                       label: "github",
                       primary: true,
-                      url: "https://github.com/HagiCode-org/releases/releases/download/v1.2.3/hagicode-1.2.3-linux-x64-nort.zip"
+                      url: `https://github.com/HagiCode-org/releases/releases/download/v1.2.3/${getManagedServerAssetName("1.2.3")}`
                     }
                   ]
                 }
@@ -583,11 +589,11 @@ components:
       })
 
       expect(result.source.kind).toBe("http-index")
-      expect(result.source.assetName).toBe("hagicode-1.2.3-linux-x64-nort.zip")
+      expect(result.source.assetName).toBe(getManagedServerAssetName("1.2.3"))
       expect(result.source.version).toBe("1.2.3")
       expect(fetchImpl).toHaveBeenNthCalledWith(
         2,
-        "https://github.com/HagiCode-org/releases/releases/download/v1.2.3/hagicode-1.2.3-linux-x64-nort.zip",
+        `https://github.com/HagiCode-org/releases/releases/download/v1.2.3/${getManagedServerAssetName("1.2.3")}`,
         expect.any(Object)
       )
     } finally {
@@ -707,13 +713,13 @@ components:
               channels: ["stable"],
               assets: [
                 {
-                  name: "hagicode-2.4.6-linux-x64-nort.zip",
+                  name: getManagedServerAssetName("2.4.6"),
                   downloadSources: [
                     {
                       kind: "github",
                       label: "github",
                       primary: true,
-                      url: "https://github.com/HagiCode-org/releases/releases/download/v2.4.6/hagicode-2.4.6-linux-x64-nort.zip"
+                      url: `https://github.com/HagiCode-org/releases/releases/download/v2.4.6/${getManagedServerAssetName("2.4.6")}`
                     }
                   ]
                 }
@@ -755,7 +761,7 @@ components:
       )
       expect(fetchImpl).toHaveBeenNthCalledWith(
         2,
-        "https://github.com/HagiCode-org/releases/releases/download/v2.4.6/hagicode-2.4.6-linux-x64-nort.zip",
+        `https://github.com/HagiCode-org/releases/releases/download/v2.4.6/${getManagedServerAssetName("2.4.6")}`,
         expect.any(Object)
       )
     } finally {
@@ -874,11 +880,11 @@ components:
         status: 200,
         json: async () => ({
           tag_name: "v1.2.3",
-          assets: [
+           assets: [
             {
-              name: "hagicode-1.2.3-linux-x64-nort.zip",
+              name: getManagedServerAssetName("1.2.3"),
               browser_download_url:
-                "https://github.com/HagiCode-org/releases/releases/download/v1.2.3/hagicode-1.2.3-linux-x64-nort.zip"
+                `https://github.com/HagiCode-org/releases/releases/download/v1.2.3/${getManagedServerAssetName("1.2.3")}`
             }
           ]
         })
@@ -922,3 +928,35 @@ components:
     }
   })
 })
+
+function getManagedServerAssetName(version: string): string {
+  return `hagicode-${version}-${getManagedServerAssetSuffix()}`
+}
+
+function getManagedServerAssetSuffix(): string {
+  return `${getManagedServerAssetPlatform()}-${getManagedServerAssetArchitecture()}-nort.zip`
+}
+
+function getManagedServerAssetPlatform(): "linux" | "win" | "osx" {
+  switch (process.platform) {
+    case "linux":
+      return "linux"
+    case "win32":
+      return "win"
+    case "darwin":
+      return "osx"
+    default:
+      throw new Error(`Unsupported test platform: ${process.platform}`)
+  }
+}
+
+function getManagedServerAssetArchitecture(): "x64" | "arm64" {
+  switch (process.arch) {
+    case "x64":
+      return "x64"
+    case "arm64":
+      return "arm64"
+    default:
+      throw new Error(`Unsupported test architecture: ${process.arch}`)
+  }
+}
