@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import {
   installManagedServer,
+  removeManagedServerInstalledVersion,
   resolveManagedServerEnvironment,
   resolveManagedServerStartupEnvironment,
   startManagedServer
@@ -923,6 +924,57 @@ components:
         "https://api.github.com/repos/HagiCode-org/releases/releases/latest",
         expect.any(Object)
       )
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects removing the active managed server version before touching install files", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-server-remove-active-"))
+    const runtimeRoot = path.join(directory, "runtime-root")
+    const installPath = path.join(runtimeRoot, "server", "versions", "1.2.3")
+    const statePath = path.join(runtimeRoot, "server-data", "versions-state.json")
+
+    await mkdir(path.join(installPath, "lib"), { recursive: true })
+    await mkdir(path.dirname(statePath), { recursive: true })
+    await Promise.all([
+      writeFile(path.join(installPath, "lib", "PCode.Web.dll"), "dll", "utf8"),
+      writeFile(
+        statePath,
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            activeVersion: "1.2.3",
+            versions: {
+              "1.2.3": {
+                version: "1.2.3",
+                installPath,
+                installedAt: "2026-05-17T10:00:00.000Z",
+                source: {
+                  kind: "local-archive",
+                  locator: "/tmp/hagicode-1.2.3-win-x64-nort.zip",
+                  assetName: "hagicode-1.2.3-win-x64-nort.zip"
+                }
+              }
+            }
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      )
+    ])
+
+    try {
+      await expect(
+        removeManagedServerInstalledVersion({
+          runtimeRoot,
+          version: "1.2.3"
+        })
+      ).rejects.toThrow("Managed server version 1.2.3 is currently active and cannot be removed.")
+
+      await expect(stat(installPath)).resolves.toBeDefined()
+      await expect(stat(statePath)).resolves.toBeDefined()
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

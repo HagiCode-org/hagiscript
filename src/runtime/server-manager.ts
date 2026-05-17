@@ -407,6 +407,11 @@ export async function removeManagedServerInstalledVersion(
   if (!installedVersion) {
     throw new ManagedServerError(`Managed server version ${version} is not installed.`)
   }
+  if (state.activeVersion === version) {
+    throw new ManagedServerError(
+      `Managed server version ${version} is currently active and cannot be removed.`
+    )
+  }
 
   await rm(installedVersion.installPath, { recursive: true, force: true })
   const nextState = await removeInstalledManagedServerVersion(context.statePath, version)
