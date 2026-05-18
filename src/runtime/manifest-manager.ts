@@ -83,7 +83,6 @@ export async function initRuntimeManifest(
 
   const defaultManifestPath = getDefaultRuntimeManifestPath()
   const manifestObject = await readRuntimeManifestObject(defaultManifestPath)
-  materializePackagedScriptPaths(manifestObject, dirname(defaultManifestPath))
   const changedFields = applyRuntimeManifestUpdates(manifestObject, {
     pathUpdates: options.pathUpdates,
     npmPackageUpdates: options.npmPackageUpdates,
@@ -205,37 +204,6 @@ async function writeRuntimeManifestObject(
 ): Promise<void> {
   await mkdir(dirname(manifestPath), { recursive: true })
   await writeFile(manifestPath, stringify(manifestObject), "utf8")
-}
-
-function materializePackagedScriptPaths(
-  manifestObject: Record<string, unknown>,
-  manifestDir: string
-): void {
-  const components = manifestObject.components
-  if (!Array.isArray(components)) {
-    return
-  }
-
-  for (const component of components) {
-    if (!isRecord(component)) {
-      continue
-    }
-
-    for (const key of [
-      "installScript",
-      "verifyScript",
-      "configureScript",
-      "updateScript",
-      "removeScript"
-    ]) {
-      const value = component[key]
-      if (typeof value !== "string" || value.trim().length === 0) {
-        continue
-      }
-
-      component[key] = resolve(manifestDir, value.trim())
-    }
-  }
 }
 
 function applyRuntimeManifestUpdates(

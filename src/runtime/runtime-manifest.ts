@@ -99,6 +99,14 @@ export interface LoadRuntimeManifestOptions {
   manifestPath?: string
 }
 
+interface RuntimeComponentScriptDefinition {
+  install?: string
+  verify?: string
+  configure?: string
+  update?: string
+  remove?: string
+}
+
 export class RuntimeManifestValidationError extends Error {
   readonly errors: string[]
 
@@ -116,6 +124,30 @@ const supportedComponentTypes = new Set<RuntimeComponentType>([
   "released-service"
 ])
 const pm2NameIdentifierPattern = /^[a-z0-9_]+$/u
+const builtinRuntimeComponentScripts: Record<string, RuntimeComponentScriptDefinition> = {
+  node: {
+    install: "install-node.mjs",
+    verify: "verify-node.mjs"
+  },
+  dotnet: {
+    install: "install-dotnet.mjs",
+    verify: "verify-dotnet.mjs",
+    remove: "remove-dotnet.mjs"
+  },
+  omniroute: {
+    install: "install-omniroute.mjs",
+    configure: "configure-omniroute.mjs"
+  },
+  "code-server": {
+    install: "install-code-server.mjs",
+    configure: "configure-code-server.mjs"
+  },
+  server: {
+    install: "install-server.mjs",
+    configure: "configure-server.mjs",
+    remove: "remove-server.mjs"
+  }
+}
 
 export function getPackageRoot(moduleUrl = import.meta.url): string {
   return resolve(dirname(fileURLToPath(moduleUrl)), "..", "..")
@@ -332,32 +364,38 @@ function validateRuntimeComponents(
       )
     }
 
-    const installScript = readResolvedScript(
+    const defaultScripts = resolveBuiltinRuntimeComponentScripts(name)
+    const installScript = readRequiredResolvedScriptWithDefault(
       componentObject.installScript,
+      defaultScripts?.install,
       manifestDir,
       `components[${index}].installScript`,
       errors
     )
-    const verifyScript = readOptionalResolvedScript(
+    const verifyScript = readOptionalResolvedScriptWithDefault(
       componentObject.verifyScript,
+      defaultScripts?.verify,
       manifestDir,
       `components[${index}].verifyScript`,
       errors
     )
-    const configureScript = readOptionalResolvedScript(
+    const configureScript = readOptionalResolvedScriptWithDefault(
       componentObject.configureScript,
+      defaultScripts?.configure,
       manifestDir,
       `components[${index}].configureScript`,
       errors
     )
-    const updateScript = readOptionalResolvedScript(
+    const updateScript = readOptionalResolvedScriptWithDefault(
       componentObject.updateScript,
+      defaultScripts?.update,
       manifestDir,
       `components[${index}].updateScript`,
       errors
     )
-    const removeScript = readOptionalResolvedScript(
+    const removeScript = readOptionalResolvedScriptWithDefault(
       componentObject.removeScript,
+      defaultScripts?.remove,
       manifestDir,
       `components[${index}].removeScript`,
       errors
@@ -644,8 +682,52 @@ function readOptionalResolvedScript(
   return scriptPath ? resolveManifestRelativePath(manifestDir, scriptPath) : undefined
 }
 
+function readRequiredResolvedScriptWithDefault(
+  value: unknown,
+  defaultScriptPath: string | undefined,
+  manifestDir: string,
+  label: string,
+  errors: string[]
+): string {
+  if (value === undefined && defaultScriptPath) {
+    return defaultScriptPath
+  }
+
+  return readResolvedScript(value, manifestDir, label, errors)
+}
+
+function readOptionalResolvedScriptWithDefault(
+  value: unknown,
+  defaultScriptPath: string | undefined,
+  manifestDir: string,
+  label: string,
+  errors: string[]
+): string | undefined {
+  if (value === undefined) {
+    return defaultScriptPath
+  }
+
+  return readOptionalResolvedScript(value, manifestDir, label, errors)
+}
+
 function resolveManifestRelativePath(manifestDir: string, scriptPath: string): string {
   return resolve(manifestDir, scriptPath)
+}
+
+function resolveBuiltinRuntimeComponentScripts(
+  componentName: string
+): RuntimeComponentScriptDefinition | undefined {
+  const scriptDefinition = builtinRuntimeComponentScripts[componentName]
+  if (!scriptDefinition) {
+    return undefined
+  }
+
+  return Object.fromEntries(
+    Object.entries(scriptDefinition).map(([phase, scriptFileName]) => [
+      phase,
+      join(getPackageRoot(), "runtime", "scripts", scriptFileName)
+    ])
+  ) as RuntimeComponentScriptDefinition
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

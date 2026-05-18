@@ -44,7 +44,7 @@ describe("manifest manager", () => {
       expect(content).toContain('runtimeHome: program-alt')
       expect(content).toContain('serverProgramRoot: server-alt')
       expect(content).toContain('activeVersion: 1.2.3')
-      expect(nodeComponent?.installScript).toBe(path.resolve("runtime/scripts/install-node.mjs"))
+      expect(nodeComponent?.installScript).toBeUndefined()
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

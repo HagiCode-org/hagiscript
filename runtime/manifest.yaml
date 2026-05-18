@@ -28,17 +28,12 @@ components:
   source: "desktop-bundled-node"
   version: "22.22.2"
   channelVersion: "22"
-  installScript: "scripts/install-node.mjs"
-  verifyScript: "scripts/verify-node.mjs"
 
 - name: "dotnet"
   type: "runtime"
   source: "desktop-embedded-dotnet"
   version: "10.0.5"
   channelVersion: "10.0"
-  installScript: "scripts/install-dotnet.mjs"
-  verifyScript: "scripts/verify-dotnet.mjs"
-  removeScript: "scripts/remove-dotnet.mjs"
 
 - name: "omniroute"
   type: "bundled-runtime"
@@ -47,8 +42,6 @@ components:
   runtimeDataDir: "services/omniroute"
   lifecycleDependencies:
   - "node"
-  installScript: "scripts/install-omniroute.mjs"
-  configureScript: "scripts/configure-omniroute.mjs"
   pm2:
     appName: "hagicode-omniroute"
     cwd: "current"
@@ -60,8 +53,6 @@ components:
   runtimeDataDir: "services/code-server"
   lifecycleDependencies:
   - "node"
-  installScript: "scripts/install-code-server.mjs"
-  configureScript: "scripts/configure-code-server.mjs"
   pm2:
     appName: "hagicode-code-server"
     cwd: "current"
@@ -73,9 +64,6 @@ components:
   lifecycleDependencies:
   - "node"
   - "dotnet"
-  installScript: "scripts/install-server.mjs"
-  configureScript: "scripts/configure-server.mjs"
-  removeScript: "scripts/remove-server.mjs"
   pm2:
     appName: "hagicode-server"
     env:

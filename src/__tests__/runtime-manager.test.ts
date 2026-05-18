@@ -5,7 +5,10 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
 import * as pm2ManagerModule from "../runtime/pm2-manager.js"
-import { loadRuntimeManifest } from "../runtime/runtime-manifest.js"
+import {
+  getDefaultRuntimeManifestPath,
+  loadRuntimeManifest
+} from "../runtime/runtime-manifest.js"
 import {
   installRuntime,
   removeRuntime,
@@ -114,6 +117,22 @@ components:
         }
       }
     })
+  })
+
+  it("resolves packaged lifecycle hooks for builtin components when manifests omit script paths", async () => {
+    const manifest = await loadRuntimeManifest({
+      manifestPath: getDefaultRuntimeManifestPath()
+    })
+
+    expect(manifest.componentMap.get("dotnet")?.scripts.install).toContain(
+      `${path.sep}runtime${path.sep}scripts${path.sep}install-dotnet.mjs`
+    )
+    expect(manifest.componentMap.get("server")?.scripts.configure).toContain(
+      `${path.sep}runtime${path.sep}scripts${path.sep}configure-server.mjs`
+    )
+    expect(manifest.componentMap.get("omniroute")?.scripts.install).toContain(
+      `${path.sep}runtime${path.sep}scripts${path.sep}install-omniroute.mjs`
+    )
   })
 
   it("rejects PM2 manifests without a required naming env declaration", async () => {
@@ -297,14 +316,11 @@ phases:
 components:
   - name: "node"
     type: "runtime"
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "dotnet"
     type: "runtime"
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "server"
     type: "released-service"
     lifecycleDependencies: ["node", "dotnet"]
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
       nameIdentifierEnv: "hagicode_pm2_name"
@@ -648,7 +664,6 @@ components:
   - name: "server"
     type: "released-service"
     runtimeDataDir: "services/server"
-    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
     pm2:
       appName: "hagicode-server"
     releasedService:
