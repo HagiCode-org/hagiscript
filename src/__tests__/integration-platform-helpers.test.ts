@@ -5,6 +5,7 @@ import {
   createStageTracker,
   executableName,
   formatIntegrationSummary,
+  normalizeIntegrationRuntimeComponent,
   runtimeNodeCommand,
   runtimeNpmCommand
 } from "../../scripts/integration-platform-helpers.mjs";
@@ -37,6 +38,32 @@ describe("installed-runtime integration platform helpers", () => {
     expect(runtimeNpmCommand("C:/runtime", "win32")).toBe(
       path.join("C:/runtime", "npm.cmd")
     );
+  });
+
+  it("normalizes integration manifest components while leaving omitted scripts absent", () => {
+    const explicitComponent = normalizeIntegrationRuntimeComponent(
+      {
+        name: "custom-service",
+        installScript: "scripts/install-custom.mjs",
+        verifyScript: "scripts/verify-custom.mjs"
+      },
+      "/repo/runtime"
+    );
+    const builtinComponent = normalizeIntegrationRuntimeComponent(
+      {
+        name: "node"
+      },
+      "/repo/runtime"
+    );
+
+    expect(explicitComponent.installScript).toBe(
+      path.join("/repo/runtime", "scripts/install-custom.mjs")
+    );
+    expect(explicitComponent.verifyScript).toBe(
+      path.join("/repo/runtime", "scripts/verify-custom.mjs")
+    );
+    expect(builtinComponent.installScript).toBeUndefined();
+    expect(builtinComponent.verifyScript).toBeUndefined();
   });
 
   it("tracks stage pass, failure, and skip outcomes", async () => {

@@ -10,7 +10,8 @@ import {
   collectPlatformDiagnostics,
   createStageTracker,
   formatDiagnostics,
-  formatIntegrationSummary
+  formatIntegrationSummary,
+  normalizeIntegrationRuntimeComponent
 } from "./integration-platform-helpers.mjs";
 import { collectManagedPm2FailureDetail } from "./integration-pm2-diagnostics.mjs";
 import { ProcessRunError, runProcess } from "./process-runner.mjs";
@@ -77,45 +78,10 @@ try {
     manifest.components = manifest.components
       .filter((component) => componentNames.has(component.name))
       .map((component) => {
-        const normalizedComponent = {
-          ...component,
-          installScript: path.resolve(
-            manifestDirectory,
-            component.installScript
-          ),
-          ...(component.verifyScript
-            ? {
-                verifyScript: path.resolve(
-                  manifestDirectory,
-                  component.verifyScript
-                )
-              }
-            : {}),
-          ...(component.configureScript
-            ? {
-                configureScript: path.resolve(
-                  manifestDirectory,
-                  component.configureScript
-                )
-              }
-            : {}),
-          ...(component.updateScript
-            ? {
-                updateScript: path.resolve(
-                  manifestDirectory,
-                  component.updateScript
-                )
-              }
-            : {}),
-          ...(component.removeScript
-            ? {
-                removeScript: path.resolve(
-                  manifestDirectory,
-                  component.removeScript
-                )
-              }
-            : {})
-        };
+        const normalizedComponent = normalizeIntegrationRuntimeComponent(
+          component,
+          manifestDirectory
+        );
 
         if (component.pm2 && isManagedPm2Service(component.name)) {
           normalizedComponent.pm2 = {

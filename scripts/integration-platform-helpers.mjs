@@ -30,6 +30,37 @@ export function runtimeNpmCommand(runtimePath, platform = process.platform) {
   return path.join(runtimePath, folder, executableName("npm", platform));
 }
 
+export function normalizeIntegrationRuntimeComponent(component, manifestDirectory) {
+  return {
+    ...component,
+    ...resolveLifecycleScriptProperty(
+      "installScript",
+      manifestDirectory,
+      component.installScript
+    ),
+    ...resolveLifecycleScriptProperty(
+      "verifyScript",
+      manifestDirectory,
+      component.verifyScript
+    ),
+    ...resolveLifecycleScriptProperty(
+      "configureScript",
+      manifestDirectory,
+      component.configureScript
+    ),
+    ...resolveLifecycleScriptProperty(
+      "updateScript",
+      manifestDirectory,
+      component.updateScript
+    ),
+    ...resolveLifecycleScriptProperty(
+      "removeScript",
+      manifestDirectory,
+      component.removeScript
+    )
+  };
+}
+
 export function createStageTracker() {
   const stages = [];
   const skipped = [];
@@ -192,6 +223,17 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function resolveLifecycleScriptProperty(
+  key,
+  manifestDirectory,
+  scriptPath
+) {
+  const resolvedPath =
+    typeof scriptPath === "string" ? path.resolve(manifestDirectory, scriptPath) : undefined;
+
+  return typeof resolvedPath === "string" ? { [key]: resolvedPath } : {};
 }
 
 async function commandVersion(runProcess, command, args, cwd) {
