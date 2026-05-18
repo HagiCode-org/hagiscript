@@ -57,10 +57,10 @@ describe("installed-runtime integration platform helpers", () => {
     );
 
     expect(explicitComponent.installScript).toBe(
-      path.join("/repo/runtime", "scripts/install-custom.mjs")
+      path.resolve("/repo/runtime", "scripts/install-custom.mjs")
     );
     expect(explicitComponent.verifyScript).toBe(
-      path.join("/repo/runtime", "scripts/verify-custom.mjs")
+      path.resolve("/repo/runtime", "scripts/verify-custom.mjs")
     );
     expect(builtinComponent.installScript).toBeUndefined();
     expect(builtinComponent.verifyScript).toBeUndefined();
