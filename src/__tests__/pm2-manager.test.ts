@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it, vi } from "vitest"
+import { CommandExecutionError } from "../runtime/command-launch.js"
 import {
   getManagedNpmBinDirectory,
   getManagedNpmModulesDirectory,
@@ -89,16 +90,13 @@ describe("pm2 manager", () => {
         return {
           command,
           args,
-          stdout:
-            jlistCallCount === 1
-              ? "[]"
-              : JSON.stringify([
-                  {
-                    name: "fixture-omniroute-fixture",
-                    pid: 4242,
-                    pm2_env: { status: "online" }
-                  }
-                ]),
+          stdout: JSON.stringify([
+            {
+              name: "fixture-omniroute-fixture",
+              pid: 4242,
+              pm2_env: { status: "online" }
+            }
+          ]),
           stderr: ""
         }
       }
@@ -121,9 +119,21 @@ describe("pm2 manager", () => {
         runner
       })
 
-      expect(runner).toHaveBeenCalledTimes(3)
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[0]?.[0]).toBe(getFixtureNodePath(setup.runtimeRoot))
+      expect(runner.mock.calls[0]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "stop",
+        "fixture-omniroute-fixture"
+      ])
       expect(runner.mock.calls[1]?.[0]).toBe(getFixtureNodePath(setup.runtimeRoot))
       expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "delete",
+        "fixture-omniroute-fixture"
+      ])
+      expect(runner.mock.calls[2]?.[0]).toBe(getFixtureNodePath(setup.runtimeRoot))
+      expect(runner.mock.calls[2]?.[1]).toEqual([
         process.platform === "win32"
           ? path.join(
               setup.runtimeRoot,
@@ -172,10 +182,10 @@ describe("pm2 manager", () => {
         "--port",
         "39001"
       ])
-      expect(runner.mock.calls[1]?.[2]?.env?.HAGICODE_RUNTIME_HOME).toBe(
+      expect(runner.mock.calls[2]?.[2]?.env?.HAGICODE_RUNTIME_HOME).toBe(
         path.join(setup.runtimeRoot, "program")
       )
-      expect(runner.mock.calls[1]?.[2]?.env?.HAGICODE_RUNTIME_DATA_HOME).toBe(
+      expect(runner.mock.calls[2]?.[2]?.env?.HAGICODE_RUNTIME_DATA_HOME).toBe(
         path.join(
           setup.runtimeRoot,
           "runtime-data",
@@ -184,7 +194,7 @@ describe("pm2 manager", () => {
           "omniroute"
         )
       )
-      expect(runner.mock.calls[1]?.[2]?.env?.PM2_HOME).toBe(
+      expect(runner.mock.calls[2]?.[2]?.env?.PM2_HOME).toBe(
         path.join(
           setup.runtimeRoot,
           "runtime-data",
@@ -195,13 +205,13 @@ describe("pm2 manager", () => {
         )
       )
       const runtimePath =
-        runner.mock.calls[1]?.[2]?.env?.Path ?? runner.mock.calls[1]?.[2]?.env?.PATH
+        runner.mock.calls[2]?.[2]?.env?.Path ?? runner.mock.calls[2]?.[2]?.env?.PATH
       const manifest = await loadRuntimeManifest({ manifestPath: setup.manifestPath })
       const paths = resolveRuntimePaths(manifest, { runtimeRoot: setup.runtimeRoot })
       expect(runtimePath).toContain(path.dirname(getFixtureNodePath(setup.runtimeRoot)))
       expect(runtimePath).toContain(getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)))
       expect(runtimePath).toContain(path.join(setup.runtimeRoot, "program", "bin"))
-      expect(runner.mock.calls[1]?.[2]?.env?.hagicode_instance).toBe("fixture")
+      expect(runner.mock.calls[2]?.[2]?.env?.hagicode_instance).toBe("fixture")
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
     } finally {
@@ -252,8 +262,8 @@ describe("pm2 manager", () => {
       })
 
       expect(result.launchStrategy).toBe("node-script")
-      expect(runner).toHaveBeenCalledTimes(3)
-      expect(runner.mock.calls[1]?.[1]).toEqual([
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[2]?.[1]).toEqual([
         getFixturePm2Entrypoint(setup.runtimeRoot),
         "start",
         path.join(
@@ -309,16 +319,13 @@ describe("pm2 manager", () => {
         return {
           command,
           args,
-          stdout:
-            jlistCallCount === 1
-              ? "[]"
-              : JSON.stringify([
-                  {
-                    name: "fixture-code-server-fixture",
-                    pid: 5252,
-                    pm2_env: { status: "online" }
-                  }
-                ]),
+          stdout: JSON.stringify([
+            {
+              name: "fixture-code-server-fixture",
+              pid: 5252,
+              pm2_env: { status: "online" }
+            }
+          ]),
           stderr: ""
         }
       }
@@ -341,8 +348,8 @@ describe("pm2 manager", () => {
       })
 
       expect(result.launchStrategy).toBe("node-script")
-      expect(runner).toHaveBeenCalledTimes(3)
-      expect(runner.mock.calls[1]?.[1]).toEqual([
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[2]?.[1]).toEqual([
         getFixturePm2Entrypoint(setup.runtimeRoot),
         "start",
         path.join(
@@ -390,7 +397,7 @@ describe("pm2 manager", () => {
     }
   })
 
-  it("treats start as a no-op when the managed service is already online", async () => {
+  it("recreates bundled services on start even when a PM2 app already exists", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture()
     const runner = vi.fn(async (command: string, args: string[]) => {
@@ -409,7 +416,12 @@ describe("pm2 manager", () => {
         }
       }
 
-      throw new Error(`Unexpected PM2 mutation command: ${args.join(" ")}`)
+      return {
+        command,
+        args,
+        stdout: args[1] ?? "",
+        stderr: ""
+      }
     })
 
     try {
@@ -423,11 +435,128 @@ describe("pm2 manager", () => {
 
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
-      expect(runner).toHaveBeenCalledTimes(1)
+      expect(runner).toHaveBeenCalledTimes(4)
       expect(runner.mock.calls[0]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "stop",
+        "fixture-omniroute-fixture"
+      ])
+      expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "delete",
+        "fixture-omniroute-fixture"
+      ])
+      expect(runner.mock.calls[2]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "start",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current",
+          "custom-launcher.mjs"
+        ),
+        "--name",
+        "fixture-omniroute-fixture",
+        "--cwd",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current"
+        ),
+        "--interpreter",
+        getFixtureNodePath(setup.runtimeRoot),
+        "--update-env",
+        "--",
+        "--port",
+        "39001"
+      ])
+      expect(runner.mock.calls[3]?.[1]).toEqual([
         getFixturePm2Entrypoint(setup.runtimeRoot),
         "jlist"
       ])
+    } finally {
+      restoreEnv()
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("recreates released-service servers on restart before starting a fresh PM2 app", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const setup = await createPm2Fixture()
+    const ecosystemPath = path.join(
+      setup.runtimeRoot,
+      "runtime-data",
+      "server",
+      "pm2-runtime",
+      "ecosystem.config.cjs"
+    )
+    const envFilePath = path.join(setup.runtimeRoot, "runtime-data", "server", "pm2-runtime", ".env")
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[1] === "jlist") {
+        return {
+          command,
+          args,
+          stdout: JSON.stringify([
+            {
+              name: "fixture-server-fixture",
+              pid: 9898,
+              pm2_env: { status: "online" }
+            }
+          ]),
+          stderr: ""
+        }
+      }
+
+      return {
+        command,
+        args,
+        stdout: args[1] ?? "",
+        stderr: ""
+      }
+    })
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "server",
+        action: "restart",
+        runner
+      })
+
+      expect(result.status).toBe("online")
+      expect(result.pid).toBe(9898)
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[0]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "stop",
+        "fixture-server-fixture"
+      ])
+      expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "delete",
+        "fixture-server-fixture"
+      ])
+      expect(runner.mock.calls[2]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "start",
+        ecosystemPath,
+        "--only",
+        "fixture-server-fixture",
+        "--update-env"
+      ])
+      expect(runner.mock.calls[3]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "jlist"
+      ])
+      expect(await readFile(ecosystemPath, "utf8")).toContain('"hagicode_instance": "fixture"')
+      expect(await readFile(envFilePath, "utf8")).toContain("ASPNETCORE_URLS=http://127.0.0.1:39150")
     } finally {
       restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
@@ -683,7 +812,13 @@ describe("pm2 manager", () => {
           return {
             command,
             args,
-            stdout: "[]",
+            stdout: JSON.stringify([
+              {
+                name: "fixture-server-fixture",
+                pid: 9898,
+                pm2_env: { status: "online" }
+              }
+            ]),
             stderr: ""
           }
         }
@@ -691,13 +826,7 @@ describe("pm2 manager", () => {
         return {
           command,
           args,
-          stdout: JSON.stringify([
-              {
-                name: "fixture-server-fixture",
-                pid: 9898,
-                pm2_env: { status: "online" }
-            }
-          ]),
+          stdout: "[]",
           stderr: ""
         }
       }
@@ -721,7 +850,7 @@ describe("pm2 manager", () => {
 
       expect(result.status).toBe("online")
       expect(result.runtimeFilesDir).toBeTruthy()
-      expect(jlistCallCount).toBe(3)
+      expect(jlistCallCount).toBe(2)
       expect(runner.mock.calls[2]?.[1]).toEqual([
         process.platform === "win32"
           ? path.join(
@@ -817,6 +946,65 @@ describe("pm2 manager", () => {
       expect(ecosystemConfig).toContain('"ASPNETCORE_URLS": "http://127.0.0.1:39150"')
       expect(ecosystemConfig).toContain('"hagicode_instance": "fixture"')
       expect(ecosystemConfig).toContain("env_file")
+    } finally {
+      restoreEnv()
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("stops managed services by deleting the PM2 app record and tolerates missing apps", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const setup = await createPm2Fixture()
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[1] === "jlist") {
+        return {
+          command,
+          args,
+          stdout: "[]",
+          stderr: ""
+        }
+      }
+
+      throw new CommandExecutionError(`pm2 ${args[1]} missing`, {
+        command,
+        args,
+        stdout: "",
+        stderr: "[PM2][ERROR] Process or Namespace fixture-omniroute-fixture not found",
+        cwd: setup.runtimeRoot,
+        exitCode: 1,
+        signal: undefined,
+        timedOut: false,
+        failed: true
+      })
+    })
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "omniroute",
+        action: "stop",
+        runner
+      })
+
+      expect(result.exists).toBe(false)
+      expect(result.status).toBe("missing")
+      expect(result.pid).toBeNull()
+      expect(runner).toHaveBeenCalledTimes(3)
+      expect(runner.mock.calls[0]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "stop",
+        "fixture-omniroute-fixture"
+      ])
+      expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "delete",
+        "fixture-omniroute-fixture"
+      ])
+      expect(runner.mock.calls[2]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "jlist"
+      ])
     } finally {
       restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })

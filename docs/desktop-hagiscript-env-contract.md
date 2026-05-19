@@ -15,6 +15,7 @@ It answers three ownership questions for each variable:
 3. Desktop applies final startup overrides in `buildHagiscriptServiceEnvironment()`, notably `ASPNETCORE_ENVIRONMENT` and `ASPNETCORE_URLS`.
 4. Desktop writes that resolved `serviceEnv` into the temporary Hagiscript override manifest as `components[].pm2.env`.
 5. Hagiscript loads the manifest, merges `pm2.env` with service-specific overrides, then rebuilds runtime-owned variables such as `PATH`, `PM2_HOME`, and the `HAGISCRIPT_RUNTIME_*` contract.
+6. On managed PM2 `start` and `restart`, Hagiscript stops and deletes any same-name PM2 app before generating fresh launch metadata and starting a replacement instance, so the current resolved env/config always wins over stale PM2 app state.
 
 ## Desktop-Managed Backend Variables
 
@@ -91,5 +92,6 @@ When the same key appears in multiple places, the effective precedence for PM2 s
 4. Hagiscript `components[].pm2.env` loaded from the override manifest
 5. Hagiscript service-specific overrides from `server-manager.ts`
 6. Hagiscript runtime-owned env rebuild from `buildManagedRuntimeEnvironment()`
+7. Fresh PM2 app creation on each managed `start`/`restart`, which reapplies the resolved environment and regenerated released-service launch files instead of reusing a previous PM2 app record
 
-The last step is why runtime-owned keys such as `PATH`, `PM2_HOME`, `HAGICODE_RUNTIME_HOME`, and `HAGISCRIPT_RUNTIME_*` should always be considered Hagiscript-owned, even when Desktop launches the flow.
+The last two steps are why runtime-owned keys such as `PATH`, `PM2_HOME`, `HAGICODE_RUNTIME_HOME`, and `HAGISCRIPT_RUNTIME_*` should always be considered Hagiscript-owned, even when Desktop launches the flow. PM2 process state is recreated, but runtime payloads and runtime data directories are preserved in place.

@@ -499,12 +499,12 @@ try {
           );
           assertIncludes(
             stopOutput,
-            "Status: stopped",
+            "Status: missing",
             `${service} stop status`
           );
 
           pm2LifecycleLines.push(
-            `- ${service}: start -> online, status -> online, stop -> stopped`
+            `- ${service}: start -> online, status -> online, stop -> missing`
           );
         } catch (error) {
           const detail = await collectManagedPm2FailureDetail({
@@ -664,7 +664,7 @@ try {
           ],
           repoRoot
         );
-        assertIncludes(stopOutput, "Status: stopped", "server stop output");
+        assertIncludes(stopOutput, "Status: missing", "server stop output");
 
         const activeRemoveFailure = await runExpectFailure(
           process.execPath,

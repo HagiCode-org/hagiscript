@@ -154,38 +154,11 @@ export async function runManagedPm2Command(
 
   switch (options.action) {
     case "start":
-      {
-        const existingStatus = await readManagedPm2Status(definition, "start", runner)
-        if (existingStatus.status === "online") {
-          return existingStatus
-        }
-
-        if (existingStatus.exists) {
-          if (definition.launchStrategy === "released-service") {
-            await prepareReleasedServicePm2Files(definition)
-          }
-          await executePm2(definition, buildPm2ActionArgs(definition, "restart"), runner, {
-            allowMissingProcess: true
-          })
-          return readManagedPm2Status(definition, "start", runner)
-        }
-
-        if (definition.launchStrategy === "released-service") {
-          await prepareReleasedServicePm2Files(definition)
-        }
-        await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner)
-        return readManagedPm2Status(definition, "start", runner)
-      }
+      return recreateManagedPm2App(definition, "start", runner)
     case "restart":
-      if (definition.launchStrategy === "released-service") {
-        await prepareReleasedServicePm2Files(definition)
-      }
-      await executePm2(definition, buildPm2ActionArgs(definition, "restart"), runner)
-      return readManagedPm2Status(definition, "restart", runner)
+      return recreateManagedPm2App(definition, "restart", runner)
     case "stop":
-      await executePm2(definition, buildPm2ActionArgs(definition, "stop"), runner, {
-        allowMissingProcess: true
-      })
+      await cleanupManagedPm2App(definition, runner)
       return readManagedPm2Status(definition, "stop", runner)
     case "delete":
       await executePm2(definition, buildPm2ActionArgs(definition, "delete"), runner, {
@@ -195,6 +168,31 @@ export async function runManagedPm2Command(
     case "status":
       return readManagedPm2Status(definition, "status", runner)
   }
+}
+
+async function recreateManagedPm2App(
+  definition: ResolvedManagedPm2ServiceDefinition,
+  action: "start" | "restart",
+  runner: CommandRunner
+): Promise<ManagedPm2CommandResult> {
+  await cleanupManagedPm2App(definition, runner)
+  if (definition.launchStrategy === "released-service") {
+    await prepareReleasedServicePm2Files(definition)
+  }
+  await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner)
+  return readManagedPm2Status(definition, action, runner)
+}
+
+async function cleanupManagedPm2App(
+  definition: ResolvedManagedPm2ServiceDefinition,
+  runner: CommandRunner
+): Promise<void> {
+  await executePm2(definition, buildPm2ActionArgs(definition, "stop"), runner, {
+    allowMissingProcess: true
+  })
+  await executePm2(definition, buildPm2ActionArgs(definition, "delete"), runner, {
+    allowMissingProcess: true
+  })
 }
 
 export async function resolveManagedPm2Environment(
@@ -1006,7 +1004,7 @@ function toPm2Args(args: readonly string[]): string[] {
 
 function buildPm2ActionArgs(
   definition: ResolvedManagedPm2ServiceDefinition,
-  action: "start" | "restart" | "stop" | "delete"
+  action: "start" | "stop" | "delete"
 ): string[] {
   if (definition.launchStrategy === "released-service") {
     if (!definition.ecosystemPath) {
@@ -1018,8 +1016,6 @@ function buildPm2ActionArgs(
     switch (action) {
       case "start":
         return ["start", definition.ecosystemPath, "--only", definition.appName, "--update-env"]
-      case "restart":
-        return ["reload", definition.ecosystemPath, "--update-env"]
       case "stop":
         return ["stop", definition.appName]
       case "delete":
@@ -1058,8 +1054,6 @@ function buildPm2ActionArgs(
         "--update-env",
         ...toPm2Args(definition.args)
       ]
-    case "restart":
-      return ["restart", definition.appName, "--update-env"]
     case "stop":
       return ["stop", definition.appName]
     case "delete":

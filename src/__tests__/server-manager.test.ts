@@ -169,7 +169,7 @@ npmSync:
     }
   })
 
-  it("passes the default or explicit instance name into PM2 operations", async () => {
+  it("keeps dependency starts ahead of the managed server when PM2 instances are recreated", async () => {
     const runtimeRoot = "/tmp/runtime-root"
     const runtimeDataRoot = path.join(runtimeRoot, "runtime-data", "server")
     const configPath = path.join(runtimeDataRoot, "config", "server-config.json")
@@ -198,6 +198,7 @@ npmSync:
         instanceName: "demo"
       })
 
+      expect(runManagedPm2Command).toHaveBeenCalledTimes(3)
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(1, {
         manifestPath: undefined,
         runtimeRoot,

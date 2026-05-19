@@ -47,6 +47,7 @@ describe("vendored runtime installers", () => {
         mode: 0o755
       },
       "bin/code-server.cmd": createWindowsBatchStub(),
+      "out/node/package.json": '{\n  "type": "commonjs"\n}\n',
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
@@ -123,6 +124,7 @@ describe("vendored runtime installers", () => {
         mode: 0o755
       },
       "bin/code-server.cmd": createWindowsBatchStub(),
+      "out/node/package.json": '{\n  "type": "commonjs"\n}\n',
       "out/node/entry.js": createRecordedEntrypoint({
         includeEnvKeys: [],
         moduleType: "cjs"
