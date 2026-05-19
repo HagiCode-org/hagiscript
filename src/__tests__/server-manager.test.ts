@@ -342,6 +342,11 @@ npmSync:
       `runtime:
   name: "fixture-runtime"
   version: "1.0.0"
+proxy:
+  caddy:
+    public:
+      codeServerPort: 39001
+      omniroutePort: 39002
 paths:
   runtimeRoot: "~/.hagicode/runtime"
   runtimeHome: "program"
@@ -416,15 +421,15 @@ components:
         Urls: "http://127.0.0.1:39150",
         DATADIR: path.join(runtimeRoot, "runtime-data", "server", "data"),
         VsCodeServer__Host: "127.0.0.1",
-        VsCodeServer__Port: "18080",
+        VsCodeServer__Port: "39001",
         VsCodeServer__AuthMode: "password",
         VsCodeServer__Secret: "s3cr3t",
         VsCodeServer__SecretSource: "bootstrap",
         VsCodeServer__Source: "external",
         VsCodeServer__SourceLocked: "true",
         OmniRoute__Enabled: "true",
-        OmniRoute__ApiEndpoint: "http://127.0.0.1:41001/",
-        OmniRoute__DefaultBaseUrl: "http://127.0.0.1:41001/",
+        OmniRoute__ApiEndpoint: "http://127.0.0.1:39002/",
+        OmniRoute__DefaultBaseUrl: "http://127.0.0.1:39002/",
         OmniRoute__DefaultBaseUrlSource: "external",
         OmniRoute__DefaultBaseUrlLocked: "true"
       })

@@ -80,6 +80,20 @@ export interface RuntimeReleasedServiceDefinition {
   activeVersion?: string
 }
 
+export interface RuntimeProxyPublicDefinition {
+  serverPort?: number
+  codeServerPort?: number
+  omniroutePort?: number
+}
+
+export interface RuntimeProxyCaddyDefinition {
+  public?: RuntimeProxyPublicDefinition
+}
+
+export interface RuntimeProxyDefinition {
+  caddy?: RuntimeProxyCaddyDefinition
+}
+
 export interface LoadedRuntimeManifest {
   manifestPath: string
   manifestDir: string
@@ -92,6 +106,7 @@ export interface LoadedRuntimeManifest {
   componentMap: ReadonlyMap<string, RuntimeComponentDefinition>
   phases: Record<RuntimeLifecyclePhase, RuntimePhaseDefinition>
   paths: RuntimeManifestPaths
+  proxy?: RuntimeProxyDefinition
   npmSync?: Record<string, unknown>
 }
 
@@ -212,6 +227,10 @@ function validateRuntimeManifest(
   const runtimeObject = toRecord(value.runtime, "runtime", errors)
   const pathsObject = toRecord(value.paths, "paths", errors)
   const phasesObject = toRecord(value.phases, "phases", errors)
+  const proxy = validateRuntimeProxy(
+    readOptionalObject(value.proxy, "proxy", errors),
+    errors
+  )
   const npmSync = readOptionalObject(
     value.npmSync ?? value["npm-sync"] ?? value.npm_sync,
     "npmSync",
@@ -305,7 +324,63 @@ function validateRuntimeManifest(
     componentMap,
     phases,
     paths,
+    proxy,
     npmSync
+  }
+}
+
+function validateRuntimeProxy(
+  value: Record<string, unknown> | undefined,
+  errors: string[]
+): RuntimeProxyDefinition | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const caddy = validateRuntimeProxyCaddy(
+    readOptionalObject(value.caddy, "proxy.caddy", errors),
+    errors
+  )
+
+  return caddy ? { caddy } : undefined
+}
+
+function validateRuntimeProxyCaddy(
+  value: Record<string, unknown> | undefined,
+  errors: string[]
+): RuntimeProxyCaddyDefinition | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const publicConfig = validateRuntimeProxyPublic(
+    readOptionalObject(value.public, "proxy.caddy.public", errors),
+    errors
+  )
+
+  return publicConfig ? { public: publicConfig } : undefined
+}
+
+function validateRuntimeProxyPublic(
+  value: Record<string, unknown> | undefined,
+  errors: string[]
+): RuntimeProxyPublicDefinition | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  return {
+    serverPort: readOptionalPort(value.serverPort, "proxy.caddy.public.serverPort", errors),
+    codeServerPort: readOptionalPort(
+      value.codeServerPort,
+      "proxy.caddy.public.codeServerPort",
+      errors
+    ),
+    omniroutePort: readOptionalPort(
+      value.omniroutePort,
+      "proxy.caddy.public.omniroutePort",
+      errors
+    )
   }
 }
 
@@ -656,6 +731,23 @@ function readOptionalObject(
 
   if (!isRecord(value)) {
     errors.push(`${label} must be an object when provided`)
+    return undefined
+  }
+
+  return value
+}
+
+function readOptionalPort(
+  value: unknown,
+  label: string,
+  errors: string[]
+): number | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 65535) {
+    errors.push(`${label} must be an integer between 1 and 65535 when provided`)
     return undefined
   }
 

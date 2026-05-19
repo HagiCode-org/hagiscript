@@ -23,7 +23,8 @@ import {
 } from "./pm2-manager.js"
 import {
   loadRuntimeManifest,
-  type RuntimeComponentDefinition
+  type RuntimeComponentDefinition,
+  type LoadedRuntimeManifest
 } from "./runtime-manifest.js"
 import {
   getComponentConfigDirectory,
@@ -565,14 +566,23 @@ async function resolveManagedServerIntegrationEnvironment(
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
 
   return {
-    ...(await resolveManagedVsCodeServerEnvironment(manifest.componentMap.get("code-server"), paths)),
-    ...(await resolveManagedOmniRouteEnvironment(manifest.componentMap.get("omniroute"), paths))
+    ...(await resolveManagedVsCodeServerEnvironment(
+      manifest.componentMap.get("code-server"),
+      paths,
+      manifest
+    )),
+    ...(await resolveManagedOmniRouteEnvironment(
+      manifest.componentMap.get("omniroute"),
+      paths,
+      manifest
+    ))
   }
 }
 
 async function resolveManagedVsCodeServerEnvironment(
   component: RuntimeComponentDefinition | undefined,
-  paths: ResolvedRuntimePaths
+  paths: ResolvedRuntimePaths,
+  manifest: LoadedRuntimeManifest
 ): Promise<Record<string, string>> {
   if (!component) {
     return {}
@@ -586,12 +596,13 @@ async function resolveManagedVsCodeServerEnvironment(
     DEFAULT_CODE_SERVER_HOST,
     DEFAULT_CODE_SERVER_PORT
   )
+  const exposedPort = resolveManagedDependencyPublicPort(manifest, "code-server") ?? address.port
   const authMode = readConfigString(config, "auth") ?? DEFAULT_CODE_SERVER_AUTH_MODE
   const secret = readConfigString(config, "password")
 
   return {
     VsCodeServer__Host: address.host,
-    VsCodeServer__Port: String(address.port),
+    VsCodeServer__Port: String(exposedPort),
     VsCodeServer__AuthMode: authMode,
     VsCodeServer__Source: VSCODE_SERVER_SOURCE_EXTERNAL,
     VsCodeServer__SourceLocked: "true",
@@ -606,7 +617,8 @@ async function resolveManagedVsCodeServerEnvironment(
 
 async function resolveManagedOmniRouteEnvironment(
   component: RuntimeComponentDefinition | undefined,
-  paths: ResolvedRuntimePaths
+  paths: ResolvedRuntimePaths,
+  manifest: LoadedRuntimeManifest
 ): Promise<Record<string, string>> {
   if (!component) {
     return {}
@@ -620,7 +632,8 @@ async function resolveManagedOmniRouteEnvironment(
     DEFAULT_OMNIROUTE_HOST,
     DEFAULT_OMNIROUTE_PORT
   )
-  const baseUrl = buildHttpBaseUrl(address.host, address.port)
+  const exposedPort = resolveManagedDependencyPublicPort(manifest, "omniroute") ?? address.port
+  const baseUrl = buildHttpBaseUrl(address.host, exposedPort)
 
   return {
     OmniRoute__Enabled: "true",
@@ -629,6 +642,18 @@ async function resolveManagedOmniRouteEnvironment(
     OmniRoute__DefaultBaseUrlSource: OMNIROUTE_SOURCE_EXTERNAL,
     OmniRoute__DefaultBaseUrlLocked: "true"
   }
+}
+
+function resolveManagedDependencyPublicPort(
+  manifest: LoadedRuntimeManifest,
+  service: "code-server" | "omniroute"
+): number | undefined {
+  const publicConfig = manifest.proxy?.caddy?.public
+  if (!publicConfig) {
+    return undefined
+  }
+
+  return service === "code-server" ? publicConfig.codeServerPort : publicConfig.omniroutePort
 }
 
 async function readYamlObject(filePath: string): Promise<Record<string, unknown> | undefined> {
