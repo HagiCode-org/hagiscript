@@ -322,9 +322,9 @@ try {
             ],
             repoRoot
           );
-          assertIncludes(stopOutput, "Status: stopped", `${service} stop`);
+          assertIncludes(stopOutput, "Status: missing", `${service} stop`);
           pm2LifecycleLines.push(
-            `- ${service}: start -> online -> stop -> stopped`
+            `- ${service}: start -> online -> stop -> missing`
           );
         } catch (error) {
           const detail = await collectManagedPm2FailureDetail({
