@@ -979,9 +979,9 @@ function isPm2ProcessRecord(
 function defaultPm2Script(componentName: string): string {
   switch (componentName) {
     case "omniroute":
-      return process.platform === "win32" ? "current/omniroute.cmd" : "current/omniroute.sh"
+      return "current/bin/omniroute.mjs"
     case "code-server":
-      return process.platform === "win32" ? "current/bin/code-server.cmd" : "current/bin/code-server"
+      return "current/out/node/entry.js"
     default:
       throw new ManagedPm2Error(`Unsupported PM2 component ${componentName}.`)
   }

@@ -210,7 +210,7 @@ describe("pm2 manager", () => {
     }
   })
 
-  it("starts bundled runtimes through native wrappers when the manifest uses packaged defaults", async () => {
+  it("starts bundled runtimes through Node entrypoints when the manifest uses packaged defaults", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture({ omitBundledScriptOverride: true, omitBundledArgsOverride: true })
     let jlistCallCount = 0
@@ -251,93 +251,139 @@ describe("pm2 manager", () => {
         runner
       })
 
-      expect(result.launchStrategy).toBe("native-wrapper")
+      expect(result.launchStrategy).toBe("node-script")
       expect(runner).toHaveBeenCalledTimes(3)
-      expect(runner.mock.calls[1]?.[1]).toEqual(
-        process.platform === "win32"
-          ? [
-              getFixturePm2Entrypoint(setup.runtimeRoot),
-              "start",
-              process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe",
-              "--name",
-              "fixture-omniroute-fixture",
-              "--cwd",
-              path.join(
-                setup.runtimeRoot,
-                "program",
-                "components",
-                "services",
-                "omniroute",
-                "current"
-              ),
-              "--interpreter",
-              "none",
-              "--update-env",
-              "--",
-              "/d",
-              "/s",
-              "/c",
-              path.join(
-                setup.runtimeRoot,
-                "program",
-                "components",
-                "services",
-                "omniroute",
-                "current",
-                "omniroute.cmd"
-              ),
-              "--config",
-              path.join(
-                setup.runtimeRoot,
-                "runtime-data",
-                "components",
-                "services",
-                "omniroute",
-                "config",
-                "config.yaml"
-              ),
-              "--no-open"
-            ]
-          : [
-              getFixturePm2Entrypoint(setup.runtimeRoot),
-              "start",
-              path.join(
-                setup.runtimeRoot,
-                "program",
-                "components",
-                "services",
-                "omniroute",
-                "current",
-                "omniroute.sh"
-              ),
-              "--name",
-              "fixture-omniroute-fixture",
-              "--cwd",
-              path.join(
-                setup.runtimeRoot,
-                "program",
-                "components",
-                "services",
-                "omniroute",
-                "current"
-              ),
-              "--interpreter",
-              "none",
-              "--update-env",
-              "--",
-              "--config",
-              path.join(
-                setup.runtimeRoot,
-                "runtime-data",
-                "components",
-                "services",
-                "omniroute",
-                "config",
-                "config.yaml"
-              ),
-              "--no-open"
-            ]
-      )
+      expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "start",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current",
+          "bin",
+          "omniroute.mjs"
+        ),
+        "--name",
+        "fixture-omniroute-fixture",
+        "--cwd",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current"
+        ),
+        "--interpreter",
+        getFixtureNodePath(setup.runtimeRoot),
+        "--update-env",
+        "--",
+        "--config",
+        path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "omniroute",
+          "config",
+          "config.yaml"
+        ),
+        "--no-open"
+      ])
+    } finally {
+      restoreEnv()
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("starts code-server through the packaged Node entrypoint defaults", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const setup = await createPm2Fixture()
+    let jlistCallCount = 0
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[1] === "jlist") {
+        jlistCallCount += 1
+        return {
+          command,
+          args,
+          stdout:
+            jlistCallCount === 1
+              ? "[]"
+              : JSON.stringify([
+                  {
+                    name: "fixture-code-server-fixture",
+                    pid: 5252,
+                    pm2_env: { status: "online" }
+                  }
+                ]),
+          stderr: ""
+        }
+      }
+
+      return {
+        command,
+        args,
+        stdout: "started",
+        stderr: ""
+      }
+    })
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "code-server",
+        action: "start",
+        runner
+      })
+
+      expect(result.launchStrategy).toBe("node-script")
+      expect(runner).toHaveBeenCalledTimes(3)
+      expect(runner.mock.calls[1]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "start",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "code-server",
+          "current",
+          "out",
+          "node",
+          "entry.js"
+        ),
+        "--name",
+        "fixture-code-server-fixture",
+        "--cwd",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "code-server",
+          "current"
+        ),
+        "--interpreter",
+        getFixtureNodePath(setup.runtimeRoot),
+        "--update-env",
+        "--",
+        "--config",
+        path.join(
+          setup.runtimeRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "code-server",
+          "config",
+          "config.yaml"
+        )
+      ])
+      expect(result.status).toBe("online")
+      expect(result.pid).toBe(5252)
     } finally {
       restoreEnv()
       await rm(setup.directory, { recursive: true, force: true })
@@ -467,6 +513,8 @@ describe("pm2 manager", () => {
 
   it("reports reusable launch environment for released-service server startup", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const previousAspNetCoreEnvironment = process.env.ASPNETCORE_ENVIRONMENT
+    delete process.env.ASPNETCORE_ENVIRONMENT
     const setup = await createPm2Fixture()
 
     try {
@@ -538,6 +586,11 @@ describe("pm2 manager", () => {
       )
     } finally {
       restoreEnv()
+      if (previousAspNetCoreEnvironment === undefined) {
+        delete process.env.ASPNETCORE_ENVIRONMENT
+      } else {
+        process.env.ASPNETCORE_ENVIRONMENT = previousAspNetCoreEnvironment
+      }
       await rm(setup.directory, { recursive: true, force: true })
     }
   })
@@ -861,9 +914,17 @@ async function createPm2Fixture(options: {
     "services",
     "omniroute"
   )
+  const codeServerRoot = path.join(
+    runtimeRoot,
+    "program",
+    "components",
+    "services",
+    "code-server"
+  )
   const serverVersionRoot = path.join(runtimeRoot, "program", "server", "versions", "1.2.3")
 
   await mkdir(path.join(componentRoot, "current"), { recursive: true })
+  await mkdir(path.join(codeServerRoot, "current"), { recursive: true })
   const releasedService = {
     dllPath: options.releasedService?.dllPath ?? "lib/PCode.Web.dll",
     workingDirectory: options.releasedService?.workingDirectory ?? "lib"
@@ -895,6 +956,12 @@ async function createPm2Fixture(options: {
     "process.stdout.write('fixture launcher\\n')\n",
     "utf8"
   )
+  await mkdir(path.join(componentRoot, "current", "bin"), { recursive: true })
+  await writeFile(
+    path.join(componentRoot, "current", "bin", "omniroute.mjs"),
+    "process.stdout.write('fixture omniroute\\n')\n",
+    "utf8"
+  )
   await writeFile(
     path.join(componentRoot, "current", "omniroute.sh"),
     "#!/usr/bin/env sh\n",
@@ -906,6 +973,26 @@ async function createPm2Fixture(options: {
     "utf8"
   )
   await mkdir(path.join(runtimeRoot, "runtime-data", "components", "services", "omniroute", "config"), {
+    recursive: true
+  })
+  await mkdir(path.join(codeServerRoot, "current", "bin"), { recursive: true })
+  await mkdir(path.join(codeServerRoot, "current", "out", "node"), { recursive: true })
+  await writeFile(
+    path.join(codeServerRoot, "current", "out", "node", "entry.js"),
+    "process.stdout.write('fixture code-server\\n')\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(codeServerRoot, "current", "bin", "code-server"),
+    "#!/usr/bin/env sh\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(codeServerRoot, "current", "bin", "code-server.cmd"),
+    "@echo off\r\n",
+    "utf8"
+  )
+  await mkdir(path.join(runtimeRoot, "runtime-data", "components", "services", "code-server", "config"), {
     recursive: true
   })
   await writeFile(
@@ -922,12 +1009,27 @@ async function createPm2Fixture(options: {
     "utf8"
   )
   await writeFile(
+    path.join(
+      runtimeRoot,
+      "runtime-data",
+      "components",
+      "services",
+      "code-server",
+      "config",
+      "config.yaml"
+    ),
+    "bind-addr: 127.0.0.1:8080\n",
+    "utf8"
+  )
+  await writeFile(
     path.join(runtimeRoot, "runtime-data", "npm", "bin", "pm2"),
     "#!/usr/bin/env sh\n",
     "utf8"
   )
   if (process.platform !== "win32") {
+    await chmod(path.join(componentRoot, "current", "bin", "omniroute.mjs"), 0o755)
     await chmod(path.join(componentRoot, "current", "omniroute.sh"), 0o755)
+    await chmod(path.join(codeServerRoot, "current", "bin", "code-server"), 0o755)
     await chmod(path.join(runtimeRoot, "runtime-data", "npm", "bin", "pm2"), 0o755)
   }
   await writeFile(
@@ -1002,6 +1104,9 @@ async function createPm2Fixture(options: {
   const omniroutePm2Config = `${bundledScriptOverride}${pm2HomeOverrideLine}${bundledArgsOverride}      env:
         RUNTIME_MODE: "fixture"
 `
+  const codeServerPm2Config = `${pm2HomeOverrideLine}      env:
+        RUNTIME_MODE: "fixture"
+`
   const serverPm2Config = `${pm2HomeOverrideLine}      env:
         ASPNETCORE_URLS: "http://127.0.0.1:39150"
 `
@@ -1063,6 +1168,16 @@ ${serverPm2Config}
       dllPath: "${releasedService.dllPath.replaceAll("\\", "/")}"
       workingDirectory: "${releasedService.workingDirectory.replaceAll("\\", "/")}"
       runtimeFilesDir: "pm2-runtime"
+  - name: "code-server"
+    type: "bundled-runtime"
+    runtimeDataDir: "services/code-server"
+    lifecycleDependencies: ["node"]
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "fixture-code-server"
+      nameIdentifierEnv: "hagicode_instance"
+      cwd: "current"
+${codeServerPm2Config}
 `,
     "utf8"
   )
