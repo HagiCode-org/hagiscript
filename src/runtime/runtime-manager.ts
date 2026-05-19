@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { mkdir, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import process from "node:process"
 import semver from "semver"
@@ -1093,6 +1093,10 @@ async function writeExecutableWrapper(
       : `#!/usr/bin/env sh\nexec "$(dirname "$0")/${relativeTarget.replaceAll("\\", "/")}" "$@"\n`,
     "utf8"
   )
+
+  if (process.platform !== "win32") {
+    await chmod(wrapperPath, 0o755)
+  }
 
   return wrapperPath
 }
