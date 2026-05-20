@@ -161,4 +161,40 @@ describe("runtime executor environment", () => {
       "/opt/hagicode/local-publishment/start.sh"
     )
   })
+
+  it("keeps released-service PATH on managed node/npm entries without shadowing host dotnet", async () => {
+    const runtimeRoot = path.resolve("tmp", "hagiscript-runtime-released-service-path")
+    const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
+    const paths = resolveRuntimePaths(manifest, { runtimeRoot })
+    const env = buildManagedRuntimeEnvironment(
+      {
+        component: {
+          name: "server",
+          type: "released-service",
+          releasedService: {
+            dllPath: "/opt/hagicode/local-publishment/lib/PCode.Web.dll",
+            workingDirectory: "/opt/hagicode/local-publishment/lib"
+          }
+        },
+        manifest,
+        paths,
+        componentRoot: path.join(runtimeRoot, "program", "server"),
+        componentConfigDir: path.join(runtimeRoot, "runtime-data", "server", "config")
+      },
+      {
+        PATH: "/usr/local/bin:/usr/bin"
+      }
+    )
+
+    const runtimePath = env.Path ?? env.PATH
+    const expectedPathPrefix = [
+      path.dirname(getRuntimeExecutablePaths(paths.nodeRuntime).nodePath),
+      getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
+      getManagedNpmBinDirectory(paths.npmPrefix)
+    ].join(process.platform === "win32" ? ";" : ":")
+
+    expect(runtimePath?.startsWith(expectedPathPrefix)).toBe(true)
+    expect(runtimePath?.includes(paths.bin)).toBe(false)
+    expect(env.HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR).toBe(paths.dotnetRuntime)
+  })
 })

@@ -221,7 +221,9 @@ export async function resolveManagedPm2Environment(
     args: [...definition.args],
     env,
     pathKey: process.platform === "win32" ? "Path" : "PATH",
-    pathEntries: getManagedRuntimePathEntries(definition.paths),
+    pathEntries: getManagedRuntimePathEntries(definition.paths, {
+      includeRuntimeBin: definition.component.type !== "released-service"
+    }),
     runtimeHome: definition.runtimeHome,
     runtimeDataHome: definition.runtimeDataHome,
     componentRoot: definition.componentRoot,

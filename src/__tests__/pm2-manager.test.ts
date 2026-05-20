@@ -212,6 +212,7 @@ describe("pm2 manager", () => {
       expect(runtimePath).toContain(getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)))
       expect(runtimePath).toContain(path.join(setup.runtimeRoot, "program", "bin"))
       expect(runner.mock.calls[2]?.[2]?.env?.hagicode_instance).toBe("fixture")
+      expect(jlistCallCount).toBe(1)
       expect(result.status).toBe("online")
       expect(result.pid).toBe(4242)
     } finally {
@@ -389,6 +390,7 @@ describe("pm2 manager", () => {
           "config.yaml"
         )
       ])
+      expect(jlistCallCount).toBe(1)
       expect(result.status).toBe("online")
       expect(result.pid).toBe(5252)
     } finally {
@@ -674,10 +676,10 @@ describe("pm2 manager", () => {
       expect(report.pathEntries[0]).toBe(path.dirname(getFixtureNodePath(setup.runtimeRoot)))
       expect(report.pathEntries).toEqual(
         expect.arrayContaining([
-          getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
-          path.join(setup.runtimeRoot, "program", "bin")
+          getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths))
         ])
       )
+      expect(report.pathEntries).not.toContain(path.join(setup.runtimeRoot, "program", "bin"))
       expect(report.env.HAGISCRIPT_RUNTIME_COMPONENT_NAME).toBe("server")
       expect(report.env.hagicode_instance).toBe("fixture")
       expect(report.env.ASPNETCORE_URLS).toBe("http://127.0.0.1:39150")
@@ -1014,6 +1016,8 @@ describe("pm2 manager", () => {
   it("fails PM2 actions early when the required naming identifier is missing", async () => {
     const setup = await createPm2Fixture()
     const runner = vi.fn()
+    const previousNameIdentifier = process.env.hagicode_instance
+    delete process.env.hagicode_instance
 
     try {
       for (const action of ["start", "restart", "stop", "delete", "status"] as const) {
@@ -1041,6 +1045,11 @@ describe("pm2 manager", () => {
       )
       expect(runner).not.toHaveBeenCalled()
     } finally {
+      if (previousNameIdentifier === undefined) {
+        delete process.env.hagicode_instance
+      } else {
+        process.env.hagicode_instance = previousNameIdentifier
+      }
       await rm(setup.directory, { recursive: true, force: true })
     }
   })

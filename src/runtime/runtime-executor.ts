@@ -284,7 +284,9 @@ export function buildManagedRuntimeEnvironment(
         ? { HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: context.scriptBasename }
         : {})
     },
-    getManagedRuntimePathEntries(context.paths)
+    getManagedRuntimePathEntries(context.paths, {
+      includeRuntimeBin: shouldIncludeManagedRuntimeBin(context.component)
+    })
   )
 }
 
@@ -344,14 +346,25 @@ export function prependPathEntries(
   }
 }
 
-export function getManagedRuntimePathEntries(paths: ResolvedRuntimePaths): string[] {
+export function getManagedRuntimePathEntries(
+  paths: ResolvedRuntimePaths,
+  options: {
+    includeRuntimeBin?: boolean
+  } = {}
+): string[] {
   const nodeExecutables = getRuntimeExecutablePaths(paths.nodeRuntime)
   return [
     dirname(nodeExecutables.nodePath),
     getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
     getManagedNpmBinDirectory(paths.npmPrefix),
-    paths.bin
+    ...(options.includeRuntimeBin === false ? [] : [paths.bin])
   ]
+}
+
+function shouldIncludeManagedRuntimeBin(
+  component: Pick<RuntimeComponentDefinition, "type">
+): boolean {
+  return component.type !== "released-service"
 }
 
 export function getManagedNpmPackagesPrefix(paths: ResolvedRuntimePaths): string {
