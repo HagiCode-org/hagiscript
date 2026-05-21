@@ -3,6 +3,10 @@ import {
   getCommandLaunchOptions,
   runCommand as defaultRunCommand
 } from "./command-launch.js";
+import {
+  buildRuntimeNpmInvocation,
+  type RuntimeExecutablePaths,
+} from "./node-verify.js";
 
 export interface NpmCommandResult {
   command: string;
@@ -29,6 +33,7 @@ export interface NpmGlobalCommandOptions {
   timeoutMs?: number;
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
+  nodePath?: string;
   registryMirror?: string;
   prefix?: string;
   runCommand?: (
@@ -88,6 +93,7 @@ async function runNpmCommand(
   options: NpmGlobalCommandOptions
 ): Promise<NpmCommandResult> {
   const timeoutMs = options.timeoutMs ?? 120_000;
+  const invocation = buildNpmCommandInvocation(npmPath, args, options);
   const runner = options.runCommand
     ? options.runCommand
     : (
@@ -104,12 +110,30 @@ async function runNpmCommand(
           launchOptions
         );
 
-  return runner(
-    npmPath,
+  return runner(invocation.command, invocation.args, timeoutMs, invocation.launchOptions);
+}
+
+function buildNpmCommandInvocation(
+  npmPath: string,
+  args: string[],
+  options: NpmGlobalCommandOptions
+): { command: string; args: string[]; launchOptions: { shell?: boolean } } {
+  if (options.platform === "win32" && options.nodePath) {
+    return buildRuntimeNpmInvocation(
+      {
+        nodePath: options.nodePath,
+        npmPath,
+      } satisfies RuntimeExecutablePaths,
+      args,
+      options.platform
+    );
+  }
+
+  return {
+    command: npmPath,
     args,
-    timeoutMs,
-    getCommandLaunchOptions(npmPath, { platform: options.platform })
-  );
+    launchOptions: getCommandLaunchOptions(npmPath, { platform: options.platform })
+  };
 }
 
 async function execNpmCommand(

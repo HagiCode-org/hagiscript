@@ -105,7 +105,7 @@ describe("npm global wrappers", () => {
     );
   });
 
-  it("lists Windows npm.cmd inventory on direct execution", async () => {
+  it("lists Windows npm inventory through node.exe plus npm-cli.js", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -115,12 +115,19 @@ describe("npm global wrappers", () => {
 
     await listGlobalPackages("C:/runtime/npm.cmd", {
       platform: "win32",
+      nodePath: "C:/runtime/node.exe",
       runCommand: runner
     });
 
     expect(runner).toHaveBeenCalledWith(
-      "C:/runtime/npm.cmd",
-      ["list", "-g", "--depth=0", "--json"],
+      "C:/runtime/node.exe",
+      [
+        "C:/runtime/node_modules/npm/bin/npm-cli.js",
+        "list",
+        "-g",
+        "--depth=0",
+        "--json"
+      ],
       120_000,
       {}
     );
@@ -167,7 +174,7 @@ describe("npm global wrappers", () => {
     );
   });
 
-  it("installs through Windows npm.cmd directly with registry mirrors", async () => {
+  it("installs through Windows npm inventory with node.exe and registry mirrors", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -177,13 +184,15 @@ describe("npm global wrappers", () => {
 
     await installGlobalPackage("C:/runtime/npm.cmd", "openspec@^1.0.0", {
       platform: "win32",
+      nodePath: "C:/runtime/node.exe",
       registryMirror: "https://registry.example.test",
       runCommand: runner
     });
 
     expect(runner).toHaveBeenCalledWith(
-      "C:/runtime/npm.cmd",
+      "C:/runtime/node.exe",
       [
+        "C:/runtime/node_modules/npm/bin/npm-cli.js",
         "install",
         "-g",
         "openspec@^1.0.0",
