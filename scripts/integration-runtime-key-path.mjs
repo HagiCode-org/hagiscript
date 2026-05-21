@@ -15,6 +15,7 @@ import {
 } from "./integration-platform-helpers.mjs";
 import { collectManagedPm2FailureDetail } from "./integration-pm2-diagnostics.mjs";
 import { ProcessRunError, runProcess } from "./process-runner.mjs";
+import { extractZipArchive as extractZipArchiveWithNode } from "../runtime/lib/zip-extract.mjs";
 
 const repoRoot = path.resolve(process.argv[2] ?? ".");
 const tempRoot = fs.mkdtempSync(
@@ -724,30 +725,16 @@ async function downloadFile(url, destinationPath) {
 }
 
 async function extractZipArchive(archivePath, extractRoot, cwd) {
-  if (process.platform === "win32") {
-    await runProcess(
-      "powershell",
-      [
-        "-NoProfile",
-        "-Command",
-        `Expand-Archive -LiteralPath '${archivePath.replaceAll("'", "''")}' -DestinationPath '${extractRoot.replaceAll("'", "''")}' -Force`
-      ],
-      {
-        cwd,
-        stdout: "pipe",
-        stderr: "pipe",
-        timeoutMs: runtimeCommandTimeoutMs
-      }
-    );
-    return;
-  }
+  void cwd;
 
-  await runProcess("unzip", ["-o", archivePath, "-d", extractRoot], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeoutMs: runtimeCommandTimeoutMs
-  });
+  try {
+    await extractZipArchiveWithNode(archivePath, extractRoot);
+  } catch (error) {
+    const archiveError = error instanceof Error ? error : new Error(String(error));
+    throw new Error(
+      `Failed to extract released server archive ${archivePath}: ${archiveError.message}`
+    );
+  }
 }
 
 function getReleasedServerAssetSuffix() {

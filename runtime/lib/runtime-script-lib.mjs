@@ -6,6 +6,7 @@ import path from "node:path"
 import process from "node:process"
 import { createGunzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
+import { extractZipArchive as extractZipArchiveWithNode } from "./zip-extract.mjs"
 
 const PLACEHOLDER_PATTERN = /{{([A-Z0-9_]+)}}/g
 
@@ -509,20 +510,11 @@ async function extractVendoredArchive(archivePath, stagingDirectory, archiveKind
 }
 
 async function extractZipArchive(archivePath, destination) {
-  if (process.platform === "win32") {
-    await runManagedCommand("powershell.exe", [
-      "-NoLogo",
-      "-NoProfile",
-      "-Command",
-      `Expand-Archive -Path '${escapePowerShell(archivePath.replaceAll("/", "\\"))}' -DestinationPath '${escapePowerShell(destination.replaceAll("/", "\\"))}' -Force`
-    ])
-    return
-  }
-
   try {
-    await runManagedCommand("unzip", ["-q", archivePath, "-d", destination])
-  } catch {
-    await runManagedCommand("bsdtar", ["-xf", archivePath, "-C", destination])
+    await extractZipArchiveWithNode(archivePath, destination)
+  } catch (error) {
+    const archiveError = error instanceof Error ? error : new Error(String(error))
+    throw new Error(`Failed to extract vendored zip archive ${archivePath}: ${archiveError.message}`)
   }
 }
 
@@ -677,10 +669,6 @@ async function storeDirectoryInCache(sourceDirectory, cacheDirectory) {
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
   }
-}
-
-function escapePowerShell(value) {
-  return value.replaceAll("'", "''")
 }
 
 function isMissingPathError(error) {
