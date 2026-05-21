@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createZipArchive } from "./archive-test-utils.js";
 import {
   downloadNodeArchive,
   NodeRuntimeNetworkError
@@ -114,6 +115,27 @@ describe("Node.js extraction guards", () => {
 
     expect(extractedRoot).toBe(join(staging, "node-root"));
     await expect(readdir(join(extractedRoot, "bin"))).resolves.toEqual(["node"]);
+  });
+
+  it("extracts zip archives without external unzip tooling", async () => {
+    const root = await makeTempRoot();
+    const archive = join(root, "fixture.zip");
+    const staging = join(root, "staging");
+    const runCommand = vi.fn(async () => {
+      throw new Error("zip extraction should not spawn external commands");
+    });
+    await writeFile(
+      archive,
+      createZipArchive([{ name: "node-root/bin/node.exe", contents: "node" }])
+    );
+
+    const extractedRoot = await extractNodeArchive(archive, staging, "zip", {
+      runCommand
+    });
+
+    expect(extractedRoot).toBe(join(staging, "node-root"));
+    expect(runCommand).not.toHaveBeenCalled();
+    await expect(readdir(join(extractedRoot, "bin"))).resolves.toEqual(["node.exe"]);
   });
 
   it("falls back to copy when rename is denied during final move", async () => {

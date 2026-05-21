@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
+import { createZipArchive } from "./archive-test-utils.js"
 import {
   installManagedServer,
   removeManagedServerInstalledVersion,
@@ -59,8 +60,14 @@ describe("server manager", () => {
     }))
     await writeFile(
       archivePath,
-      "placeholder archive",
-      "utf8"
+      createZipArchive([
+        { name: "package/lib/PCode.Web.dll", contents: "dll" },
+        { name: "package/lib/PCode.Web.deps.json", contents: "deps" },
+        {
+          name: "package/lib/PCode.Web.runtimeconfig.json",
+          contents: "runtimeconfig"
+        }
+      ])
     )
     await writeFile(
       manifestPath,
@@ -127,14 +134,7 @@ npmSync:
         archivePath,
         pm2Version: "^7.0.0",
         installRuntimeFn,
-        queryRuntimeStateFn,
-        extractArchive: async (_archivePath, extractRoot) => {
-          const libRoot = path.join(extractRoot, "package", "lib")
-          await mkdir(libRoot, { recursive: true })
-          await writeFile(path.join(libRoot, "PCode.Web.dll"), "dll", "utf8")
-          await writeFile(path.join(libRoot, "PCode.Web.deps.json"), "deps", "utf8")
-          await writeFile(path.join(libRoot, "PCode.Web.runtimeconfig.json"), "runtimeconfig", "utf8")
-        }
+        queryRuntimeStateFn
       })
 
       expect(result.source.kind).toBe("local-archive")
