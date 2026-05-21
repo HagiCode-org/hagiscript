@@ -724,7 +724,8 @@ function buildManagedPm2Environment(
       componentConfigDir: definition.componentConfigDir,
       componentDataHome: definition.runtimeDataHome,
       pm2Home: definition.pm2Home,
-      scriptBasename: basename(definition.script)
+      scriptBasename: basename(definition.script),
+      includeNpmConfigPrefix: definition.service !== "server"
     },
     resolvedBaseEnv
   )

@@ -102,6 +102,47 @@ describe("runtime executor environment", () => {
     expect(env.HAGISCRIPT_DOWNLOAD_CACHE).toBe("1")
   })
 
+  it("can omit npm prefix variables from managed runtime environments", async () => {
+    const runtimeRoot = path.resolve("tmp", "hagiscript-runtime-no-npm-prefix")
+    const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
+    const paths = resolveRuntimePaths(manifest, { runtimeRoot })
+    const component = manifest.componentMap.get("alpha")
+
+    expect(component).toBeDefined()
+
+    const env = buildManagedRuntimeEnvironment(
+      {
+        component: component!,
+        manifest,
+        paths,
+        componentRoot: getComponentManagedRoot(paths, "alpha"),
+        componentConfigDir: getComponentConfigDirectory(
+          paths,
+          "alpha",
+          component?.runtimeDataDir
+        ),
+        componentDataHome: getComponentRuntimeDataHome(
+          paths,
+          "alpha",
+          component?.runtimeDataDir
+        ),
+        pm2Home: getComponentPm2Home(paths, "alpha", component?.runtimeDataDir),
+        includeNpmConfigPrefix: false
+      },
+      {
+        PATH: "/usr/bin",
+        NPM_CONFIG_PREFIX: "/tmp/stale-prefix",
+        npm_config_prefix: "/tmp/stale-prefix"
+      }
+    )
+
+    expect(env.NPM_CONFIG_PREFIX).toBeUndefined()
+    expect(env.npm_config_prefix).toBeUndefined()
+    expect(env.HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX).toBe(
+      getManagedNpmPackagesPrefix(paths)
+    )
+  })
+
   it("normalizes duplicate Windows PATH keys before prepending managed entries", () => {
     const env = prependPathEntries(
       {

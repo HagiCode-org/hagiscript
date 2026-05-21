@@ -645,7 +645,11 @@ describe("pm2 manager", () => {
   it("reports reusable launch environment for released-service server startup", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const previousAspNetCoreEnvironment = process.env.ASPNETCORE_ENVIRONMENT
+    const previousNpmConfigPrefix = process.env.NPM_CONFIG_PREFIX
+    const previousNpmConfigPrefixLower = process.env.npm_config_prefix
     delete process.env.ASPNETCORE_ENVIRONMENT
+    process.env.NPM_CONFIG_PREFIX = "/tmp/stale-prefix"
+    process.env.npm_config_prefix = "/tmp/stale-prefix"
     const setup = await createPm2Fixture()
 
     try {
@@ -703,6 +707,8 @@ describe("pm2 manager", () => {
       expect(report.env.HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX).toBe(
         getManagedNpmPackagesPrefix(paths)
       )
+      expect(report.env.NPM_CONFIG_PREFIX).toBeUndefined()
+      expect(report.env.npm_config_prefix).toBeUndefined()
       expect(report.env[report.pathKey]?.startsWith(report.pathEntries.join(path.delimiter))).toBe(
         true
       )
@@ -721,6 +727,16 @@ describe("pm2 manager", () => {
         delete process.env.ASPNETCORE_ENVIRONMENT
       } else {
         process.env.ASPNETCORE_ENVIRONMENT = previousAspNetCoreEnvironment
+      }
+      if (previousNpmConfigPrefix === undefined) {
+        delete process.env.NPM_CONFIG_PREFIX
+      } else {
+        process.env.NPM_CONFIG_PREFIX = previousNpmConfigPrefix
+      }
+      if (previousNpmConfigPrefixLower === undefined) {
+        delete process.env.npm_config_prefix
+      } else {
+        process.env.npm_config_prefix = previousNpmConfigPrefixLower
       }
       await rm(setup.directory, { recursive: true, force: true })
     }

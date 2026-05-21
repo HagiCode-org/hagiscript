@@ -54,6 +54,7 @@ export interface ManagedRuntimeEnvironmentContext {
   npmRegistryMirror?: string
   pm2VersionOverride?: string
   scriptBasename?: string
+  includeNpmConfigPrefix?: boolean
 }
 
 export interface RuntimeScriptExecutionResult {
@@ -222,10 +223,17 @@ export function buildManagedRuntimeEnvironment(
       context.component.runtimeDataDir,
       undefined
     )
+  const includeNpmConfigPrefix = context.includeNpmConfigPrefix !== false
+  const resolvedBaseEnv: NodeJS.ProcessEnv = { ...baseEnv }
+
+  if (!includeNpmConfigPrefix) {
+    delete resolvedBaseEnv.NPM_CONFIG_PREFIX
+    delete resolvedBaseEnv.npm_config_prefix
+  }
 
   return prependPathEntries(
     {
-      ...baseEnv,
+      ...resolvedBaseEnv,
       HAGICODE_RUNTIME_HOME: context.paths.runtimeHome,
       HAGICODE_RUNTIME_DATA_HOME: componentDataHome,
       PM2_HOME: pm2Home,
@@ -260,8 +268,12 @@ export function buildManagedRuntimeEnvironment(
       HAGICODE_NPM_GLOBAL_PREFIX: managedNpmPackagesPrefix,
       HAGICODE_NPM_GLOBAL_BIN_ROOT: managedNpmBinDirectory,
       HAGICODE_NPM_GLOBAL_MODULES_ROOT: managedNpmModulesDirectory,
-      NPM_CONFIG_PREFIX: managedNpmPackagesPrefix,
-      npm_config_prefix: managedNpmPackagesPrefix,
+      ...(includeNpmConfigPrefix
+        ? {
+            NPM_CONFIG_PREFIX: managedNpmPackagesPrefix,
+            npm_config_prefix: managedNpmPackagesPrefix
+          }
+        : {}),
       ...buildReleasedServiceEnvironment(context.component.releasedService, context.componentRoot),
       ...(context.phase ? { HAGISCRIPT_RUNTIME_PHASE: context.phase } : {}),
       ...(context.purge !== undefined
