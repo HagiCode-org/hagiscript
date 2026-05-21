@@ -12,6 +12,12 @@ export interface RuntimeExecutablePaths {
   npmPath: string;
 }
 
+export interface RuntimeCommandInvocation {
+  command: string;
+  args: string[];
+  launchOptions: { shell?: boolean };
+}
+
 export interface NodeRuntimeVerificationResult {
   valid: boolean;
   targetDirectory: string;
@@ -40,18 +46,22 @@ export async function verifyNodeRuntime(
   const timeoutMs = options.timeoutMs ?? 15_000;
   const runCommand = options.runCommand ?? runVersionCommand;
   const paths = getRuntimeExecutablePaths(targetDirectory, options.platform);
+  const npmInvocation = buildRuntimeNpmInvocation(paths, ["--version"], options.platform);
 
   try {
     await access(paths.nodePath, constants.X_OK);
-    await access(paths.npmPath, constants.X_OK);
+    await access(resolveNpmValidationTargetPath(paths, options.platform), constants.X_OK);
 
     const [nodeVersion, npmVersion] = await Promise.all([
       runCommand(paths.nodePath, ["--version"], timeoutMs, {
         ...getCommandLaunchOptions(paths.nodePath, { platform: options.platform })
       }),
-      runCommand(paths.npmPath, ["--version"], timeoutMs, {
-        ...getCommandLaunchOptions(paths.npmPath, { platform: options.platform })
-      })
+      runCommand(
+        npmInvocation.command,
+        npmInvocation.args,
+        timeoutMs,
+        npmInvocation.launchOptions
+      )
     ]);
 
     return {
@@ -71,6 +81,26 @@ export async function verifyNodeRuntime(
       failureReason: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+export function buildRuntimeNpmInvocation(
+  paths: RuntimeExecutablePaths,
+  args: string[],
+  platform: NodeJS.Platform = process.platform
+): RuntimeCommandInvocation {
+  if (platform === "win32") {
+    return {
+      command: paths.nodePath,
+      args: [resolveBundledWindowsNpmCliPath(paths), ...args],
+      launchOptions: {}
+    };
+  }
+
+  return {
+    command: paths.npmPath,
+    args,
+    launchOptions: getCommandLaunchOptions(paths.npmPath, { platform })
+  };
 }
 
 export function getRuntimeExecutablePaths(
@@ -114,6 +144,19 @@ async function runVersionCommand(
         : `Command failed: ${command} ${args.join(" ")}`
     );
   }
+}
+
+function resolveNpmValidationTargetPath(
+  paths: RuntimeExecutablePaths,
+  platform: NodeJS.Platform = process.platform
+): string {
+  return platform === "win32"
+    ? resolveBundledWindowsNpmCliPath(paths)
+    : paths.npmPath;
+}
+
+function resolveBundledWindowsNpmCliPath(paths: RuntimeExecutablePaths): string {
+  return join(dirname(paths.nodePath), "node_modules", "npm", "bin", "npm-cli.js");
 }
 
 function prependExecutableDirectoryToPath(

@@ -102,12 +102,15 @@ describe("Node.js runtime verification", () => {
     expect(result.failureReason).toContain("node failed");
   });
 
-  it("keeps Windows npm.cmd verification on direct execution", async () => {
+  it("verifies Windows npm through node.exe plus npm-cli.js", async () => {
     const root = await makeTempRoot();
     await writeFile(join(root, "node.exe"), "");
     await writeFile(join(root, "npm.cmd"), "");
+    await mkdir(join(root, "node_modules", "npm", "bin"), { recursive: true });
+    await writeFile(join(root, "node_modules", "npm", "bin", "npm-cli.js"), "");
     await chmod(join(root, "node.exe"), 0o755);
     await chmod(join(root, "npm.cmd"), 0o755);
+    await chmod(join(root, "node_modules", "npm", "bin", "npm-cli.js"), 0o755);
     const calls: Array<{
       command: string;
       args: string[];
@@ -119,7 +122,7 @@ describe("Node.js runtime verification", () => {
       platform: "win32",
       runCommand: async (command, args, timeoutMs, launchOptions) => {
         calls.push({ command, args, timeoutMs, launchOptions });
-        return command.endsWith("node.exe") ? "v22.12.0\n" : "10.9.0\n";
+        return args[0]?.includes("npm-cli.js") ? "10.9.0\n" : "v22.12.0\n";
       }
     });
 
@@ -132,8 +135,8 @@ describe("Node.js runtime verification", () => {
         launchOptions: {}
       },
       {
-        command: join(root, "npm.cmd"),
-        args: ["--version"],
+        command: join(root, "node.exe"),
+        args: [join(root, "node_modules", "npm", "bin", "npm-cli.js"), "--version"],
         timeoutMs: 15_000,
         launchOptions: {}
       }
