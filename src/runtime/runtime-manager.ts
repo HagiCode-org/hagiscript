@@ -924,6 +924,7 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
     await ensureManagedNpmPrefix(paths.npmPrefix)
 
     const npmOptions: NpmGlobalCommandOptions = {
+      nodePath: verification.nodePath,
       prefix: paths.npmPrefix,
       registryMirror: options.npmRegistryMirror,
       env: createManagedNpmInstallEnvironment(paths.nodeRuntime)

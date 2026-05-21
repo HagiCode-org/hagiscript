@@ -470,6 +470,7 @@ export async function syncNpmGlobals(
   options.onLog?.({ type: "runtime-valid", runtime });
   const npmOptions = {
     ...options.npmOptions,
+    nodePath: runtime.nodePath,
     env: createRuntimeNpmEnv(runtime.targetDirectory, options.npmOptions?.env)
   };
   await prepareNpmGlobalPrefix(npmOptions.prefix, npmOptions.platform);
