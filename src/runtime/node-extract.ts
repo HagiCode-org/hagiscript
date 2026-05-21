@@ -14,6 +14,7 @@ import { createGunzip, gunzipSync } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { createReadStream } from "node:fs";
 import { CommandExecutionError, runCommand } from "./command-launch.js";
+import { extractZipArchive } from "./zip-extract.js";
 
 export class NodeRuntimeExtractionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -119,28 +120,17 @@ export async function assertTargetIsEmptyOrMissing(
 async function extractZip(
   archivePath: string,
   destination: string,
-  options: NodeArchiveExtractionOptions
+  _options: NodeArchiveExtractionOptions
 ): Promise<void> {
-  const extractors = ["unzip", "bsdtar"];
-  let lastError: Error | undefined;
-
-  for (const extractor of extractors) {
-    try {
-      const args =
-        extractor === "unzip"
-          ? ["-q", archivePath, "-d", destination]
-          : ["-xf", archivePath, "-C", destination];
-      await runExtractor(extractor, args, options);
-      return;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
+  try {
+    await extractZipArchive(archivePath, destination);
+  } catch (error) {
+    const zipError = error instanceof Error ? error : new Error(String(error));
+    throw new NodeRuntimeExtractionError(
+      `Failed to extract zip archive: ${zipError.message}`,
+      { cause: zipError }
+    );
   }
-
-  throw new NodeRuntimeExtractionError(
-    "Failed to extract zip archive. Install unzip or bsdtar, or provide a valid Node.js archive.",
-    lastError ? { cause: lastError } : undefined
-  );
 }
 
 async function extractTar(

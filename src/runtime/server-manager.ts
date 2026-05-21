@@ -50,6 +50,7 @@ import {
   setActiveManagedServerVersion,
   type ManagedServerVersionSummary
 } from "./server-version-state.js"
+import { extractZipArchive } from "./zip-extract.js"
 
 export type ManagedServerSourceKind =
   | "github-release"
@@ -1307,24 +1308,16 @@ async function selectServerArchiveFromDirectory(
 async function extractManagedServerArchive(
   archivePath: string,
   extractRoot: string,
-  runner: CommandRunner
+  _runner: CommandRunner
 ): Promise<void> {
-  if (process.platform === "win32") {
-    await runner("powershell.exe", [
-      "-NoLogo",
-      "-NoProfile",
-      "-Command",
-      `Expand-Archive -LiteralPath '${archivePath.replaceAll("'", "''")}' -DestinationPath '${extractRoot.replaceAll("'", "''")}' -Force`
-    ])
-    return
-  }
-
   try {
-    await runner("unzip", ["-q", archivePath, "-d", extractRoot])
-  } catch {
-    await runner("bsdtar", ["-xf", archivePath, "-C", extractRoot], {
-      maxBuffer: 10 * 1024 * 1024
-    })
+    await extractZipArchive(archivePath, extractRoot)
+  } catch (error) {
+    const archiveError = error instanceof Error ? error : new Error(String(error))
+    throw new ManagedServerError(
+      `Failed to extract managed server archive ${archivePath}: ${archiveError.message}`,
+      { cause: archiveError }
+    )
   }
 }
 
