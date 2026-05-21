@@ -68,13 +68,18 @@ export function normalizeCommandPath(commandPath: string): string {
 }
 
 export function requiresShellLaunch(
-  _commandPath: string,
-  _platform: NodeJS.Platform = process.platform
+  commandPath: string,
+  platform: NodeJS.Platform = process.platform
 ): boolean {
-  void _platform;
-  // Execa already handles Windows command shims without a shell wrapper.
-  // Keeping direct execution preserves argv boundaries for paths with spaces.
-  return false;
+  if (platform !== "win32") {
+    return false;
+  }
+
+  const normalizedCommand = normalizeCommandPath(commandPath).toLowerCase();
+  // MSIX/AppX launches can reject direct CreateProcess calls for Windows batch
+  // wrappers with EACCES/"Access is denied", so route .cmd/.bat through the
+  // shell instead of relying on the wrapper to be directly executable.
+  return normalizedCommand.endsWith(".cmd") || normalizedCommand.endsWith(".bat");
 }
 
 export function getCommandLaunchOptions(
