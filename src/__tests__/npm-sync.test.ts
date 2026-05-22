@@ -16,6 +16,10 @@ import {
   validateNpmSyncManifest
 } from "../runtime/npm-sync.js";
 
+const posixNpmOptions = {
+  platform: "linux" as const
+};
+
 describe("npm-sync manifest validation", () => {
   it("loads valid manifests with openspec and skills entries", async () => {
     const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
@@ -375,7 +379,7 @@ describe("npm-sync execution", () => {
         nodeVersion: "v22.0.0",
         npmVersion: "10.0.0"
       })),
-      npmOptions: { runCommand: runner }
+      npmOptions: { ...posixNpmOptions, runCommand: runner }
     });
 
     expect(summary.noopCount).toBe(1);
@@ -411,7 +415,7 @@ describe("npm-sync execution", () => {
       manifestPath,
       force: true,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { runCommand: runner }
+      npmOptions: { ...posixNpmOptions, runCommand: runner }
     });
 
     expect(summary.noopCount).toBe(0);
@@ -464,7 +468,7 @@ describe("npm-sync execution", () => {
         nodeVersion: "v22.0.0",
         npmVersion: "10.0.0"
       })),
-      npmOptions: { runCommand: runner }
+      npmOptions: { ...posixNpmOptions, runCommand: runner }
     });
 
     expect(summary.registryMirror).toBe("https://registry.npmmirror.com/");
@@ -521,7 +525,7 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { prefix, runCommand: runner }
+      npmOptions: { ...posixNpmOptions, prefix, runCommand: runner }
     });
 
     expect(summary.changedCount).toBe(1);
@@ -671,13 +675,13 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { prefix, runCommand: runner }
+      npmOptions: { ...posixNpmOptions, prefix, runCommand: runner }
     });
 
-    const requiredDirectories =
-      process.platform === "win32"
-        ? [join(prefix, "node_modules")]
-        : [join(prefix, "lib", "node_modules"), join(prefix, "bin")];
+    const requiredDirectories = [
+      join(prefix, "lib", "node_modules"),
+      join(prefix, "bin")
+    ];
 
     await Promise.all(
       requiredDirectories.map(async (directoryPath) => {
@@ -721,7 +725,7 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { prefix, runCommand: runner }
+      npmOptions: { ...posixNpmOptions, prefix, runCommand: runner }
     });
 
     expect(summary.noopCount).toBe(1);
@@ -800,7 +804,7 @@ describe("npm-sync execution", () => {
       runtimePath: "/runtime",
       manifestPath,
       verifyRuntime: createVerifyRuntime(),
-      npmOptions: { prefix, runCommand: runner }
+      npmOptions: { ...posixNpmOptions, prefix, runCommand: runner }
     });
 
     expect(summary.changedCount).toBe(1);
@@ -873,7 +877,7 @@ describe("npm-sync execution", () => {
         manifestPath,
         fallbackPolicy: "mirror-only",
         verifyRuntime: createVerifyRuntime(),
-        npmOptions: { runCommand: runner }
+        npmOptions: { ...posixNpmOptions, runCommand: runner }
       })
     ).rejects.toMatchObject({
       fallbackPolicy: "mirror-only",
@@ -909,7 +913,7 @@ describe("npm-sync execution", () => {
         runtimePath: "/runtime",
         manifestPath,
         verifyRuntime: createVerifyRuntime(),
-        npmOptions: { runCommand: runner }
+        npmOptions: { ...posixNpmOptions, runCommand: runner }
       })
     ).rejects.toMatchObject({
       fallbackAttempted: false,
@@ -954,7 +958,7 @@ describe("npm-sync execution", () => {
         runtimePath: "/runtime",
         manifestPath,
         verifyRuntime: createVerifyRuntime(),
-        npmOptions: { runCommand: runner }
+        npmOptions: { ...posixNpmOptions, runCommand: runner }
       })
     ).rejects.toMatchObject({
       fallbackPolicy: "auto",
@@ -1000,7 +1004,7 @@ describe("npm-sync execution", () => {
         nodeVersion: "v22.0.0",
         npmVersion: "10.0.0"
       })),
-      npmOptions: { runCommand: runner }
+      npmOptions: { ...posixNpmOptions, runCommand: runner }
     });
 
     expect(summary.registryMirror).toBe("https://cli.example.com/");
@@ -1026,7 +1030,7 @@ describe("npm-sync execution", () => {
         runtimePath: "/runtime",
         manifestPath,
         verifyRuntime: createVerifyRuntime(),
-        npmOptions: { runCommand: runner }
+        npmOptions: { ...posixNpmOptions, runCommand: runner }
       })
     ).rejects.toThrow("registryMirror");
     expect(runner).not.toHaveBeenCalled();
@@ -1058,7 +1062,7 @@ describe("npm-sync execution", () => {
         runtimePath: "/runtime",
         manifestPath,
         verifyRuntime: createVerifyRuntime(),
-        npmOptions: { runCommand: runner }
+        npmOptions: { ...posixNpmOptions, runCommand: runner }
       })
     ).rejects.toMatchObject({
       packageName: "openspec",
