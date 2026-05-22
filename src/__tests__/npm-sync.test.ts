@@ -1,5 +1,5 @@
 import { access, mkdtemp, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -559,6 +559,98 @@ describe("npm-sync execution", () => {
       "--prefix",
       prefix
     ]);
+  });
+
+  it("uses node.exe plus npm-cli.js for Windows inventory and install commands when the prefix contains spaces", async () => {
+    const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      "platform"
+    );
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    const runtimePath = "C:/runtime";
+    const nodePath = join(runtimePath, "node.exe");
+    const npmPath = join(runtimePath, "npm.cmd");
+    const expectedNpmCliPath = join(
+      dirname(nodePath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js"
+    );
+    const prefix = join(directory, "npm prefix with spaces");
+
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        packages: { openspec: { version: "^1.0.0", target: "1.2.3" } }
+      })
+    );
+
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[1] === "list") {
+        return commandResult(command, args, { dependencies: {} });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: "win32"
+    });
+
+    try {
+      const summary = await syncNpmGlobals({
+        runtimePath,
+        manifestPath,
+        verifyRuntime: vi.fn(async () => ({
+          valid: true,
+          targetDirectory: runtimePath,
+          nodePath,
+          npmPath,
+          nodeVersion: "v22.0.0",
+          npmVersion: "10.0.0"
+        })),
+        npmOptions: { prefix, runCommand: runner }
+      });
+
+      expect(summary.changedCount).toBe(1);
+      expect(runner).toHaveBeenNthCalledWith(
+        1,
+        nodePath,
+        [
+          expectedNpmCliPath,
+          "list",
+          "-g",
+          "--depth=0",
+          "--json",
+          "--prefix",
+          prefix
+        ],
+        120_000,
+        {}
+      );
+      expect(runner).toHaveBeenNthCalledWith(
+        2,
+        nodePath,
+        [
+          expectedNpmCliPath,
+          "install",
+          "-g",
+          "openspec@1.2.3",
+          "--prefix",
+          prefix
+        ],
+        120_000,
+        {}
+      );
+      expect(summary.actions[0].command).toBe(nodePath);
+    } finally {
+      if (originalPlatformDescriptor) {
+        Object.defineProperty(process, "platform", originalPlatformDescriptor);
+      }
+    }
   });
 
   it("prepares a standalone prefix layout before inventory runs", async () => {

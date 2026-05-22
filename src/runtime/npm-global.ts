@@ -118,21 +118,23 @@ function buildNpmCommandInvocation(
   args: string[],
   options: NpmGlobalCommandOptions
 ): { command: string; args: string[]; launchOptions: { shell?: boolean } } {
-  if (options.platform === "win32" && options.nodePath) {
+  const platform = options.platform ?? process.platform;
+
+  if (platform === "win32" && options.nodePath) {
     return buildRuntimeNpmInvocation(
       {
         nodePath: options.nodePath,
         npmPath,
       } satisfies RuntimeExecutablePaths,
       args,
-      options.platform
+      platform
     );
   }
 
   return {
     command: npmPath,
     args,
-    launchOptions: getCommandLaunchOptions(npmPath, { platform: options.platform })
+    launchOptions: getCommandLaunchOptions(npmPath, { platform })
   };
 }
 
