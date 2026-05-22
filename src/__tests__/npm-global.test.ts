@@ -1,6 +1,6 @@
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildInstallGlobalPackageArgs,
@@ -106,6 +106,14 @@ describe("npm global wrappers", () => {
   });
 
   it("lists Windows npm inventory through node.exe plus npm-cli.js", async () => {
+    const nodePath = "C:/runtime/node.exe";
+    const expectedNpmCliPath = join(
+      dirname(nodePath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js"
+    );
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -115,14 +123,14 @@ describe("npm global wrappers", () => {
 
     await listGlobalPackages("C:/runtime/npm.cmd", {
       platform: "win32",
-      nodePath: "C:/runtime/node.exe",
+      nodePath,
       runCommand: runner
     });
 
     expect(runner).toHaveBeenCalledWith(
-      "C:/runtime/node.exe",
+      nodePath,
       [
-        "C:/runtime/node_modules/npm/bin/npm-cli.js",
+        expectedNpmCliPath,
         "list",
         "-g",
         "--depth=0",
@@ -175,6 +183,14 @@ describe("npm global wrappers", () => {
   });
 
   it("installs through Windows npm inventory with node.exe and registry mirrors", async () => {
+    const nodePath = "C:/runtime/node.exe";
+    const expectedNpmCliPath = join(
+      dirname(nodePath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js"
+    );
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
       args,
@@ -184,15 +200,15 @@ describe("npm global wrappers", () => {
 
     await installGlobalPackage("C:/runtime/npm.cmd", "openspec@^1.0.0", {
       platform: "win32",
-      nodePath: "C:/runtime/node.exe",
+      nodePath,
       registryMirror: "https://registry.example.test",
       runCommand: runner
     });
 
     expect(runner).toHaveBeenCalledWith(
-      "C:/runtime/node.exe",
+      nodePath,
       [
-        "C:/runtime/node_modules/npm/bin/npm-cli.js",
+        expectedNpmCliPath,
         "install",
         "-g",
         "openspec@^1.0.0",
