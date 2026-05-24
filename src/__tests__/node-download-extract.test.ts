@@ -134,7 +134,11 @@ describe("Node.js extraction guards", () => {
     });
 
     expect(extractedRoot).toBe(join(staging, "node-root"));
-    expect(runCommand).not.toHaveBeenCalled();
+    if (process.platform === "win32") {
+      expect(runCommand).toHaveBeenCalled();
+    } else {
+      expect(runCommand).not.toHaveBeenCalled();
+    }
     await expect(readdir(join(extractedRoot, "bin"))).resolves.toEqual(["node.exe"]);
   });
 
