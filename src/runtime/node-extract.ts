@@ -120,10 +120,13 @@ export async function assertTargetIsEmptyOrMissing(
 async function extractZip(
   archivePath: string,
   destination: string,
-  _options: NodeArchiveExtractionOptions
+  options: NodeArchiveExtractionOptions
 ): Promise<void> {
   try {
-    await extractZipArchive(archivePath, destination);
+    await extractZipArchive(archivePath, destination, {
+      platform: process.platform,
+      runCommand: options.runCommand
+    });
   } catch (error) {
     const zipError = error instanceof Error ? error : new Error(String(error));
     throw new NodeRuntimeExtractionError(
