@@ -146,6 +146,22 @@ export {
   type RuntimeStateReport
 } from "./runtime/runtime-manager.js";
 export {
+  executeComponentServiceAction,
+  parseDedicatedComponentLinesOption,
+  renderComponentServiceResultText,
+  resolveComponentServiceDefinition,
+  type ComponentServiceCommandOptions,
+  type ComponentServiceResult,
+  type DedicatedComponentAction,
+  type DedicatedComponentName
+} from "./runtime/component-service-manager.js";
+export {
+  createBundledSevenZipExtractor,
+  getBundledSevenZipBinaryPath,
+  type SevenZipExtractor,
+  type SevenZipExtractorOptions
+} from "./runtime/seven-zip-extract.js";
+export {
   getManagedServerStatus,
   installManagedServer,
   listManagedServerVersions,

@@ -115,6 +115,33 @@ export function getComponentManagedRoot(
   }
 }
 
+export function getRuntimeComponentsRoot(paths: ResolvedRuntimePaths): string {
+  return join(paths.runtimeDataRoot, "runtimeComponents")
+}
+
+export function sanitizeRuntimeComponentVersionSegment(version: string): string {
+  const normalized = version.trim().replaceAll(/[^A-Za-z0-9._-]+/g, "-")
+  const sanitized = normalized.replaceAll(/^[.-]+|[.-]+$/g, "")
+
+  if (!sanitized) {
+    throw new Error(`Managed runtime component version is invalid: ${JSON.stringify(version)}`)
+  }
+
+  return sanitized
+}
+
+export function getVersionedRuntimeComponentRoot(
+  paths: ResolvedRuntimePaths,
+  componentDirectoryName: string,
+  version: string
+): string {
+  return join(
+    getRuntimeComponentsRoot(paths),
+    componentDirectoryName,
+    sanitizeRuntimeComponentVersionSegment(version)
+  )
+}
+
 export function getServerProgramRoot(paths: ResolvedRuntimePaths): string {
   return paths.serverProgramRoot
 }

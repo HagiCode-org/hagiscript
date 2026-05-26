@@ -7,6 +7,8 @@ import { createRuntimeInfo, packageVersion } from "./index.js";
 import { registerManifestCommands } from "./commands/manifest-commands.js";
 import { registerNpmSyncCommand } from "./commands/npm-sync-commands.js";
 import { registerNodeRuntimeCommands } from "./commands/node-runtime-commands.js";
+import { registerCodeServerCommands } from "./commands/code-server-commands.js";
+import { registerOmniRouteCommands } from "./commands/omniroute-commands.js";
 import { registerPm2Commands } from "./commands/pm2-commands.js";
 import { registerRuntimeCommands } from "./commands/runtime-commands.js";
 import { registerServerCommands } from "./commands/server-commands.js";
@@ -31,6 +33,8 @@ export function createCli(): Command {
   registerManifestCommands(program);
   registerNpmSyncCommand(program);
   registerPm2Commands(program);
+  registerOmniRouteCommands(program);
+  registerCodeServerCommands(program);
   registerRuntimeCommands(program);
   registerServerCommands(program);
 

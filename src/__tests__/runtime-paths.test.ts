@@ -5,13 +5,16 @@ import {
   getComponentManagedRoot,
   getComponentPm2Home,
   getComponentRuntimeDataHome,
+  getRuntimeComponentsRoot,
   getServerProgramRoot,
   getServerSharedDataRoot,
   getServerVersionRoot,
   getServerVersionsRoot,
+  getVersionedRuntimeComponentRoot,
   resolveRuntimePaths,
   resolveManagedPath,
   resolveReleasedServicePath,
+  sanitizeRuntimeComponentVersionSegment,
   type ResolvedRuntimePaths
 } from "../runtime/runtime-paths.js"
 import type { LoadedRuntimeManifest } from "../runtime/runtime-manifest.js"
@@ -193,5 +196,22 @@ describe("runtime path helpers", () => {
     )
     expect(resolvedPaths.componentDataRoot).toBe(path.resolve(customRuntimeDataRoot, "components"))
     expect(resolvedPaths.npmPrefix).toBe(path.resolve(customRuntimeDataRoot, "npm"))
+  })
+
+  it("builds versioned extracted runtime roots beneath runtime-data/runtimeComponents", () => {
+    expect(getRuntimeComponentsRoot(runtimePaths)).toBe(
+      path.join(managedRuntimeDataRoot, "runtimeComponents")
+    )
+    expect(getVersionedRuntimeComponentRoot(runtimePaths, "code_server", "4.117.0")).toBe(
+      path.join(managedRuntimeDataRoot, "runtimeComponents", "code_server", "4.117.0")
+    )
+  })
+
+  it("sanitizes version path segments for extracted runtime directories", () => {
+    expect(sanitizeRuntimeComponentVersionSegment(" v4.117.0 beta+build ")).toBe(
+      "v4.117.0-beta-build"
+    )
+    expect(() => sanitizeRuntimeComponentVersionSegment("..."))
+      .toThrow(/Managed runtime component version is invalid/)
   })
 })

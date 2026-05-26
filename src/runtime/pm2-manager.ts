@@ -40,6 +40,7 @@ export interface ManagedPm2CommandOptions {
   runtimeRoot?: string
   service: ManagedPm2ServiceName
   action: ManagedPm2Action
+  componentRootOverride?: string
   nameIdentifierValue?: string
   environmentOverrides?: Record<string, string | undefined>
   runner?: CommandRunner
@@ -148,7 +149,8 @@ export async function runManagedPm2Command(
     paths,
     options.service,
     options.nameIdentifierValue,
-    options.environmentOverrides
+    options.environmentOverrides,
+    options.componentRootOverride
   )
   const runner = options.runner ?? runCommand
 
@@ -205,7 +207,8 @@ export async function resolveManagedPm2Environment(
     paths,
     options.service,
     options.nameIdentifierValue,
-    options.environmentOverrides
+    options.environmentOverrides,
+    options.componentRootOverride
   )
   const env = buildManagedPm2Environment(definition)
 
@@ -244,7 +247,8 @@ export async function resolveManagedPm2ServiceDefinition(
   paths: ResolvedRuntimePaths,
   service: ManagedPm2ServiceName,
   nameIdentifierValue?: string,
-  environmentOverrides?: Record<string, string | undefined>
+  environmentOverrides?: Record<string, string | undefined>,
+  componentRootOverride?: string
 ): Promise<ResolvedManagedPm2ServiceDefinition> {
   assertSupportedPm2Service(service)
 
@@ -253,7 +257,9 @@ export async function resolveManagedPm2ServiceDefinition(
     throw new ManagedPm2Error(`Runtime manifest does not define the ${service} service.`)
   }
 
-  const defaultComponentRoot = getComponentManagedRoot(paths, component.name)
+  const defaultComponentRoot = componentRootOverride
+    ? resolveManagedPath(componentRootOverride, paths.root)
+    : getComponentManagedRoot(paths, component.name)
   const defaultRuntimeDataHome = getComponentRuntimeDataHome(
     paths,
     component.name,

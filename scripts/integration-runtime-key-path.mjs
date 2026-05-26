@@ -44,6 +44,9 @@ let finalResult = "failed";
 const runtimeInstallLines = [];
 const npmSyncLines = [];
 const pm2EnvironmentLines = [];
+const dedicatedCommandLines = [];
+const dedicatedCommandFailureLines = [];
+const dedicatedCommandFailureDetails = [];
 const pm2LifecycleLines = [];
 const pm2FailureLines = [];
 const pm2FailureDetails = [];
@@ -307,6 +310,255 @@ try {
     );
   });
 
+  await runStage("npm-sync tool installation", async () => {
+    const npmSyncOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "npm-sync",
+        "--runtime",
+        path.join(managedRoot, "program", "components", "node", "runtime"),
+        "--prefix",
+        path.join(managedRoot, "program", "npm"),
+        "--manifest",
+        toolManifestPath
+      ],
+      repoRoot
+    );
+
+    assertIncludes(npmSyncOutput, "npm-sync complete.", "npm-sync output");
+    assertIncludes(npmSyncOutput, "Plan: pm2 install", "pm2 install plan");
+    assertIncludes(
+      npmSyncOutput,
+      "Plan: skills install",
+      "skills install plan"
+    );
+    assertIncludes(
+      npmSyncOutput,
+      "Plan: openspec install",
+      "openspec install plan"
+    );
+
+    npmSyncLines.push(
+      `- Prefix: ${path.join(managedRoot, "program", "npm")}`,
+      `- Manifest: ${toolManifestPath}`,
+      "- Installed tooling through npm-sync: pm2, skills, @fission-ai/openspec"
+    );
+  });
+
+  await runStage("dedicated component command lifecycle", async () => {
+    await prepareBundledServiceConfigs(managedRoot);
+
+    const components = [
+      {
+        command: "omniroute",
+        service: "omniroute",
+        version: "3.6.9",
+        currentRoot: path.join(
+          managedRoot,
+          "runtime-data",
+          "runtimeComponents",
+          "omniroute",
+          "3.6.9",
+          "current"
+        ),
+        entrypoint: path.join("bin", "omniroute.mjs"),
+        logPath: path.join(
+          managedRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "omniroute",
+          "logs",
+          "omniroute.log"
+        )
+      },
+      {
+        command: "code_server",
+        service: "code-server",
+        version: "4.117.0",
+        currentRoot: path.join(
+          managedRoot,
+          "runtime-data",
+          "runtimeComponents",
+          "code_server",
+          "4.117.0",
+          "current"
+        ),
+        entrypoint: path.join("out", "node", "entry.js"),
+        logPath: path.join(
+          managedRoot,
+          "runtime-data",
+          "components",
+          "services",
+          "code-server",
+          "logs",
+          "code-server.log"
+        )
+      }
+    ];
+
+    try {
+      for (const component of components) {
+        try {
+          const exactOutput = await runCapture(
+            process.execPath,
+            [
+              "dist/cli.js",
+              component.command,
+              "exact",
+              "--from-manifest",
+              runtimeManifestPath,
+              "--runtime-root",
+              managedRoot
+            ],
+            repoRoot
+          );
+          assertIncludes(
+            exactOutput,
+            "Action: exact",
+            `${component.command} exact`
+          );
+          assertIncludes(
+            exactOutput,
+            `Extracted runtime: ${path.dirname(component.currentRoot)}`,
+            `${component.command} extracted runtime root`
+          );
+          assertIncludes(
+            exactOutput,
+            `Current root: ${component.currentRoot}`,
+            `${component.command} current root`
+          );
+          assertFile(path.join(component.currentRoot, component.entrypoint));
+
+          const missingOutput = await runCapture(
+            process.execPath,
+            [
+              "dist/cli.js",
+              component.command,
+              "status",
+              "--from-manifest",
+              runtimeManifestPath,
+              "--runtime-root",
+              managedRoot
+            ],
+            repoRoot
+          );
+          assertIncludes(
+            missingOutput,
+            "Status: missing",
+            `${component.command} missing status`
+          );
+
+          const startOutput = await runCapture(
+            process.execPath,
+            [
+              "dist/cli.js",
+              component.command,
+              "start",
+              "--from-manifest",
+              runtimeManifestPath,
+              "--runtime-root",
+              managedRoot
+            ],
+            repoRoot
+          );
+          assertIncludes(
+            startOutput,
+            "Action: start",
+            `${component.command} start`
+          );
+
+          const statusOutput = await waitForDedicatedComponentStatus(
+            component.command,
+            "online",
+            {
+              manifestPath: runtimeManifestPath,
+              runtimeRoot: managedRoot,
+              repoRoot
+            }
+          );
+          assertIncludes(
+            statusOutput,
+            "Status: online",
+            `${component.command} online status`
+          );
+
+          const logsOutput = await runCapture(
+            process.execPath,
+            [
+              "dist/cli.js",
+              component.command,
+              "logs",
+              "--from-manifest",
+              runtimeManifestPath,
+              "--runtime-root",
+              managedRoot,
+              "--lines",
+              "20"
+            ],
+            repoRoot
+          );
+          assertIncludes(
+            logsOutput,
+            "Action: logs",
+            `${component.command} logs`
+          );
+          assertIncludes(
+            logsOutput,
+            `Target path: ${component.logPath}`,
+            `${component.command} logs target`
+          );
+
+          const stopOutput = await runCapture(
+            process.execPath,
+            [
+              "dist/cli.js",
+              component.command,
+              "stop",
+              "--from-manifest",
+              runtimeManifestPath,
+              "--runtime-root",
+              managedRoot
+            ],
+            repoRoot
+          );
+          assertIncludes(
+            stopOutput,
+            "Status: missing",
+            `${component.command} stop`
+          );
+          dedicatedCommandLines.push(
+            `- ${component.command}: exact -> extracted ${component.version} runtime -> start -> online -> logs -> stop -> missing`
+          );
+        } catch (error) {
+          const detail = await collectManagedPm2FailureDetail({
+            runProcess,
+            repoRoot,
+            runtimeRoot: managedRoot,
+            manifestPath: runtimeManifestPath,
+            tempRoot,
+            service: component.service,
+            reason: error instanceof Error ? error.message : String(error)
+          });
+          dedicatedCommandFailureLines.push(
+            `- ${component.command}: failed, diagnostics captured in folded details below`
+          );
+          dedicatedCommandFailureDetails.push(detail);
+          log(
+            `Collected dedicated component command diagnostics for ${component.command}`
+          );
+          throw error;
+        }
+      }
+    } finally {
+      await Promise.all([
+        killManagedPm2(managedRoot, "omniroute"),
+        killManagedPm2(managedRoot, "code-server")
+      ]);
+    }
+  });
+
   await runStage("runtime install for PM2 validation", async () => {
     const installOutput = await runCapture(
       process.execPath,
@@ -345,42 +597,6 @@ try {
     );
     runtimeInstallLines.push(
       "- Reinstalled bundled runtimes with extract mode override for PM2 lifecycle validation"
-    );
-  });
-
-  await runStage("npm-sync tool installation", async () => {
-    const npmSyncOutput = await runCapture(
-      process.execPath,
-      [
-        "dist/cli.js",
-        "npm-sync",
-        "--runtime",
-        path.join(managedRoot, "program", "components", "node", "runtime"),
-        "--prefix",
-        path.join(managedRoot, "program", "npm"),
-        "--manifest",
-        toolManifestPath
-      ],
-      repoRoot
-    );
-
-    assertIncludes(npmSyncOutput, "npm-sync complete.", "npm-sync output");
-    assertIncludes(npmSyncOutput, "Plan: pm2 install", "pm2 install plan");
-    assertIncludes(
-      npmSyncOutput,
-      "Plan: skills install",
-      "skills install plan"
-    );
-    assertIncludes(
-      npmSyncOutput,
-      "Plan: openspec install",
-      "openspec install plan"
-    );
-
-    npmSyncLines.push(
-      `- Prefix: ${path.join(managedRoot, "program", "npm")}`,
-      `- Manifest: ${toolManifestPath}`,
-      "- Installed tooling through npm-sync: pm2, skills, @fission-ai/openspec"
     );
   });
 
@@ -426,7 +642,7 @@ try {
   });
 
   await runStage("pm2 managed service lifecycle", async () => {
-    await prepareOmniroutePm2Config(managedRoot);
+    await prepareBundledServiceConfigs(managedRoot);
 
     try {
       for (const service of ["omniroute", "code-server"]) {
@@ -571,7 +787,9 @@ try {
       );
       const listReport = JSON.parse(listOutput);
       if (!listReport.activeVersion) {
-        throw new Error(`Expected server install to activate a version. Output:\n${listOutput}`);
+        throw new Error(
+          `Expected server install to activate a version. Output:\n${listOutput}`
+        );
       }
 
       try {
@@ -644,6 +862,20 @@ try {
       {
         title: "npm-sync Provisioning",
         lines: npmSyncLines.length > 0 ? npmSyncLines : ["- Not captured"]
+      },
+      {
+        title: "Dedicated Component Commands",
+        lines: [
+          ...(dedicatedCommandLines.length > 0 ? dedicatedCommandLines : []),
+          ...(dedicatedCommandFailureLines.length > 0
+            ? dedicatedCommandFailureLines
+            : []),
+          ...(dedicatedCommandLines.length === 0 &&
+          dedicatedCommandFailureLines.length === 0
+            ? ["- Not captured"]
+            : [])
+        ],
+        details: dedicatedCommandFailureDetails
       },
       {
         title: "Managed PM2 Verification",
@@ -766,8 +998,43 @@ async function waitForManagedPm2Status(service, expectedStatus, options) {
   return lastOutput;
 }
 
-async function prepareOmniroutePm2Config(runtimeRoot) {
-  const configPath = path.join(
+async function waitForDedicatedComponentStatus(
+  component,
+  expectedStatus,
+  options
+) {
+  const attempts = process.platform === "linux" ? 3 : 6;
+  let lastOutput = "";
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    lastOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        component,
+        "status",
+        "--from-manifest",
+        options.manifestPath,
+        "--runtime-root",
+        options.runtimeRoot
+      ],
+      options.repoRoot
+    );
+
+    if (lastOutput.includes(`Status: ${expectedStatus}`)) {
+      return lastOutput;
+    }
+
+    if (attempt < attempts) {
+      await delay(500 * attempt);
+    }
+  }
+
+  return lastOutput;
+}
+
+async function prepareBundledServiceConfigs(runtimeRoot) {
+  const omnirouteConfigPath = path.join(
     runtimeRoot,
     "runtime-data",
     "components",
@@ -776,22 +1043,42 @@ async function prepareOmniroutePm2Config(runtimeRoot) {
     "config",
     "config.yaml"
   );
-
-  if (!fs.existsSync(configPath)) {
-    return;
+  if (fs.existsSync(omnirouteConfigPath)) {
+    const port = await getAvailablePort();
+    const current = fs.readFileSync(omnirouteConfigPath, "utf8");
+    fs.writeFileSync(
+      omnirouteConfigPath,
+      current.replace(
+        /listen:\s*"?127\.0\.0\.1:\d+"?/u,
+        `listen: "127.0.0.1:${port}"`
+      ),
+      "utf8"
+    );
+    log(`Prepared omniroute PM2 config with dynamic port ${port}`);
   }
 
-  const port = await getAvailablePort();
-  const current = fs.readFileSync(configPath, "utf8");
-  fs.writeFileSync(
-    configPath,
-    current.replace(
-      /listen:\s*"127\.0\.0\.1:\d+"/u,
-      `listen: "127.0.0.1:${port}"`
-    ),
-    "utf8"
+  const codeServerConfigPath = path.join(
+    runtimeRoot,
+    "runtime-data",
+    "components",
+    "services",
+    "code-server",
+    "config",
+    "config.yaml"
   );
-  log(`Prepared omniroute PM2 config with dynamic port ${port}`);
+  if (fs.existsSync(codeServerConfigPath)) {
+    const port = await getAvailablePort();
+    const current = fs.readFileSync(codeServerConfigPath, "utf8");
+    fs.writeFileSync(
+      codeServerConfigPath,
+      current.replace(
+        /bind-addr:\s*"?127\.0\.0\.1:\d+"?/u,
+        `bind-addr: 127.0.0.1:${port}`
+      ),
+      "utf8"
+    );
+    log(`Prepared code-server PM2 config with dynamic port ${port}`);
+  }
 }
 
 async function getAvailablePort() {
@@ -922,7 +1209,8 @@ async function extractZipArchive(archivePath, extractRoot, cwd) {
   try {
     await extractZipArchiveWithNode(archivePath, extractRoot);
   } catch (error) {
-    const archiveError = error instanceof Error ? error : new Error(String(error));
+    const archiveError =
+      error instanceof Error ? error : new Error(String(error));
     throw new Error(
       `Failed to extract released server archive ${archivePath}: ${archiveError.message}`
     );

@@ -298,6 +298,56 @@ Read the config as JSON:
 hagiscript server config get --json
 ```
 
+## Dedicated OmniRoute And code_server Commands
+
+Hagiscript also exposes first-level commands for the two bundled desktop-facing services:
+
+```bash
+hagiscript omniroute exact|start|stop|restart|status|env|logs
+hagiscript code_server exact|start|stop|restart|status|env|logs
+```
+
+These commands are compatibility wrappers over the same managed PM2 contract used by `hagiscript pm2 omniroute ...` and `hagiscript pm2 code-server ...`. They keep the same runtime-scoped PM2 home and managed service identity while hiding the lower-level extracted-runtime details from desktop callers and automation.
+
+The primary bundled-runtime flow is 7z-only:
+
+```bash
+hagiscript runtime install
+hagiscript omniroute exact
+hagiscript omniroute start
+hagiscript omniroute status --json
+
+hagiscript code_server exact
+hagiscript code_server start
+hagiscript code_server logs --lines 50
+```
+
+`exact` resolves the packaged component `.7z` artifact, extracts it into `runtime-data/runtimeComponents/<component>/<version>/current`, validates the extracted layout, and records the extracted runtime metadata under the component runtime-data home. Later lifecycle and log commands operate on that extracted managed runtime rather than on the packaged archive directory.
+
+Examples with explicit runtime context:
+
+```bash
+hagiscript omniroute exact \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime
+
+hagiscript code_server env \
+	--from-manifest ./runtime/manifest.yaml \
+	--runtime-root ~/.hagicode/runtime \
+	--json
+```
+
+Read recent allowlisted managed logs:
+
+```bash
+hagiscript omniroute logs --lines 100
+hagiscript code_server logs --lines 50 --json
+```
+
+The dedicated `logs` action only reads allowlisted managed log targets beneath each component runtime-data boundary. Missing log files return a successful empty result instead of crashing.
+
+`.7z` extraction uses Hagiscript's bundled cross-platform extractor and does not require users or desktop callers to install a system `7z` binary.
+
 ## Managed NPM Tool Sync
 
 The runtime manifest can also declare managed npm packages under `npmSync`. These packages are installed into the managed npm prefix under `runtime-data/npm`, not into `program/`.
@@ -376,6 +426,9 @@ hagiscript npm-sync --runtime-root ~/.hagicode/runtime
 - `--force`: force reinstall or update where supported
 - `--purge`: remove retained mutable data during runtime removal
 - `--json`: emit machine-readable output for `manifest get`, state, status, env, and config commands
+- `--lines <count>`: limit recent log output for `hagiscript omniroute logs` and `hagiscript code_server logs`
+
+For downstream automation, `--json` is supported by the dedicated `omniroute` and `code_server` actions as well. Dedicated JSON envelopes always include `component`, `service`, `action`, and `ok`, then add action-specific payloads for extraction paths, lifecycle status, resolved environment, or returned log lines.
 
 ## License
 
