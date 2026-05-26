@@ -133,6 +133,52 @@ components:
     expect(manifest.componentMap.get("omniroute")?.scripts.install).toContain(
       `${path.sep}runtime${path.sep}scripts${path.sep}install-omniroute.mjs`
     )
+    expect(manifest.componentMap.get("omniroute")?.bundledInstallMode).toBe("archive-7z-only")
+    expect(manifest.componentMap.get("code-server")?.bundledInstallMode).toBe("archive-7z-only")
+  })
+
+  it("rejects bundledInstallMode on non-bundled runtime components", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-invalid-install-mode-"))
+    const manifestPath = path.join(directory, "invalid-install-mode.yaml")
+
+    await writeFile(
+      manifestPath,
+      `runtime:
+  name: invalid
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+  vendoredRoot: "components/services"
+phases:
+  install:
+    order: ["node"]
+  remove:
+    order: ["node"]
+  update:
+    order: ["node"]
+components:
+  - name: "node"
+    type: "runtime"
+    bundledInstallMode: "archive-7z-only"
+`,
+      "utf8"
+    )
+
+    await expect(loadRuntimeManifest({ manifestPath })).rejects.toThrow(
+      /bundledInstallMode is only supported for bundled-runtime components/
+    )
+    await rm(directory, { recursive: true, force: true })
   })
 
   it("rejects PM2 manifests without a required naming env declaration", async () => {

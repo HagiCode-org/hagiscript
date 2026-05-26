@@ -39,6 +39,7 @@ components:
   type: "bundled-runtime"
   source: "desktop-vendored-runtime"
   version: "3.6.9"
+  bundledInstallMode: "archive-7z-only"
   runtimeDataDir: "services/omniroute"
   lifecycleDependencies:
   - "node"
@@ -50,6 +51,7 @@ components:
   type: "bundled-runtime"
   source: "desktop-vendored-runtime"
   version: "4.117.0"
+  bundledInstallMode: "archive-7z-only"
   runtimeDataDir: "services/code-server"
   lifecycleDependencies:
   - "node"

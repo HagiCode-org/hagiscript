@@ -43,6 +43,7 @@ const enableReleasedServerTest =
   process.env.HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST === "1";
 let installedTreeLines = [];
 let dotnetVerificationLines = [];
+let archiveOnlyInstallLines = [];
 let npmSyncLines = [];
 let pm2EnvironmentLines = [];
 let pm2LifecycleLines = [];
@@ -102,6 +103,10 @@ try {
               : {}),
             pm2Home: getIntegrationPm2Home(tempRoot, component.name)
           };
+        }
+
+        if (isBundledRuntimeService(component.name)) {
+          normalizedComponent.bundledInstallMode = "extract";
         }
 
         return normalizedComponent;
@@ -305,11 +310,65 @@ try {
       "bin",
       process.platform === "win32" ? "code-server.cmd" : "code-server"
     );
+    const omnirouteArchive = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      "archives",
+      "omniroute.7z"
+    );
+    const codeServerArchive = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      "archives",
+      "code-server.7z"
+    );
+    const omnirouteCurrentRoot = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      "current"
+    );
+    const codeServerCurrentRoot = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      "current"
+    );
+    const omnirouteMarkerPath = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      ".hagicode-runtime.json"
+    );
+    const codeServerMarkerPath = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      ".hagicode-runtime.json"
+    );
 
     assertFile(omnirouteConfig);
     assertFile(codeServerConfig);
-    assertFile(omnirouteBin);
-    assertFile(codeServerBin);
+    assertFile(omnirouteArchive);
+    assertFile(codeServerArchive);
+    assertMissingPath(omnirouteBin);
+    assertMissingPath(codeServerBin);
+    assertMissingPath(omnirouteCurrentRoot);
+    assertMissingPath(codeServerCurrentRoot);
     if (enableReleasedServerTest) {
       assertFile(dotnetManifest);
       assertFile(dotnetExecutable);
@@ -354,6 +413,12 @@ try {
     }
     const omnirouteConfigObject = parse(fs.readFileSync(omnirouteConfig, "utf8"));
     const codeServerConfigObject = parse(fs.readFileSync(codeServerConfig, "utf8"));
+    const omnirouteMarker = JSON.parse(
+      fs.readFileSync(omnirouteMarkerPath, "utf8")
+    );
+    const codeServerMarker = JSON.parse(
+      fs.readFileSync(codeServerMarkerPath, "utf8")
+    );
     assertEqual(
       omnirouteConfigObject?.runtimeHome,
       path.join(managedRoot, "program"),
@@ -370,8 +435,105 @@ try {
       ),
       "code-server config user-data-dir"
     );
+    assertEqual(
+      omnirouteMarker.bundledInstallMode,
+      "archive-7z-only",
+      "omniroute archive-only marker mode"
+    );
+    assertEqual(
+      codeServerMarker.bundledInstallMode,
+      "archive-7z-only",
+      "code-server archive-only marker mode"
+    );
+    assertEqual(
+      omnirouteMarker.archivePath,
+      omnirouteArchive,
+      "omniroute archive marker path"
+    );
+    assertEqual(
+      codeServerMarker.archivePath,
+      codeServerArchive,
+      "code-server archive marker path"
+    );
+    assertEqual(
+      omnirouteMarker.wrapperPath,
+      null,
+      "omniroute archive-only wrapper marker"
+    );
+    assertEqual(
+      codeServerMarker.wrapperPath,
+      null,
+      "code-server archive-only wrapper marker"
+    );
+    assert(
+      typeof omnirouteMarker.vendoredAssetName === "string" &&
+        omnirouteMarker.vendoredAssetName.endsWith(".7z"),
+      `Expected omniroute vendored asset to be a 7z archive. Marker: ${JSON.stringify(omnirouteMarker, null, 2)}`
+    );
+    assert(
+      typeof codeServerMarker.vendoredAssetName === "string" &&
+        codeServerMarker.vendoredAssetName.endsWith(".7z"),
+      `Expected code-server vendored asset to be a 7z archive. Marker: ${JSON.stringify(codeServerMarker, null, 2)}`
+    );
+
+    archiveOnlyInstallLines = [
+      `- Omniroute archive: ${omnirouteArchive}`,
+      `- Code-server archive: ${codeServerArchive}`,
+      `- Omniroute vendored asset: ${omnirouteMarker.vendoredAssetName}`,
+      `- Code-server vendored asset: ${codeServerMarker.vendoredAssetName}`,
+      "- Verified bundled runtime install uses archive-7z-only mode for omniroute and code-server",
+      "- Verified config.yaml is materialized while wrapper and extracted current payload stay absent"
+    ];
 
     installedTreeLines = renderDirectoryTree(managedRoot);
+  });
+
+  await runStage("runtime install for PM2 validation", async () => {
+    const { stdout } = await runProcess(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "runtime",
+        "install",
+        "--from-manifest",
+        pm2ManifestPath,
+        "--runtime-root",
+        managedRoot,
+        "--components",
+        enableReleasedServerTest
+          ? "node,dotnet,omniroute,code-server"
+          : "node,omniroute,code-server"
+      ],
+      {
+        cwd: repoRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeoutMs: runtimeCommandTimeoutMs
+      }
+    );
+
+    assertIncludes(
+      stdout,
+      "Runtime install complete.",
+      "runtime install for PM2 validation output"
+    );
+
+    assertFile(
+      path.join(
+        managedRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "omniroute.cmd" : "omniroute"
+      )
+    );
+    assertFile(
+      path.join(
+        managedRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "code-server.cmd" : "code-server"
+      )
+    );
   });
 
   await runStage("pm2 service lifecycle", async () => {
@@ -916,6 +1078,9 @@ try {
       {
         title: "Runtime Install",
         lines: [
+          ...(archiveOnlyInstallLines.length > 0
+            ? archiveOnlyInstallLines
+            : ["- Archive-only bundled runtime verification not captured"]),
           ...(dotnetVerificationLines.length > 0
             ? dotnetVerificationLines
             : ["- Not captured"]),
@@ -1152,6 +1317,12 @@ function delay(ms) {
 function assertFile(filePath) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Expected file to exist: ${filePath}`);
+  }
+}
+
+function assertMissingPath(targetPath) {
+  if (fs.existsSync(targetPath)) {
+    throw new Error(`Expected path to be absent: ${targetPath}`);
   }
 }
 
@@ -1457,6 +1628,10 @@ function isManagedPm2Service(serviceName) {
     serviceName === "omniroute" ||
     serviceName === "code-server"
   );
+}
+
+function isBundledRuntimeService(serviceName) {
+  return serviceName === "omniroute" || serviceName === "code-server";
 }
 
 function getIntegrationPm2Home(tempRootPath, serviceName) {

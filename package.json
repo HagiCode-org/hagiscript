@@ -38,7 +38,7 @@
     "lint": "eslint .",
     "integration:installed-runtime": "node scripts/integration-installed-runtime.mjs",
     "integration:runtime-key-path": "node scripts/integration-runtime-key-path.mjs",
-    "integration:runtime-management": "node scripts/integration-runtime-management.mjs",
+    "integration:runtime-management": "npm run build && node scripts/integration-runtime-management.mjs",
     "playground:manifest:generate": "node scripts/generate-playground-manifest.mjs",
     "playground:runtime:install": "npm run playground:manifest:generate && npm run dev -- runtime install --from-manifest ./playground/generated/manifest.yaml --runtime-root ./playground/runtime-root",
     "playground:runtime:state": "npm run playground:manifest:generate && npm run dev -- runtime state --from-manifest ./playground/generated/manifest.yaml --runtime-root ./playground/runtime-root --json",

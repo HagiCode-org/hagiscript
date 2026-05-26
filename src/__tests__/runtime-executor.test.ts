@@ -97,6 +97,7 @@ describe("runtime executor environment", () => {
     expect(env.HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX).toBe(
       getManagedNpmPackagesPrefix(paths)
     )
+    expect(env.HAGISCRIPT_RUNTIME_BUNDLED_INSTALL_MODE).toBe("extract")
     expect(env.NPM_CONFIG_PREFIX).toBe(getManagedNpmPackagesPrefix(paths))
     expect(env.npm_config_prefix).toBe(getManagedNpmPackagesPrefix(paths))
     expect(env.HAGISCRIPT_DOWNLOAD_CACHE).toBe("1")

@@ -222,6 +222,126 @@ describe("vendored runtime installers", () => {
       await releaseServer.close()
     }
   })
+
+  runTest("downloads code-server as a 7z archive without extracting when archive-only mode is enabled", async () => {
+    const runtimeRoot = await makeRuntimeRoot("code-server-archive-only")
+    const vendoredPlatform = getVendoredPlatform()
+    const vendoredArch = getVendoredArch()
+    const assetName = `code-server-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.7z`
+    const assetBuffer = Buffer.from("fixture-code-server-7z")
+    const releaseServer = await startVendoredReleaseServer([
+      { name: assetName, contents: assetBuffer }
+    ])
+
+    try {
+      await execa(process.execPath, [installCodeServerScript], {
+        cwd: repoRoot,
+        env: createRuntimeScriptEnv(runtimeRoot, "code-server", releaseServer.baseUrl, undefined, {
+          bundledInstallMode: "archive-7z-only"
+        })
+      })
+
+      const archivePath = path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "bundled",
+        "code-server",
+        "archives",
+        "code-server.7z"
+      )
+      const wrapperPath = path.join(
+        runtimeRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "code-server.cmd" : "code-server"
+      )
+      const markerPath = path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "bundled",
+        "code-server",
+        ".hagicode-runtime.json"
+      )
+      const configPath = path.join(
+        runtimeRoot,
+        "runtime-data",
+        "components",
+        "services",
+        "code-server",
+        "config",
+        "config.yaml"
+      )
+
+      expect(await readFile(archivePath, "utf8")).toBe("fixture-code-server-7z")
+      await expect(readFile(wrapperPath, "utf8")).rejects.toThrow()
+      expect(await readFile(configPath, "utf8")).toContain('bind-addr: "127.0.0.1:8080"')
+
+      const marker = JSON.parse(await readFile(markerPath, "utf8"))
+      expect(marker.bundledInstallMode).toBe("archive-7z-only")
+      expect(marker.archivePath).toBe(archivePath)
+      expect(marker.archiveFormat).toBe("7z")
+      expect(marker.entrypointPath).toBeNull()
+      expect(marker.wrapperPath).toBeNull()
+      expect(marker.vendoredAssetName).toBe(assetName)
+    } finally {
+      await releaseServer.close()
+    }
+  })
+
+  runTest("reuses cached 7z archives for omniroute archive-only installs", async () => {
+    const cacheRoot = await makeRuntimeRoot("vendored-archive-cache")
+    const firstRuntimeRoot = await makeRuntimeRoot("omniroute-archive-cache-a")
+    const secondRuntimeRoot = await makeRuntimeRoot("omniroute-archive-cache-b")
+    const vendoredPlatform = getVendoredPlatform()
+    const vendoredArch = getVendoredArch()
+    const assetName = `omniroute-${releaseVersion}-${vendoredPlatform}-${vendoredArch}.7z`
+    const assetBuffer = Buffer.from("fixture-omniroute-7z")
+    const releaseServer = await startVendoredReleaseServer([
+      { name: assetName, contents: assetBuffer }
+    ])
+
+    try {
+      await execa(process.execPath, [installOmnirouteScript], {
+        cwd: repoRoot,
+        env: createRuntimeScriptEnv(firstRuntimeRoot, "omniroute", releaseServer.baseUrl, cacheRoot, {
+          bundledInstallMode: "archive-7z-only"
+        })
+      })
+    } finally {
+      await releaseServer.close()
+    }
+
+    await execa(process.execPath, [installOmnirouteScript], {
+      cwd: repoRoot,
+      env: createRuntimeScriptEnv(secondRuntimeRoot, "omniroute", "http://127.0.0.1:9", cacheRoot, {
+        bundledInstallMode: "archive-7z-only"
+      })
+    })
+
+    const markerPath = path.join(
+      secondRuntimeRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      ".hagicode-runtime.json"
+    )
+    const archivePath = path.join(
+      secondRuntimeRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      "archives",
+      "omniroute.7z"
+    )
+    const marker = JSON.parse(await readFile(markerPath, "utf8"))
+    expect(marker.vendoredAssetName).toBe(assetName)
+    expect(marker.archivePath).toBe(archivePath)
+    expect(await readFile(archivePath, "utf8")).toBe("fixture-omniroute-7z")
+  })
 })
 
 async function makeRuntimeRoot(prefix: string): Promise<string> {
@@ -234,7 +354,10 @@ function createRuntimeScriptEnv(
   runtimeRoot: string,
   componentName: "code-server" | "omniroute",
   baseUrl: string,
-  downloadCacheDir?: string
+  downloadCacheDir?: string,
+  options: {
+    bundledInstallMode?: "extract" | "archive-7z-only"
+  } = {}
 ) {
   const runtimeHome = path.join(runtimeRoot, "program")
   const runtimeDataRoot = path.join(runtimeRoot, "runtime-data")
@@ -264,6 +387,7 @@ function createRuntimeScriptEnv(
     HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR: path.join(componentDataHome, "logs"),
     HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME: path.join(componentDataHome, "pm2"),
     HAGISCRIPT_RUNTIME_NPM_PREFIX: path.join(runtimeHome, "npm"),
+    HAGISCRIPT_RUNTIME_BUNDLED_INSTALL_MODE: options.bundledInstallMode ?? "extract",
     HAGISCRIPT_RUNTIME_TEMPLATE_DIR: path.join(repoRoot, "runtime", "templates"),
     HAGISCRIPT_RUNTIME_COMPONENT_VERSION:
       componentName === "code-server" ? "4.117.0" : "3.6.9",

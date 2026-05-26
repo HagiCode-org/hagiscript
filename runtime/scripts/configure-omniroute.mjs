@@ -12,6 +12,10 @@ const currentRoot = path.join(context.componentRoot, "current")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
 const listenPort = process.env.OMNIROUTE_LISTEN_PORT ?? "39001"
 const listenHost = process.env.OMNIROUTE_LISTEN_HOST ?? "127.0.0.1"
+const templateRoot =
+  context.bundledInstallMode === "archive-7z-only"
+    ? context.templateDir
+    : path.join(currentRoot, "templates")
 await materializeTemplate(
   "omniroute-config.yaml",
   configPath,
@@ -21,6 +25,6 @@ await materializeTemplate(
     DATA_DIR: quoteYamlString(context.runtimeDataHome),
     LOGS_DIR: quoteYamlString(context.componentLogsDir)
   },
-  path.join(currentRoot, "templates")
+  templateRoot
 )
 process.stdout.write(`Configured omniroute template at ${configPath}\n`)

@@ -10,6 +10,8 @@ export type RuntimeComponentType =
   | "bundled-runtime"
   | "released-service"
 
+export type RuntimeBundledInstallMode = "extract" | "archive-7z-only"
+
 export interface RuntimePackageCatalogEntry {
   id?: string
   packageName: string
@@ -23,6 +25,7 @@ export interface RuntimeComponentDefinition {
   source?: string
   version?: string
   channelVersion?: string
+  bundledInstallMode: RuntimeBundledInstallMode
   runtimeDataDir?: string
   lifecycleDependencies: string[]
   packageCatalog: RuntimePackageCatalogEntry[]
@@ -509,6 +512,11 @@ function validateRuntimeComponents(
       `components[${index}].releasedService`,
       errors
     )
+    const bundledInstallMode = readOptionalBundledInstallMode(
+      componentObject.bundledInstallMode,
+      `components[${index}].bundledInstallMode`,
+      errors
+    )
 
     if (rawType === "released-service" && !releasedService) {
       errors.push(`components[${index}].releasedService must be defined for released-service components`)
@@ -516,6 +524,12 @@ function validateRuntimeComponents(
 
     if (rawType === "released-service" && !componentObject.pm2) {
       errors.push(`components[${index}].pm2 must be defined for released-service components`)
+    }
+
+    if (bundledInstallMode && rawType !== "bundled-runtime") {
+      errors.push(
+        `components[${index}].bundledInstallMode is only supported for bundled-runtime components`
+      )
     }
 
     components.push({
@@ -528,6 +542,7 @@ function validateRuntimeComponents(
         `components[${index}].channelVersion`,
         errors
       ),
+      bundledInstallMode: bundledInstallMode ?? "extract",
       runtimeDataDir: readOptionalString(
         componentObject.runtimeDataDir,
         `components[${index}].runtimeDataDir`,
@@ -639,6 +654,25 @@ function readOptionalPm2NameIdentifier(
   }
 
   return identifier
+}
+
+function readOptionalBundledInstallMode(
+  value: unknown,
+  label: string,
+  errors: string[]
+): RuntimeBundledInstallMode | undefined {
+  const installMode = readOptionalString(value, label, errors)
+
+  if (installMode === undefined) {
+    return undefined
+  }
+
+  if (installMode !== "extract" && installMode !== "archive-7z-only") {
+    errors.push(`${label} must be one of extract, archive-7z-only when provided`)
+    return undefined
+  }
+
+  return installMode
 }
 
 function validateRuntimeReleasedServiceDefinition(

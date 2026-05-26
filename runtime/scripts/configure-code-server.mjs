@@ -12,6 +12,10 @@ const currentRoot = path.join(context.componentRoot, "current")
 const configPath = path.join(context.componentConfigDir, "config.yaml")
 const bindPort = process.env.CODE_SERVER_BIND_PORT ?? "8080"
 const bindHost = process.env.CODE_SERVER_BIND_HOST ?? "127.0.0.1"
+const templateRoot =
+  context.bundledInstallMode === "archive-7z-only"
+    ? context.templateDir
+    : path.join(currentRoot, "templates")
 await materializeTemplate(
   "code-server-config.yaml",
   configPath,
@@ -20,6 +24,6 @@ await materializeTemplate(
     DATA_DIR: quoteYamlString(context.runtimeDataHome),
     EXTENSIONS_DIR: quoteYamlString(path.join(context.runtimeDataHome, "extensions"))
   },
-  path.join(currentRoot, "templates")
+  templateRoot
 )
 process.stdout.write(`Configured code-server template at ${configPath}\n`)

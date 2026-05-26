@@ -7,7 +7,7 @@ import { execa } from "execa"
 
 const repoRoot = process.cwd();
 const installCodeServerScript = path.join(repoRoot, "runtime", "scripts", "install-code-server.mjs");
-const releaseVersion = "2026.0516.0063";
+const releaseVersion = "2026.0526.0080";
 const releaseTag = "v" + releaseVersion;
 
 async function run() {

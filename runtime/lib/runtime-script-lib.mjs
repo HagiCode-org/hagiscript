@@ -28,13 +28,15 @@ export function readRuntimeScriptContext() {
     componentLogsDir: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR"),
     componentPm2Home: requiredEnv("HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME"),
     runtimeNpmPrefix: requiredEnv("HAGISCRIPT_RUNTIME_NPM_PREFIX"),
+    bundledInstallMode:
+      process.env.HAGISCRIPT_RUNTIME_BUNDLED_INSTALL_MODE?.trim() || "extract",
     templateDir: process.env.HAGISCRIPT_RUNTIME_TEMPLATE_DIR?.trim() || null,
     componentVersion: process.env.HAGISCRIPT_RUNTIME_COMPONENT_VERSION?.trim() || null,
     npmRegistryMirror: process.env.HAGISCRIPT_RUNTIME_NPM_REGISTRY_MIRROR?.trim() || null,
     pm2VersionOverride: process.env.HAGISCRIPT_RUNTIME_PM2_VERSION_OVERRIDE?.trim() || null,
     vendoredRepository: process.env.HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY?.trim() || "HagiCode-org/vendered",
     vendoredTag:
-      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0516.0063",
+      process.env.HAGISCRIPT_RUNTIME_VENDORED_TAG?.trim() || "v2026.0526.0080",
     vendoredBaseUrl: process.env.HAGISCRIPT_RUNTIME_VENDORED_BASE_URL?.trim() || "https://github.com",
     downloadCacheEnabled: process.env.HAGISCRIPT_DOWNLOAD_CACHE !== "0",
     downloadCacheDir:
@@ -189,11 +191,14 @@ export async function installVendoredPackage(context, options) {
   const releaseTag = context.vendoredTag
   const platform = normalizeVendoredPlatform(process.platform)
   const arch = normalizeVendoredArchitecture(process.arch)
+  const installMode = options.installMode || context.bundledInstallMode || "extract"
+  const archiveFormat = resolveVendoredArchiveFormat(platform, installMode)
   const assetName = buildVendoredAssetName({
     packageName: options.packageName,
     releaseTag,
     platform,
-    arch
+    arch,
+    archiveFormat
   })
   const assetUrl = buildVendoredAssetUrl(baseUrl, repository, releaseTag, assetName)
   const cacheRoot = path.join(
@@ -204,6 +209,51 @@ export async function installVendoredPackage(context, options) {
     `${platform}-${arch}`
   )
 
+  if (installMode === "archive-7z-only") {
+    const archivePath =
+      options.archivePath || path.join(path.dirname(options.prefixRoot), "archives", assetName)
+    const archiveCachePath = path.join(cacheRoot, assetName)
+
+    if (context.downloadCacheEnabled) {
+      const restoredArchivePath = await restoreVendoredArchiveFromCache(
+        archiveCachePath,
+        archivePath
+      )
+      if (restoredArchivePath) {
+        return {
+          installMode,
+          archivePath: restoredArchivePath,
+          archiveFormat,
+          releaseRepository: repository,
+          releaseTag,
+          releaseName: releaseTag.replace(/^v/u, ""),
+          releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
+          releaseAssetName: assetName,
+          releaseAssetUrl: assetUrl
+        }
+      }
+    }
+
+    await ensureDirectory(path.dirname(archivePath))
+    await downloadVendoredAsset(assetUrl, archivePath)
+
+    if (context.downloadCacheEnabled) {
+      await storeFileInCache(archivePath, archiveCachePath)
+    }
+
+    return {
+      installMode,
+      archivePath,
+      archiveFormat,
+      releaseRepository: repository,
+      releaseTag,
+      releaseName: releaseTag.replace(/^v/u, ""),
+      releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
+      releaseAssetName: assetName,
+      releaseAssetUrl: assetUrl
+    }
+  }
+
   if (context.downloadCacheEnabled) {
     const restoredEntrypoint = await restoreVendoredPackageFromCache(
       cacheRoot,
@@ -212,7 +262,9 @@ export async function installVendoredPackage(context, options) {
     )
     if (restoredEntrypoint) {
       return {
+        installMode,
         entrypointPath: restoredEntrypoint,
+        archiveFormat,
         releaseRepository: repository,
         releaseTag,
         releaseName: releaseTag.replace(/^v/u, ""),
@@ -243,7 +295,9 @@ export async function installVendoredPackage(context, options) {
     await access(entrypointPath)
 
     return {
+      installMode,
       entrypointPath,
+      archiveFormat,
       releaseRepository: repository,
       releaseTag,
       releaseName: releaseTag.replace(/^v/u, ""),
@@ -408,7 +462,7 @@ function parseGitHubRepositoryConfig(repositoryValue, baseUrlValue) {
 
 function buildVendoredAssetName(options) {
   const releaseVersion = normalizeVendoredReleaseVersion(options.releaseTag)
-  return `${options.packageName}-${releaseVersion}-${options.platform}-${options.arch}${getVendoredArchiveExtension(options.platform)}`
+  return `${options.packageName}-${releaseVersion}-${options.platform}-${options.arch}${getVendoredArchiveExtension(options.archiveFormat)}`
 }
 
 function buildVendoredAssetUrl(baseUrl, repository, releaseTag, assetName) {
@@ -447,8 +501,23 @@ function normalizeVendoredArchitecture(arch) {
   }
 }
 
-function getVendoredArchiveExtension(platform) {
-  return platform === "windows" ? ".zip" : ".tar.gz"
+function resolveVendoredArchiveFormat(platform, installMode) {
+  if (installMode === "archive-7z-only") {
+    return "7z"
+  }
+
+  return platform === "windows" ? "zip" : "tar.gz"
+}
+
+function getVendoredArchiveExtension(archiveFormat) {
+  switch (archiveFormat) {
+    case "7z":
+      return ".7z"
+    case "zip":
+      return ".zip"
+    default:
+      return ".tar.gz"
+  }
 }
 
 async function downloadVendoredAsset(url, destinationPath) {
@@ -668,6 +737,53 @@ async function storeDirectoryInCache(sourceDirectory, cacheDirectory) {
     }
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+async function restoreVendoredArchiveFromCache(cachePath, destinationPath) {
+  try {
+    await stat(cachePath)
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return null
+    }
+
+    throw error
+  }
+
+  await ensureDirectory(path.dirname(destinationPath))
+  await cp(cachePath, destinationPath, { force: true })
+  await access(destinationPath)
+  return destinationPath
+}
+
+async function storeFileInCache(sourcePath, cachePath) {
+  try {
+    await stat(cachePath)
+    return
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error
+    }
+  }
+
+  const temporaryPath = `${cachePath}.tmp-${process.pid}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`
+  await ensureDirectory(path.dirname(cachePath))
+  await cp(sourcePath, temporaryPath, {
+    force: false,
+    errorOnExist: true
+  })
+
+  try {
+    await rename(temporaryPath, cachePath)
+  } catch (error) {
+    if (!isAlreadyCachedError(error)) {
+      throw error
+    }
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined)
   }
 }
 

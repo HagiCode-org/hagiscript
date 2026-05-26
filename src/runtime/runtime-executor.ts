@@ -37,7 +37,12 @@ export interface RuntimeScriptExecutionContext {
 export interface ManagedRuntimeEnvironmentContext {
   component: Pick<
     RuntimeComponentDefinition,
-    "name" | "type" | "version" | "runtimeDataDir" | "releasedService"
+    | "name"
+    | "type"
+    | "version"
+    | "runtimeDataDir"
+    | "releasedService"
+    | "bundledInstallMode"
   >
   manifest: Pick<LoadedRuntimeManifest, "manifestDir">
   paths: ResolvedRuntimePaths
@@ -247,6 +252,7 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_RUNTIME_COMPONENT_NAME: context.component.name,
       HAGISCRIPT_RUNTIME_COMPONENT_TYPE: context.component.type,
       HAGISCRIPT_RUNTIME_COMPONENT_VERSION: context.component.version ?? "",
+      HAGISCRIPT_RUNTIME_BUNDLED_INSTALL_MODE: context.component.bundledInstallMode,
       HAGISCRIPT_RUNTIME_COMPONENT_ROOT: context.componentRoot,
       HAGISCRIPT_RUNTIME_COMPONENT_CONFIG_DIR: context.componentConfigDir,
       HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR: componentDataHome,
