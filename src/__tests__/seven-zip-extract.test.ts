@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CommandExecutionError } from "../runtime/command-launch.js";
 import {
   createBundledSevenZipExtractor,
   getBundledSevenZipBinaryPath
@@ -84,6 +85,40 @@ describe("bundled 7z extraction", () => {
     expect(runner).toHaveBeenCalledOnce();
     expect((await stat(binaryPath)).mode & 0o111).toBe(0o111);
     await expect(readFile(binaryPath, "utf8")).resolves.toContain("#!/bin/sh");
+  });
+
+  it("falls back to a system 7z binary when the bundled 7za reports an unsupported method", async () => {
+    const runner = vi.fn(async (command: string) => {
+      if (command === "/bundled/7za") {
+        throw new CommandExecutionError("unsupported method", {
+          command,
+          args: ["x"],
+          stdout: "",
+          stderr: "ERROR: Unsupported Method : nested/file.exe",
+          timedOut: false,
+          failed: true
+        });
+      }
+
+      return {
+        command,
+        args: [],
+        stdout: "",
+        stderr: ""
+      };
+    });
+    const extractor = createBundledSevenZipExtractor({
+      binaryPath: "/bundled/7za",
+      systemFallbackBinaryPath: "7z",
+      runner
+    });
+
+    await extractor.extract("/tmp/archive.7z", "/tmp/extract");
+
+    expect(runner.mock.calls.map(([command]) => command)).toEqual([
+      "/bundled/7za",
+      "7z"
+    ]);
   });
 
   it("reports actionable bundled extraction failures", async () => {
