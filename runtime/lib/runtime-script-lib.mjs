@@ -4,6 +4,7 @@ import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, rename, rm, stat,
 import { homedir, tmpdir } from "node:os"
 import path from "node:path"
 import process from "node:process"
+import { URL } from "node:url"
 import { createGunzip } from "node:zlib"
 import { pipeline } from "node:stream/promises"
 import { extractZipArchive as extractZipArchiveWithNode } from "./zip-extract.mjs"
@@ -188,31 +189,26 @@ export async function installVendoredPackage(context, options) {
     context.vendoredRepository,
     context.vendoredBaseUrl
   )
-  const releaseTag = context.vendoredTag
   const platform = normalizeVendoredPlatform(process.platform)
   const arch = normalizeVendoredArchitecture(process.arch)
   const installMode = options.installMode || context.bundledInstallMode || "extract"
   const archiveFormat = resolveVendoredArchiveFormat(platform, installMode)
-  const assetName = buildVendoredAssetName({
+  const preferredSource = createVendoredAssetSource({
+    repository,
+    baseUrl,
+    releaseTag: context.vendoredTag,
     packageName: options.packageName,
-    releaseTag,
     platform,
     arch,
-    archiveFormat
+    archiveFormat,
+    downloadCacheDir: context.downloadCacheDir
   })
-  const assetUrl = buildVendoredAssetUrl(baseUrl, repository, releaseTag, assetName)
-  const cacheRoot = path.join(
-    context.downloadCacheDir,
-    "vendored",
-    options.packageName,
-    releaseTag,
-    `${platform}-${arch}`
-  )
 
   if (installMode === "archive-7z-only") {
     const archivePath =
-      options.archivePath || path.join(path.dirname(options.prefixRoot), "archives", assetName)
-    const archiveCachePath = path.join(cacheRoot, assetName)
+      options.archivePath || path.join(path.dirname(options.prefixRoot), "archives", preferredSource.assetName)
+    let resolvedSource = preferredSource
+    let archiveCachePath = path.join(resolvedSource.cacheRoot, resolvedSource.assetName)
 
     if (context.downloadCacheEnabled) {
       const restoredArchivePath = await restoreVendoredArchiveFromCache(
@@ -220,91 +216,134 @@ export async function installVendoredPackage(context, options) {
         archivePath
       )
       if (restoredArchivePath) {
-        return {
+        return buildVendoredInstallResult(resolvedSource, {
           installMode,
           archivePath: restoredArchivePath,
-          archiveFormat,
-          releaseRepository: repository,
-          releaseTag,
-          releaseName: releaseTag.replace(/^v/u, ""),
-          releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
-          releaseAssetName: assetName,
-          releaseAssetUrl: assetUrl
-        }
+          archiveFormat
+        })
       }
     }
 
     await ensureDirectory(path.dirname(archivePath))
-    await downloadVendoredAsset(assetUrl, archivePath)
+
+    try {
+      await downloadVendoredAsset(resolvedSource.assetUrl, archivePath)
+    } catch (error) {
+      const fallbackSource = await resolveFallbackVendoredAssetSource(
+        preferredSource,
+        error
+      )
+
+      if (!fallbackSource) {
+        throw error
+      }
+
+      resolvedSource = fallbackSource
+      archiveCachePath = path.join(resolvedSource.cacheRoot, resolvedSource.assetName)
+
+      if (context.downloadCacheEnabled) {
+        const restoredArchivePath = await restoreVendoredArchiveFromCache(
+          archiveCachePath,
+          archivePath
+        )
+        if (restoredArchivePath) {
+          return buildVendoredInstallResult(resolvedSource, {
+            installMode,
+            archivePath: restoredArchivePath,
+            archiveFormat
+          })
+        }
+      }
+
+      await downloadVendoredAsset(resolvedSource.assetUrl, archivePath)
+    }
 
     if (context.downloadCacheEnabled) {
       await storeFileInCache(archivePath, archiveCachePath)
     }
 
-    return {
+    return buildVendoredInstallResult(resolvedSource, {
       installMode,
       archivePath,
-      archiveFormat,
-      releaseRepository: repository,
-      releaseTag,
-      releaseName: releaseTag.replace(/^v/u, ""),
-      releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
-      releaseAssetName: assetName,
-      releaseAssetUrl: assetUrl
-    }
+      archiveFormat
+    })
   }
 
   if (context.downloadCacheEnabled) {
     const restoredEntrypoint = await restoreVendoredPackageFromCache(
-      cacheRoot,
+      preferredSource.cacheRoot,
       options.prefixRoot,
       options.entrypointRelativePath
     )
     if (restoredEntrypoint) {
-      return {
+      return buildVendoredInstallResult(preferredSource, {
         installMode,
         entrypointPath: restoredEntrypoint,
-        archiveFormat,
-        releaseRepository: repository,
-        releaseTag,
-        releaseName: releaseTag.replace(/^v/u, ""),
-        releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
-        releaseAssetName: assetName,
-        releaseAssetUrl: assetUrl
-      }
+        archiveFormat
+      })
     }
   }
 
   const stagingRoot = await mkdtemp(path.join(tmpdir(), `hagiscript-vendored-${options.packageName}-`))
 
   try {
-    const archivePath = path.join(stagingRoot, assetName)
     const extractRoot = path.join(stagingRoot, "extract")
-    await downloadVendoredAsset(assetUrl, archivePath)
-    const extractedRoot = await extractVendoredArchive(
-      archivePath,
-      extractRoot,
-      path.extname(assetName).toLowerCase() === ".zip" ? "zip" : "tar.gz"
-    )
+    let resolvedSource = preferredSource
+    let extractedRoot
+
+    try {
+      extractedRoot = await downloadAndExtractVendoredPackage(
+        resolvedSource,
+        stagingRoot,
+        extractRoot
+      )
+    } catch (error) {
+      const fallbackSource = await resolveFallbackVendoredAssetSource(
+        preferredSource,
+        error
+      )
+
+      if (!fallbackSource) {
+        throw error
+      }
+
+      resolvedSource = fallbackSource
+
+      if (context.downloadCacheEnabled) {
+        const restoredEntrypoint = await restoreVendoredPackageFromCache(
+          resolvedSource.cacheRoot,
+          options.prefixRoot,
+          options.entrypointRelativePath
+        )
+        if (restoredEntrypoint) {
+          return buildVendoredInstallResult(resolvedSource, {
+            installMode,
+            entrypointPath: restoredEntrypoint,
+            archiveFormat
+          })
+        }
+      }
+
+      extractedRoot = await downloadAndExtractVendoredPackage(
+        resolvedSource,
+        stagingRoot,
+        extractRoot
+      )
+    }
+
     await replaceDirectory(extractedRoot, options.prefixRoot)
     if (context.downloadCacheEnabled) {
-      await storeDirectoryInCache(options.prefixRoot, cacheRoot)
+      await storeDirectoryInCache(options.prefixRoot, resolvedSource.cacheRoot)
     }
 
     const entrypointPath = path.join(options.prefixRoot, options.entrypointRelativePath)
     await access(entrypointPath)
 
-    return {
+    return buildVendoredInstallResult(resolvedSource, {
       installMode,
       entrypointPath,
-      archiveFormat,
-      releaseRepository: repository,
-      releaseTag,
-      releaseName: releaseTag.replace(/^v/u, ""),
-      releaseUrl: `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`,
-      releaseAssetName: assetName,
-      releaseAssetUrl: assetUrl
-    }
+      archiveFormat
+    })
   } finally {
     await rm(stagingRoot, { recursive: true, force: true })
   }
@@ -469,6 +508,63 @@ function buildVendoredAssetUrl(baseUrl, repository, releaseTag, assetName) {
   return `${baseUrl}/${repository}/releases/download/${encodeURIComponent(releaseTag)}/${encodeURIComponent(assetName)}`
 }
 
+function buildVendoredReleaseUrl(baseUrl, repository, releaseTag) {
+  return `${baseUrl}/${repository}/releases/tag/${encodeURIComponent(releaseTag)}`
+}
+
+function createVendoredAssetSource(options) {
+  const assetName = buildVendoredAssetName({
+    packageName: options.packageName,
+    releaseTag: options.releaseTag,
+    platform: options.platform,
+    arch: options.arch,
+    archiveFormat: options.archiveFormat
+  })
+
+  return {
+    repository: options.repository,
+    baseUrl: options.baseUrl,
+    releaseTag: options.releaseTag,
+    releaseName: options.releaseTag.replace(/^v/u, ""),
+    releaseUrl: buildVendoredReleaseUrl(
+      options.baseUrl,
+      options.repository,
+      options.releaseTag
+    ),
+    packageName: options.packageName,
+    platform: options.platform,
+    arch: options.arch,
+    archiveFormat: options.archiveFormat,
+    assetName,
+    assetUrl: buildVendoredAssetUrl(
+      options.baseUrl,
+      options.repository,
+      options.releaseTag,
+      assetName
+    ),
+    downloadCacheDir: options.downloadCacheDir,
+    cacheRoot: path.join(
+      options.downloadCacheDir,
+      "vendored",
+      options.packageName,
+      options.releaseTag,
+      `${options.platform}-${options.arch}`
+    )
+  }
+}
+
+function buildVendoredInstallResult(source, extra = {}) {
+  return {
+    releaseRepository: source.repository,
+    releaseTag: source.releaseTag,
+    releaseName: source.releaseName,
+    releaseUrl: source.releaseUrl,
+    releaseAssetName: source.assetName,
+    releaseAssetUrl: source.assetUrl,
+    ...extra
+  }
+}
+
 function normalizeVendoredReleaseVersion(releaseTag) {
   const normalized = String(releaseTag || "").trim().replace(/^v/u, "")
   if (!normalized) {
@@ -554,6 +650,113 @@ async function downloadVendoredAsset(url, destinationPath) {
   } finally {
     reader.releaseLock()
   }
+}
+
+async function downloadAndExtractVendoredPackage(source, stagingRoot, extractRoot) {
+  const archivePath = path.join(stagingRoot, source.assetName)
+  await downloadVendoredAsset(source.assetUrl, archivePath)
+  return await extractVendoredArchive(
+    archivePath,
+    extractRoot,
+    source.archiveFormat === "zip" ? "zip" : "tar.gz"
+  )
+}
+
+async function resolveFallbackVendoredAssetSource(preferredSource, error) {
+  if (!isVendoredAssetMissingError(error)) {
+    return null
+  }
+
+  const releases = await listVendoredReleases(
+    preferredSource.baseUrl,
+    preferredSource.repository
+  )
+
+  for (const release of releases) {
+    const releaseTag = typeof release?.tag_name === "string" ? release.tag_name.trim() : ""
+    if (!releaseTag || releaseTag === preferredSource.releaseTag) {
+      continue
+    }
+
+    const candidate = createVendoredAssetSource({
+      repository: preferredSource.repository,
+      baseUrl: preferredSource.baseUrl,
+      releaseTag,
+      packageName: preferredSource.packageName,
+      platform: preferredSource.platform,
+      arch: preferredSource.arch,
+      archiveFormat: preferredSource.archiveFormat,
+      downloadCacheDir: preferredSource.downloadCacheDir
+    })
+    const assetNames = Array.isArray(release.assets)
+      ? new Set(
+          release.assets
+            .map((asset) => (typeof asset?.name === "string" ? asset.name : ""))
+            .filter(Boolean)
+        )
+      : new Set()
+
+    if (assetNames.has(candidate.assetName)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+async function listVendoredReleases(baseUrl, repository) {
+  const response = await globalThis.fetch(buildVendoredReleasesApiUrl(baseUrl, repository), {
+    headers: buildVendoredReleaseApiHeaders()
+  })
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to query vendored releases for ${repository}: HTTP ${response.status}`
+    )
+  }
+
+  const releases = await response.json()
+  return Array.isArray(releases) ? releases : []
+}
+
+function buildVendoredReleasesApiUrl(baseUrl, repository) {
+  const normalizedBaseUrl = String(baseUrl || "https://github.com").replace(/\/+$/u, "")
+
+  try {
+    const parsedUrl = new URL(normalizedBaseUrl)
+
+    if (parsedUrl.hostname === "github.com") {
+      return `https://api.github.com/repos/${repository}/releases?per_page=20`
+    }
+
+    if (parsedUrl.hostname === "api.github.com") {
+      return `${normalizedBaseUrl}/repos/${repository}/releases?per_page=20`
+    }
+  } catch {
+    // Fall through to the generic repository API path.
+  }
+
+  return `${normalizedBaseUrl}/repos/${repository}/releases?per_page=20`
+}
+
+function buildVendoredReleaseApiHeaders() {
+  const token =
+    process.env.GITHUB_TOKEN?.trim() ||
+    process.env.GH_TOKEN?.trim() ||
+    process.env.HAGISCRIPT_GITHUB_TOKEN?.trim()
+
+  return {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "hagiscript-vendored-runtime",
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
+}
+
+function isVendoredAssetMissingError(error) {
+  return Boolean(
+    error instanceof Error &&
+      /Failed to download vendored asset .*: HTTP 404$/u.test(error.message.trim())
+  )
 }
 
 async function extractVendoredArchive(archivePath, stagingDirectory, archiveKind) {

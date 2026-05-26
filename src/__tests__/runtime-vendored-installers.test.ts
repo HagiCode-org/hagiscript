@@ -160,6 +160,75 @@ describe("vendored runtime installers", () => {
     expect(marker.vendoredAssetName).toBe(assetName)
   })
 
+  runTest("falls back to an earlier vendored release when the preferred code-server archive is missing", async () => {
+    const runtimeRoot = await makeRuntimeRoot("code-server-fallback-extract")
+    const outputPath = path.join(runtimeRoot, "code-server-fallback-output.json")
+    const vendoredPlatform = getVendoredPlatform()
+    const vendoredArch = getVendoredArch()
+    const preferredTag = "v2026.0526.0080"
+    const fallbackTag = "v2026.0526.0079"
+    const fallbackAssetName = `code-server-${fallbackTag.replace(/^v/u, "")}-${vendoredPlatform}-${vendoredArch}.tar.gz`
+    const fallbackAssetBuffer = createTarGzArchive("release", {
+      "templates/code-server-config.yaml":
+        "bind-addr: {{BIND_ADDR}}\nauth: none\nuser-data-dir: {{DATA_DIR}}\nextensions-dir: {{EXTENSIONS_DIR}}\nlog: info\n",
+      "bin/code-server": {
+        content: createCodeServerWrapper(),
+        mode: 0o755
+      },
+      "bin/code-server.cmd": createWindowsBatchStub(),
+      "out/node/package.json": '{\n  "type": "commonjs"\n}\n',
+      "out/node/entry.js": createRecordedEntrypoint({
+        includeEnvKeys: [],
+        moduleType: "cjs"
+      })
+    })
+    const releaseServer = await startVendoredReleaseServerForReleases([
+      { tagName: preferredTag, assets: [] },
+      {
+        tagName: fallbackTag,
+        assets: [{ name: fallbackAssetName, contents: fallbackAssetBuffer }]
+      }
+    ])
+
+    try {
+      await execa(process.execPath, [installCodeServerScript], {
+        cwd: repoRoot,
+        env: createRuntimeScriptEnv(runtimeRoot, "code-server", releaseServer.baseUrl, undefined, {
+          vendoredTag: preferredTag
+        })
+      })
+
+      const commandWrapperPath = path.join(
+        runtimeRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "code-server.cmd" : "code-server"
+      )
+      const markerPath = path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "bundled",
+        "code-server",
+        ".hagicode-runtime.json"
+      )
+
+      await execa(commandWrapperPath, ["--version"], {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          TEST_OUTPUT_PATH: outputPath
+        }
+      })
+
+      const marker = JSON.parse(await readFile(markerPath, "utf8"))
+      expect(marker.vendoredReleaseTag).toBe(fallbackTag)
+      expect(marker.vendoredAssetName).toBe(fallbackAssetName)
+    } finally {
+      await releaseServer.close()
+    }
+  })
+
   runTest("installs omniroute from the vendored GitHub release archive", async () => {
     const runtimeRoot = await makeRuntimeRoot("omniroute")
     const outputPath = path.join(runtimeRoot, "omniroute-output.json")
@@ -290,6 +359,58 @@ describe("vendored runtime installers", () => {
     }
   })
 
+  runTest("falls back to an earlier vendored release when the preferred code-server 7z archive is missing", async () => {
+    const runtimeRoot = await makeRuntimeRoot("code-server-archive-fallback")
+    const vendoredPlatform = getVendoredPlatform()
+    const vendoredArch = getVendoredArch()
+    const preferredTag = "v2026.0526.0080"
+    const fallbackTag = "v2026.0526.0079"
+    const fallbackAssetName = `code-server-${fallbackTag.replace(/^v/u, "")}-${vendoredPlatform}-${vendoredArch}.7z`
+    const fallbackAssetBuffer = Buffer.from("fixture-code-server-7z-fallback")
+    const releaseServer = await startVendoredReleaseServerForReleases([
+      { tagName: preferredTag, assets: [] },
+      {
+        tagName: fallbackTag,
+        assets: [{ name: fallbackAssetName, contents: fallbackAssetBuffer }]
+      }
+    ])
+
+    try {
+      await execa(process.execPath, [installCodeServerScript], {
+        cwd: repoRoot,
+        env: createRuntimeScriptEnv(runtimeRoot, "code-server", releaseServer.baseUrl, undefined, {
+          bundledInstallMode: "archive-7z-only",
+          vendoredTag: preferredTag
+        })
+      })
+
+      const archivePath = path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "bundled",
+        "code-server",
+        "archives",
+        "code-server.7z"
+      )
+      const markerPath = path.join(
+        runtimeRoot,
+        "program",
+        "components",
+        "bundled",
+        "code-server",
+        ".hagicode-runtime.json"
+      )
+      const marker = JSON.parse(await readFile(markerPath, "utf8"))
+
+      expect(marker.vendoredReleaseTag).toBe(fallbackTag)
+      expect(marker.vendoredAssetName).toBe(fallbackAssetName)
+      expect(await readFile(archivePath, "utf8")).toBe("fixture-code-server-7z-fallback")
+    } finally {
+      await releaseServer.close()
+    }
+  })
+
   runTest("reuses cached 7z archives for omniroute archive-only installs", async () => {
     const cacheRoot = await makeRuntimeRoot("vendored-archive-cache")
     const firstRuntimeRoot = await makeRuntimeRoot("omniroute-archive-cache-a")
@@ -357,6 +478,7 @@ function createRuntimeScriptEnv(
   downloadCacheDir?: string,
   options: {
     bundledInstallMode?: "extract" | "archive-7z-only"
+    vendoredTag?: string
   } = {}
 ) {
   const runtimeHome = path.join(runtimeRoot, "program")
@@ -392,7 +514,7 @@ function createRuntimeScriptEnv(
     HAGISCRIPT_RUNTIME_COMPONENT_VERSION:
       componentName === "code-server" ? "4.117.0" : "3.6.9",
     HAGISCRIPT_RUNTIME_VENDORED_REPOSITORY: "HagiCode-org/vendered",
-    HAGISCRIPT_RUNTIME_VENDORED_TAG: releaseTag,
+    HAGISCRIPT_RUNTIME_VENDORED_TAG: options.vendoredTag ?? releaseTag,
     HAGISCRIPT_RUNTIME_VENDORED_BASE_URL: baseUrl,
     HAGISCRIPT_DOWNLOAD_CACHE_DIR: downloadCacheDir ?? path.join(runtimeRoot, "download-cache"),
     ...(downloadCacheDir
@@ -404,26 +526,59 @@ function createRuntimeScriptEnv(
 async function startVendoredReleaseServer(
   assets: Array<{ name: string; contents: Buffer }>
 ) {
-  const assetsByName = new Map(assets.map((asset) => [asset.name, asset.contents]))
+  return startVendoredReleaseServerForReleases([
+    {
+      tagName: releaseTag,
+      assets
+    }
+  ])
+}
+
+async function startVendoredReleaseServerForReleases(
+  releases: Array<{ tagName: string; assets: Array<{ name: string; contents: Buffer }> }>
+) {
+  const assetsByTag = new Map(
+    releases.map((release) => [
+      release.tagName,
+      new Map(release.assets.map((asset) => [asset.name, asset.contents]))
+    ])
+  )
   const server = createServer((request, response) => {
-    if (
-      request.url?.startsWith(
-        `/HagiCode-org/vendered/releases/download/${encodeURIComponent(releaseTag)}/`
-      )
-    ) {
-      const assetName = decodeURIComponent(
-        request.url.slice(
-          `/HagiCode-org/vendered/releases/download/${encodeURIComponent(releaseTag)}/`.length
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1")
+
+    if (requestUrl.pathname === "/repos/HagiCode-org/vendered/releases") {
+      response.setHeader("Content-Type", "application/json")
+      response.end(
+        JSON.stringify(
+          releases.map((release) => ({
+            tag_name: release.tagName,
+            assets: release.assets.map((asset) => ({ name: asset.name }))
+          }))
         )
       )
-      const assetBuffer = assetsByName.get(assetName)
+      return
+    }
+
+    const downloadPrefix = "/HagiCode-org/vendered/releases/download/"
+    if (requestUrl.pathname.startsWith(downloadPrefix)) {
+      const relativePath = requestUrl.pathname.slice(downloadPrefix.length)
+      const separatorIndex = relativePath.indexOf("/")
+      if (separatorIndex === -1) {
+        response.statusCode = 404
+        response.end("missing asset")
+        return
+      }
+
+      const tagName = decodeURIComponent(relativePath.slice(0, separatorIndex))
+      const assetName = decodeURIComponent(relativePath.slice(separatorIndex + 1))
+      const assetBuffer = assetsByTag.get(tagName)?.get(assetName)
       if (!assetBuffer) {
         response.statusCode = 404
         response.end("missing asset")
         return
       }
 
-      response.setHeader("Content-Type", "application/gzip")
+      response.setHeader("Content-Type", "application/octet-stream")
       response.setHeader("Content-Length", String(assetBuffer.length))
       response.end(assetBuffer)
       return

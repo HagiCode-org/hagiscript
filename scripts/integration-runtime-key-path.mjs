@@ -28,6 +28,10 @@ const runtimeManifestPath = path.join(
   tempRoot,
   "runtime-key-path-manifest.yaml"
 );
+const pm2RuntimeManifestPath = path.join(
+  tempRoot,
+  "runtime-key-path-pm2-manifest.yaml"
+);
 const toolManifestPath = path.join(tempRoot, "runtime-key-path-tools.json");
 const summaryPath = path.join(tempRoot, "runtime-key-path-summary.md");
 const runtimeCommandTimeoutMs = 20 * 60_000;
@@ -109,6 +113,22 @@ try {
     }
 
     fs.writeFileSync(runtimeManifestPath, stringify(manifest), "utf8");
+
+    const pm2Manifest = {
+      ...manifest,
+      components: manifest.components.map((component) => {
+        if (!isBundledRuntimeService(component.name)) {
+          return component;
+        }
+
+        return {
+          ...component,
+          bundledInstallMode: "extract"
+        };
+      })
+    };
+
+    fs.writeFileSync(pm2RuntimeManifestPath, stringify(pm2Manifest), "utf8");
     fs.writeFileSync(
       toolManifestPath,
       `${JSON.stringify(
@@ -121,7 +141,8 @@ try {
         },
         null,
         2
-      )}\n`,
+      )}
+`,
       "utf8"
     );
   });
@@ -165,12 +186,165 @@ try {
     const componentNames = report.components.map(
       (item) => `${item.name}:${item.status}`
     );
+    const omnirouteArchive = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      "archives",
+      "omniroute.7z"
+    );
+    const codeServerArchive = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      "archives",
+      "code-server.7z"
+    );
+    const omnirouteBin = path.join(
+      managedRoot,
+      "program",
+      "bin",
+      process.platform === "win32" ? "omniroute.cmd" : "omniroute"
+    );
+    const codeServerBin = path.join(
+      managedRoot,
+      "program",
+      "bin",
+      process.platform === "win32" ? "code-server.cmd" : "code-server"
+    );
+    const omnirouteCurrentRoot = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      "current"
+    );
+    const codeServerCurrentRoot = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      "current"
+    );
+    const omnirouteMarkerPath = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "omniroute",
+      ".hagicode-runtime.json"
+    );
+    const codeServerMarkerPath = path.join(
+      managedRoot,
+      "program",
+      "components",
+      "bundled",
+      "code-server",
+      ".hagicode-runtime.json"
+    );
+
+    assertFile(omnirouteArchive);
+    assertFile(codeServerArchive);
+    assertMissingPath(omnirouteBin);
+    assertMissingPath(codeServerBin);
+    assertMissingPath(omnirouteCurrentRoot);
+    assertMissingPath(codeServerCurrentRoot);
+
+    const omnirouteMarker = JSON.parse(
+      fs.readFileSync(omnirouteMarkerPath, "utf8")
+    );
+    const codeServerMarker = JSON.parse(
+      fs.readFileSync(codeServerMarkerPath, "utf8")
+    );
+    assertEqual(
+      omnirouteMarker.bundledInstallMode,
+      "archive-7z-only",
+      "omniroute archive-only marker mode"
+    );
+    assertEqual(
+      codeServerMarker.bundledInstallMode,
+      "archive-7z-only",
+      "code-server archive-only marker mode"
+    );
+    assertEqual(
+      omnirouteMarker.archivePath,
+      omnirouteArchive,
+      "omniroute archive marker path"
+    );
+    assertEqual(
+      codeServerMarker.archivePath,
+      codeServerArchive,
+      "code-server archive marker path"
+    );
+    assertEqual(
+      omnirouteMarker.wrapperPath,
+      null,
+      "omniroute archive-only wrapper marker"
+    );
+    assertEqual(
+      codeServerMarker.wrapperPath,
+      null,
+      "code-server archive-only wrapper marker"
+    );
+
     runtimeInstallLines.push(
       `- Managed root: ${managedRoot}`,
       `- Program home: ${path.join(managedRoot, "program")}`,
       `- Runtime data root: ${path.join(managedRoot, "runtime-data")}`,
       `- Managed npm prefix reserved path: ${path.join(managedRoot, "program", "npm")}`,
-      `- Installed components: ${componentNames.join(", ")}`
+      `- Installed components: ${componentNames.join(", ")}`,
+      `- Omniroute archive: ${omnirouteArchive}`,
+      `- Code-server archive: ${codeServerArchive}`,
+      `- Omniroute vendored asset: ${omnirouteMarker.vendoredAssetName}`,
+      `- Code-server vendored asset: ${codeServerMarker.vendoredAssetName}`,
+      "- Verified default bundled runtime install keeps omniroute and code-server as archive-7z-only payloads"
+    );
+  });
+
+  await runStage("runtime install for PM2 validation", async () => {
+    const installOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "runtime",
+        "install",
+        "--from-manifest",
+        pm2RuntimeManifestPath,
+        "--runtime-root",
+        managedRoot
+      ],
+      repoRoot
+    );
+
+    assertIncludes(
+      installOutput,
+      "Runtime install complete.",
+      "runtime install for PM2 validation output"
+    );
+    assertFile(
+      path.join(
+        managedRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "omniroute.cmd" : "omniroute"
+      )
+    );
+    assertFile(
+      path.join(
+        managedRoot,
+        "program",
+        "bin",
+        process.platform === "win32" ? "code-server.cmd" : "code-server"
+      )
+    );
+    runtimeInstallLines.push(
+      "- Reinstalled bundled runtimes with extract mode override for PM2 lifecycle validation"
     );
   });
 
@@ -219,7 +393,7 @@ try {
         "omniroute",
         "env",
         "--from-manifest",
-        runtimeManifestPath,
+        pm2RuntimeManifestPath,
         "--runtime-root",
         managedRoot
       ],
@@ -265,7 +439,7 @@ try {
               service,
               "status",
               "--from-manifest",
-              runtimeManifestPath,
+              pm2RuntimeManifestPath,
               "--runtime-root",
               managedRoot
             ],
@@ -285,7 +459,7 @@ try {
               service,
               "start",
               "--from-manifest",
-              runtimeManifestPath,
+              pm2RuntimeManifestPath,
               "--runtime-root",
               managedRoot
             ],
@@ -297,7 +471,7 @@ try {
             service,
             "online",
             {
-              manifestPath: runtimeManifestPath,
+              manifestPath: pm2RuntimeManifestPath,
               runtimeRoot: managedRoot,
               repoRoot
             }
@@ -317,7 +491,7 @@ try {
               service,
               "stop",
               "--from-manifest",
-              runtimeManifestPath,
+              pm2RuntimeManifestPath,
               "--runtime-root",
               managedRoot
             ],
@@ -332,7 +506,7 @@ try {
             runProcess,
             repoRoot,
             runtimeRoot: managedRoot,
-            manifestPath: runtimeManifestPath,
+            manifestPath: pm2RuntimeManifestPath,
             tempRoot,
             service,
             reason: error instanceof Error ? error.message : String(error)
@@ -368,7 +542,7 @@ try {
           "server",
           "install",
           "--from-manifest",
-          runtimeManifestPath,
+          pm2RuntimeManifestPath,
           "--runtime-root",
           managedRoot,
           "--archive",
@@ -388,7 +562,7 @@ try {
           "server",
           "list",
           "--from-manifest",
-          runtimeManifestPath,
+          pm2RuntimeManifestPath,
           "--runtime-root",
           managedRoot,
           "--json"
@@ -409,7 +583,7 @@ try {
             "server",
             "start",
             "--from-manifest",
-            runtimeManifestPath,
+            pm2RuntimeManifestPath,
             "--runtime-root",
             managedRoot
           ],
@@ -418,7 +592,7 @@ try {
         assertIncludes(startOutput, "Action: start", "server start");
 
         const statusOutput = await waitForManagedPm2Status("server", "online", {
-          manifestPath: runtimeManifestPath,
+          manifestPath: pm2RuntimeManifestPath,
           runtimeRoot: managedRoot,
           repoRoot
         });
@@ -656,6 +830,24 @@ function assertIncludes(output, expected, label) {
   }
 }
 
+function assertFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Expected file to exist: ${filePath}`);
+  }
+}
+
+function assertMissingPath(targetPath) {
+  if (fs.existsSync(targetPath)) {
+    throw new Error(`Expected path to be absent: ${targetPath}`);
+  }
+}
+
+function assertEqual(actual, expected, label) {
+  if (actual !== expected) {
+    throw new Error(`Expected ${label} to equal ${expected}, got ${actual}`);
+  }
+}
+
 function delay(ms) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
@@ -887,8 +1079,25 @@ function isManagedPm2Service(serviceName) {
   );
 }
 
+function isBundledRuntimeService(serviceName) {
+  return serviceName === "omniroute" || serviceName === "code-server";
+}
+
 function getIntegrationPm2Home(tempRootPath, serviceName) {
-  return path.join(tempRootPath, `.pm2-${serviceName}`);
+  return path.join(tempRootPath, "p", getManagedPm2ServiceKey(serviceName));
+}
+
+function getManagedPm2ServiceKey(serviceName) {
+  switch (serviceName) {
+    case "server":
+      return "s";
+    case "omniroute":
+      return "o";
+    case "code-server":
+      return "c";
+    default:
+      return serviceName;
+  }
 }
 
 function isPm2Command(args) {
