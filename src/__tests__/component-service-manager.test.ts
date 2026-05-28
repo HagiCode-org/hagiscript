@@ -253,6 +253,7 @@ function createManifest(): LoadedRuntimeManifest {
   const nodeComponent = {
     name: "node",
     type: "runtime",
+    required: true,
     bundledInstallMode: "extract",
     lifecycleDependencies: [],
     packageCatalog: [],
@@ -261,6 +262,7 @@ function createManifest(): LoadedRuntimeManifest {
   const omnirouteComponent = {
     name: "omniroute",
     type: "bundled-runtime",
+    required: false,
     version: "3.6.9",
     bundledInstallMode: "archive-7z-only",
     runtimeDataDir: "services/omniroute",
@@ -275,6 +277,7 @@ function createManifest(): LoadedRuntimeManifest {
   const codeServerComponent = {
     name: "code-server",
     type: "bundled-runtime",
+    required: true,
     version: "4.117.0",
     bundledInstallMode: "archive-7z-only",
     runtimeDataDir: "services/code-server",

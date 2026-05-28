@@ -37,8 +37,8 @@ import {
   ensureManagedPm2Package,
   installRuntime,
   queryRuntimeState,
+  type RuntimeStateReport,
   type RuntimeLifecycleResult,
-  type RuntimeStateReport
 } from "./runtime-manager.js"
 import { getManagedServerConfig } from "./server-config.js"
 import {
@@ -518,9 +518,17 @@ async function ensureManagedServerDependenciesStarted(
   options: ManagedServerLifecycleOptions
 ): Promise<void> {
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
+  const runtimeState = await queryRuntimeState({
+    manifestPath: options.manifestPath,
+    runtimeRoot: options.runtimeRoot
+  })
   const managedPm2ServiceNames = new Set<string>(supportedPm2Services)
   const dependencyServices = MANAGED_SERVER_INTEGRATION_DEPENDENCIES.filter(
-    (service) => service !== "server" && managedPm2ServiceNames.has(service) && manifest.componentMap.has(service)
+    (service) =>
+      service !== "server" &&
+      managedPm2ServiceNames.has(service) &&
+      isManagedDependencyInstalled(runtimeState, service) &&
+      manifest.componentMap.has(service)
   )
 
   for (const service of dependencyServices) {
@@ -565,15 +573,23 @@ async function resolveManagedServerIntegrationEnvironment(
 ): Promise<Record<string, string>> {
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
+  const runtimeState = await queryRuntimeState({
+    manifestPath: options.manifestPath,
+    runtimeRoot: options.runtimeRoot
+  })
 
   return {
     ...(await resolveManagedVsCodeServerEnvironment(
-      manifest.componentMap.get("code-server"),
+      isManagedDependencyInstalled(runtimeState, "code-server")
+        ? manifest.componentMap.get("code-server")
+        : undefined,
       paths,
       manifest
     )),
     ...(await resolveManagedOmniRouteEnvironment(
-      manifest.componentMap.get("omniroute"),
+      isManagedDependencyInstalled(runtimeState, "omniroute")
+        ? manifest.componentMap.get("omniroute")
+        : undefined,
       paths,
       manifest
     ))
@@ -643,6 +659,15 @@ async function resolveManagedOmniRouteEnvironment(
     OmniRoute__DefaultBaseUrlSource: OMNIROUTE_SOURCE_EXTERNAL,
     OmniRoute__DefaultBaseUrlLocked: "true"
   }
+}
+
+function isManagedDependencyInstalled(
+  runtimeState: RuntimeStateReport,
+  componentName: "code-server" | "omniroute"
+): boolean {
+  return runtimeState.components.some(
+    (component) => component.name === componentName && component.status === "installed"
+  )
 }
 
 function resolveManagedDependencyPublicPort(

@@ -133,8 +133,39 @@ components:
     expect(manifest.componentMap.get("omniroute")?.scripts.install).toContain(
       `${path.sep}runtime${path.sep}scripts${path.sep}install-omniroute.mjs`
     )
+    expect(manifest.componentMap.get("omniroute")?.required).toBe(false)
     expect(manifest.componentMap.get("omniroute")?.bundledInstallMode).toBe("archive-7z-only")
     expect(manifest.componentMap.get("code-server")?.bundledInstallMode).toBe("archive-7z-only")
+  })
+
+  it("defaults install planning to required components only", async () => {
+    const manifest = await loadRuntimeManifest({
+      manifestPath: getDefaultRuntimeManifestPath()
+    })
+    const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
+
+    const plan = planRuntimeLifecycle("install", manifest, state)
+
+    expect(plan.plan.map((item) => item.componentName)).toEqual([
+      "node",
+      "dotnet",
+      "server",
+      "code-server"
+    ])
+    expect(plan.plan.map((item) => item.componentName)).not.toContain("omniroute")
+  })
+
+  it("includes optional components when explicitly requested", async () => {
+    const manifest = await loadRuntimeManifest({
+      manifestPath: getDefaultRuntimeManifestPath()
+    })
+    const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
+
+    const plan = planRuntimeLifecycle("install", manifest, state, {
+      components: ["omniroute"]
+    })
+
+    expect(plan.plan.map((item) => item.componentName)).toEqual(["node", "omniroute"])
   })
 
   it("rejects bundledInstallMode on non-bundled runtime components", async () => {
@@ -446,6 +477,54 @@ components:
     )
 
     await rm(runtimeRoot, { recursive: true, force: true })
+  })
+
+  it("treats optional components as non-blocking for runtime readiness", async () => {
+    const manifest = await loadRuntimeManifest({
+      manifestPath: getDefaultRuntimeManifestPath()
+    })
+    const runtimeRoot = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-ready-optional-"))
+
+    try {
+      const paths = resolveRuntimePaths(manifest, { runtimeRoot })
+      const state = createInitialRuntimeState(manifest, paths)
+      const now = new Date().toISOString()
+
+      for (const componentName of ["node", "dotnet", "server", "code-server"] as const) {
+        const component = manifest.componentMap.get(componentName)
+        if (!component) {
+          throw new Error(`Missing fixture component ${componentName}`)
+        }
+
+        state.components[componentName] = {
+          name: component.name,
+          type: component.type,
+          status: "installed",
+          version: component.version ?? component.channelVersion ?? null,
+          managedProgramPaths: [],
+          managedDataPaths: [],
+          managedPaths: [],
+          lastAction: "install",
+          lastUpdatedAt: now,
+          logFile: null,
+          details:
+            component.name === "server"
+              ? { releasedServiceReady: true }
+              : undefined
+        }
+      }
+
+      await writeRuntimeState(paths.stateFile, state)
+
+      const report = await queryRuntimeState({ runtimeRoot })
+      const omniroute = report.components.find((component) => component.name === "omniroute")
+
+      expect(report.ready).toBe(true)
+      expect(omniroute?.required).toBe(false)
+      expect(omniroute?.status).toBe("not-installed")
+    } finally {
+      await rm(runtimeRoot, { recursive: true, force: true })
+    }
   })
 
   it("stops and deletes pm2-managed bundled runtimes during remove", async () => {

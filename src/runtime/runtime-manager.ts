@@ -108,6 +108,7 @@ export interface RuntimeStateReport {
   components: Array<{
     name: string
     type: string
+    required: boolean
     status: RuntimeComponentStatus
     version: string | null
     runtimeDataHome: string | null
@@ -345,6 +346,7 @@ export async function queryRuntimeState(
     return {
       name: component.name,
       type: component.type,
+      required: component.required,
       status: entry?.status ?? "not-installed",
       version: entry?.version ?? null,
       runtimeDataHome,
@@ -380,11 +382,13 @@ export async function queryRuntimeState(
       programRoots,
       externalDataRoots
     },
-    ready: components.every(
-      (component) =>
-        component.status === "installed" &&
-        (component.details?.releasedServiceReady as boolean | undefined) !== false
-    ),
+    ready: components
+      .filter((component) => component.required)
+      .every(
+        (component) =>
+          component.status === "installed" &&
+          (component.details?.releasedServiceReady as boolean | undefined) !== false
+      ),
     components,
     lastOperation: state.lastOperation
   }
@@ -740,7 +744,11 @@ function selectRequestedComponents(
 ): Set<string> {
   const requestedSet =
     !requestedComponents || requestedComponents.length === 0
-      ? new Set(manifest.components.map((component) => component.name))
+      ? new Set(
+          manifest.components
+            .filter((component) => phase === "remove" || component.required)
+            .map((component) => component.name)
+        )
       : new Set<string>()
 
   if (requestedComponents && requestedComponents.length > 0) {

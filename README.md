@@ -54,13 +54,15 @@ hagiscript server start \
 
 ## What Hagiscript Manages
 
-The packaged runtime manifest defines these default components:
+The packaged runtime manifest defines these managed components:
 
 - `node`: managed Node.js runtime
 - `dotnet`: managed .NET runtime
-- `omniroute`: bundled PM2-managed service
+- `omniroute`: bundled PM2-managed service, optional by default
 - `code-server`: bundled PM2-managed service
 - `server`: released backend service package
+
+By default, `hagiscript runtime install` prepares the required runtime set and does not install `omniroute` unless you explicitly include it with `--components`.
 
 The managed runtime layout separates immutable program files from mutable data:
 
@@ -166,6 +168,7 @@ Operate on selected components only:
 hagiscript runtime install --components node,dotnet
 hagiscript runtime update --components code-server,omniroute
 hagiscript runtime remove --components code-server --purge
+hagiscript runtime install --components omniroute
 ```
 
 ## Runtime Install Workflow

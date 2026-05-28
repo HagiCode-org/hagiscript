@@ -22,6 +22,7 @@ export interface RuntimePackageCatalogEntry {
 export interface RuntimeComponentDefinition {
   name: string
   type: RuntimeComponentType
+  required: boolean
   source?: string
   version?: string
   channelVersion?: string
@@ -535,6 +536,11 @@ function validateRuntimeComponents(
     components.push({
       name,
       type: rawType as RuntimeComponentType,
+      required: readOptionalBoolean(
+        componentObject.required,
+        `components[${index}].required`,
+        errors
+      ) ?? true,
       source: readOptionalString(componentObject.source, `components[${index}].source`, errors),
       version: readOptionalString(componentObject.version, `components[${index}].version`, errors),
       channelVersion: readOptionalString(
@@ -752,6 +758,23 @@ function readOptionalString(
   }
 
   return value.trim()
+}
+
+function readOptionalBoolean(
+  value: unknown,
+  label: string,
+  errors: string[]
+): boolean | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (typeof value !== "boolean") {
+    errors.push(`${label} must be a boolean when provided`)
+    return undefined
+  }
+
+  return value
 }
 
 function readOptionalObject(

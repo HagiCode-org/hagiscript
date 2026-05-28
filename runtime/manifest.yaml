@@ -37,6 +37,7 @@ components:
 
 - name: "omniroute"
   type: "bundled-runtime"
+  required: false
   source: "desktop-vendored-runtime"
   version: "3.6.9"
   bundledInstallMode: "archive-7z-only"
