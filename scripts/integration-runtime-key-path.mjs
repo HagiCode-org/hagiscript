@@ -37,6 +37,7 @@ const summaryPath = path.join(tempRoot, "runtime-key-path-summary.md");
 const runtimeCommandTimeoutMs = 20 * 60_000;
 const pm2CommandTimeoutMs = 5 * 60_000;
 const pm2NameIdentifier = "keypath";
+const bundledRuntimeComponentsForPm2 = "omniroute,code-server";
 const enableReleasedServerTest =
   process.env.HAGISCRIPT_ENABLE_RELEASED_SERVER_TEST === "1";
 let diagnostics;
@@ -252,23 +253,16 @@ try {
       ".hagicode-runtime.json"
     );
 
-    assertFile(omnirouteArchive);
     assertFile(codeServerArchive);
+    assertMissingPath(omnirouteArchive);
     assertMissingPath(omnirouteBin);
     assertMissingPath(codeServerBin);
     assertMissingPath(omnirouteCurrentRoot);
     assertMissingPath(codeServerCurrentRoot);
+    assertMissingPath(omnirouteMarkerPath);
 
-    const omnirouteMarker = JSON.parse(
-      fs.readFileSync(omnirouteMarkerPath, "utf8")
-    );
     const codeServerMarker = JSON.parse(
       fs.readFileSync(codeServerMarkerPath, "utf8")
-    );
-    assertEqual(
-      omnirouteMarker.bundledInstallMode,
-      "archive-7z-only",
-      "omniroute archive-only marker mode"
     );
     assertEqual(
       codeServerMarker.bundledInstallMode,
@@ -276,19 +270,9 @@ try {
       "code-server archive-only marker mode"
     );
     assertEqual(
-      omnirouteMarker.archivePath,
-      omnirouteArchive,
-      "omniroute archive marker path"
-    );
-    assertEqual(
       codeServerMarker.archivePath,
       codeServerArchive,
       "code-server archive marker path"
-    );
-    assertEqual(
-      omnirouteMarker.wrapperPath,
-      null,
-      "omniroute archive-only wrapper marker"
     );
     assertEqual(
       codeServerMarker.wrapperPath,
@@ -302,11 +286,10 @@ try {
       `- Runtime data root: ${path.join(managedRoot, "runtime-data")}`,
       `- Managed npm prefix reserved path: ${path.join(managedRoot, "program", "npm")}`,
       `- Installed components: ${componentNames.join(", ")}`,
-      `- Omniroute archive: ${omnirouteArchive}`,
+      `- Omniroute optional archive not installed by default: ${omnirouteArchive}`,
       `- Code-server archive: ${codeServerArchive}`,
-      `- Omniroute vendored asset: ${omnirouteMarker.vendoredAssetName}`,
       `- Code-server vendored asset: ${codeServerMarker.vendoredAssetName}`,
-      "- Verified default bundled runtime install keeps omniroute and code-server as archive-7z-only payloads"
+      "- Verified default bundled runtime install keeps required code-server as archive-7z-only and leaves optional omniroute uninstalled"
     );
   });
 
@@ -347,6 +330,27 @@ try {
   });
 
   await runStage("dedicated component command lifecycle", async () => {
+    const optionalInstallOutput = await runCapture(
+      process.execPath,
+      [
+        "dist/cli.js",
+        "runtime",
+        "install",
+        "--from-manifest",
+        runtimeManifestPath,
+        "--runtime-root",
+        managedRoot,
+        "--components",
+        "omniroute"
+      ],
+      repoRoot
+    );
+    assertIncludes(
+      optionalInstallOutput,
+      "Runtime install complete.",
+      "optional omniroute archive install output"
+    );
+
     await prepareBundledServiceConfigs(managedRoot);
 
     const components = [
@@ -569,7 +573,9 @@ try {
         "--from-manifest",
         pm2RuntimeManifestPath,
         "--runtime-root",
-        managedRoot
+        managedRoot,
+        "--components",
+        bundledRuntimeComponentsForPm2
       ],
       repoRoot
     );
