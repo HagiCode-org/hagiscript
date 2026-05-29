@@ -52,9 +52,12 @@ export async function verifyNodeRuntime(
     await access(paths.nodePath, constants.X_OK);
     await access(resolveNpmValidationTargetPath(paths, options.platform), constants.X_OK);
 
+    const nodeLaunchOptions = getCommandLaunchOptions(paths.nodePath, {
+      platform: options.platform
+    });
     const [nodeVersion, npmVersion] = await Promise.all([
       runCommand(paths.nodePath, ["--version"], timeoutMs, {
-        ...getCommandLaunchOptions(paths.nodePath, { platform: options.platform })
+        ...nodeLaunchOptions
       }),
       runCommand(
         npmInvocation.command,
@@ -88,7 +91,9 @@ export function buildRuntimeNpmInvocation(
   args: string[],
   platform: NodeJS.Platform = process.platform
 ): RuntimeCommandInvocation {
-  if (platform === "win32") {
+  const nodeLaunchOptions = getCommandLaunchOptions(paths.nodePath, { platform });
+
+  if (platform === "win32" && !nodeLaunchOptions.shell) {
     return {
       command: paths.nodePath,
       args: [resolveBundledWindowsNpmCliPath(paths), ...args],

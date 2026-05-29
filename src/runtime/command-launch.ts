@@ -2,6 +2,7 @@ import { execa } from "execa";
 
 export interface CommandLaunchOptions {
   platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface RuntimeExecFileOptions {
@@ -69,10 +70,15 @@ export function normalizeCommandPath(commandPath: string): string {
 
 export function requiresShellLaunch(
   commandPath: string,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env
 ): boolean {
   if (platform !== "win32") {
     return false;
+  }
+
+  if (isWindowsStoreAppEnvironment(env)) {
+    return true;
   }
 
   const normalizedCommand = normalizeCommandPath(commandPath).toLowerCase();
@@ -82,11 +88,17 @@ export function requiresShellLaunch(
   return normalizedCommand.endsWith(".cmd") || normalizedCommand.endsWith(".bat");
 }
 
+export function isWindowsStoreAppEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  return env.HAGICODE_DESKTOP_WINDOWS_STORE === "1";
+}
+
 export function getCommandLaunchOptions(
   commandPath: string,
   options: CommandLaunchOptions = {}
 ): RuntimeExecFileOptions {
-  return requiresShellLaunch(commandPath, options.platform)
+  return requiresShellLaunch(commandPath, options.platform, options.env)
     ? { shell: true }
     : {};
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CommandExecutionError,
   getCommandLaunchOptions,
+  isWindowsStoreAppEnvironment,
   normalizeCommandPath,
   requiresShellLaunch,
   runCommand
@@ -146,6 +147,27 @@ describe("command launch compatibility helpers", () => {
     ).toEqual({});
     expect(
       getCommandLaunchOptions("/runtime/bin/npm", { platform: "linux" })
+    ).toEqual({});
+  });
+
+  it("forces shell launch for Windows Store/MSIX desktop child processes", () => {
+    const env = { HAGICODE_DESKTOP_WINDOWS_STORE: "1" };
+
+    expect(isWindowsStoreAppEnvironment(env)).toBe(true);
+    expect(
+      requiresShellLaunch("C:/runtime/node.exe", "win32", env)
+    ).toBe(true);
+    expect(
+      getCommandLaunchOptions("C:/runtime/node.exe", {
+        platform: "win32",
+        env
+      })
+    ).toEqual({ shell: true });
+    expect(
+      getCommandLaunchOptions("/runtime/bin/node", {
+        platform: "linux",
+        env
+      })
     ).toEqual({});
   });
 });

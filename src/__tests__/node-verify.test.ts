@@ -3,6 +3,7 @@ import { join, posix } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildRuntimeNpmInvocation,
   getRuntimeExecutablePaths,
   verifyNodeRuntime
 } from "../runtime/node-verify.js";
@@ -141,6 +142,34 @@ describe("Node.js runtime verification", () => {
         launchOptions: {}
       }
     ]);
+  });
+
+  it("routes Windows npm verification through npm.cmd when Store/MSIX shell launch is required", () => {
+    const previous = process.env.HAGICODE_DESKTOP_WINDOWS_STORE;
+    process.env.HAGICODE_DESKTOP_WINDOWS_STORE = "1";
+
+    try {
+      expect(
+        buildRuntimeNpmInvocation(
+          {
+            nodePath: "C:/runtime/node.exe",
+            npmPath: "C:/runtime/npm.cmd"
+          },
+          ["--version"],
+          "win32"
+        )
+      ).toEqual({
+        command: "C:/runtime/npm.cmd",
+        args: ["--version"],
+        launchOptions: { shell: true }
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.HAGICODE_DESKTOP_WINDOWS_STORE;
+      } else {
+        process.env.HAGICODE_DESKTOP_WINDOWS_STORE = previous;
+      }
+    }
   });
 
   it("keeps POSIX npm verification on direct execution", async () => {
