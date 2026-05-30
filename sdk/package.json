@@ -1,6 +1,6 @@
 {
-  "name": "hagiscript-sdk",
-  "version": "0.2.9",
+  "name": "@hagicode/hagiscript-sdk",
+  "version": "0.2.9-dev.1780142424.1.dedbfb7",
   "description": "SDK-only distribution of Hagiscript runtime and server management APIs.",
   "license": "MIT",
   "homepage": "https://github.com/HagiCode-org/hagiscript#readme",

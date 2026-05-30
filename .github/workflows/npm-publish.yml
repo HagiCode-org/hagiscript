@@ -118,7 +118,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
         working-directory: sdk
         run: |
-          if npm view "hagiscript-sdk@$DEV_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+          if npm view "@hagicode/hagiscript-sdk@$DEV_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
             echo "Version $DEV_VERSION is already published on npm; skipping SDK dev publish."
             echo "result=skipped" >> "$GITHUB_OUTPUT"
             {
@@ -271,7 +271,7 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
         working-directory: sdk
         run: |
-          if npm view "hagiscript-sdk@$RELEASE_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+          if npm view "@hagicode/hagiscript-sdk@$RELEASE_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
             echo "Version $RELEASE_VERSION is already published on npm; skipping SDK stable publish."
             echo "result=skipped" >> "$GITHUB_OUTPUT"
             {

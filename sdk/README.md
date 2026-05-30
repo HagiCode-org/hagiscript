@@ -1,11 +1,11 @@
-# hagiscript-sdk
+# @hagicode/hagiscript-sdk
 
-`hagiscript-sdk` publishes the programmatic Hagiscript APIs without the CLI layer from `@hagicode/hagiscript`.
+`@hagicode/hagiscript-sdk` publishes the programmatic Hagiscript APIs without the CLI layer from `@hagicode/hagiscript`.
 
 ## Install
 
 ```bash
-npm install hagiscript-sdk
+npm install @hagicode/hagiscript-sdk
 ```
 
 ## Usage
@@ -15,7 +15,7 @@ import {
   createRuntimeInfo,
   installRuntime,
   syncNpmGlobals
-} from "hagiscript-sdk";
+} from "@hagicode/hagiscript-sdk";
 
 const info = createRuntimeInfo();
 ```
