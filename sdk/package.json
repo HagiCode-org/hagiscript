@@ -1,0 +1,38 @@
+{
+  "name": "hagiscript-sdk",
+  "version": "0.2.9",
+  "description": "SDK-only distribution of Hagiscript runtime and server management APIs.",
+  "license": "MIT",
+  "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
+  "bugs": {
+    "url": "https://github.com/HagiCode-org/hagiscript/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HagiCode-org/hagiscript.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "execa": "^9.6.1",
+    "extract-zip": "^2.0.1",
+    "semver": "^7.7.4",
+    "yaml": "^2.8.4"
+  }
+}

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+sdk/dist/
+sdk/node_modules/
 coverage/
 .vitest-temp/
 .tmp/
