@@ -105,6 +105,49 @@ jobs:
 
           echo "result=published" >> "$GITHUB_OUTPUT"
 
+      - name: Build SDK package
+        run: npm run build:sdk
+
+      - name: Verify SDK packed files
+        run: npm run pack:check:sdk
+
+      - name: Publish SDK to npm dev dist-tag
+        id: publish_sdk
+        env:
+          DEV_VERSION: ${{ steps.version.outputs.version }}
+          NPM_CONFIG_PROVENANCE: "true"
+        working-directory: sdk
+        run: |
+          if npm view "hagiscript-sdk@$DEV_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Version $DEV_VERSION is already published on npm; skipping SDK dev publish."
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            {
+              echo "### SDK publish gate"
+              echo
+              echo "Version $DEV_VERSION already exists on npm. Skipped duplicate SDK dev publish."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          publish_log="$(mktemp)"
+          set +e
+          npm publish --tag dev --provenance --access public 2>&1 | tee "$publish_log"
+          publish_exit="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$publish_exit" -ne 0 ]; then
+            {
+              echo "### SDK npm publish output"
+              echo
+              echo '```text'
+              tail -n 200 "$publish_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$publish_exit"
+          fi
+
+          echo "result=published" >> "$GITHUB_OUTPUT"
+
       - name: Summarize publish result
         if: always()
         env:
@@ -118,6 +161,7 @@ jobs:
             echo "- Version: $RESOLVED_VERSION"
             echo "- Dist-tag: dev"
             echo "- Registry: npmjs.org"
+            echo "- SDK Result: ${{ steps.publish_sdk.outputs.result || 'failed-before-sdk-publish' }}"
 
             if [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "published" ]; then
               echo "- Result: published with provenance enabled."
@@ -214,6 +258,49 @@ jobs:
 
           echo "result=published" >> "$GITHUB_OUTPUT"
 
+      - name: Build SDK package
+        run: npm run build:sdk
+
+      - name: Verify SDK packed files
+        run: npm run pack:check:sdk
+
+      - name: Publish SDK to npm latest dist-tag
+        id: publish_sdk
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          NPM_CONFIG_PROVENANCE: "true"
+        working-directory: sdk
+        run: |
+          if npm view "hagiscript-sdk@$RELEASE_VERSION" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "Version $RELEASE_VERSION is already published on npm; skipping SDK stable publish."
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            {
+              echo "### SDK publish gate"
+              echo
+              echo "Version $RELEASE_VERSION already exists on npm. Skipped duplicate SDK stable publish."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          publish_log="$(mktemp)"
+          set +e
+          npm publish --tag latest --provenance --access public 2>&1 | tee "$publish_log"
+          publish_exit="${PIPESTATUS[0]}"
+          set -e
+
+          if [ "$publish_exit" -ne 0 ]; then
+            {
+              echo "### SDK npm publish output"
+              echo
+              echo '```text'
+              tail -n 200 "$publish_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$publish_exit"
+          fi
+
+          echo "result=published" >> "$GITHUB_OUTPUT"
+
       - name: Summarize publish result
         if: always()
         env:
@@ -231,6 +318,7 @@ jobs:
             echo "- Release: $RELEASE_URL"
             echo "- Tag: $TAG_NAME"
             echo "- Registry: npmjs.org"
+            echo "- SDK Result: ${{ steps.publish_sdk.outputs.result || 'failed-before-sdk-publish' }}"
 
             if [ "$JOB_STATUS" = "success" ] && [ "$PUBLISH_RESULT" = "published" ]; then
               echo "- Result: published with provenance enabled."
