@@ -253,32 +253,14 @@ try {
       ".hagicode-runtime.json"
     );
 
-    assertFile(codeServerArchive);
+    assertMissingPath(codeServerArchive);
     assertMissingPath(omnirouteArchive);
     assertMissingPath(omnirouteBin);
     assertMissingPath(codeServerBin);
     assertMissingPath(omnirouteCurrentRoot);
     assertMissingPath(codeServerCurrentRoot);
     assertMissingPath(omnirouteMarkerPath);
-
-    const codeServerMarker = JSON.parse(
-      fs.readFileSync(codeServerMarkerPath, "utf8")
-    );
-    assertEqual(
-      codeServerMarker.bundledInstallMode,
-      "archive-7z-only",
-      "code-server archive-only marker mode"
-    );
-    assertEqual(
-      codeServerMarker.archivePath,
-      codeServerArchive,
-      "code-server archive marker path"
-    );
-    assertEqual(
-      codeServerMarker.wrapperPath,
-      null,
-      "code-server archive-only wrapper marker"
-    );
+    assertMissingPath(codeServerMarkerPath);
 
     runtimeInstallLines.push(
       `- Managed root: ${managedRoot}`,
@@ -287,9 +269,8 @@ try {
       `- Managed npm prefix reserved path: ${path.join(managedRoot, "program", "npm")}`,
       `- Installed components: ${componentNames.join(", ")}`,
       `- Omniroute optional archive not installed by default: ${omnirouteArchive}`,
-      `- Code-server archive: ${codeServerArchive}`,
-      `- Code-server vendored asset: ${codeServerMarker.vendoredAssetName}`,
-      "- Verified default bundled runtime install keeps required code-server as archive-7z-only and leaves optional omniroute uninstalled"
+      `- Code-server optional archive not installed by default: ${codeServerArchive}`,
+      "- Verified default bundled runtime install leaves optional omniroute and code-server uninstalled"
     );
   });
 
@@ -341,14 +322,14 @@ try {
         "--runtime-root",
         managedRoot,
         "--components",
-        "omniroute"
+        "omniroute,code-server"
       ],
       repoRoot
     );
     assertIncludes(
       optionalInstallOutput,
       "Runtime install complete.",
-      "optional omniroute archive install output"
+      "optional bundled runtime archive install output"
     );
 
     await prepareBundledServiceConfigs(managedRoot);

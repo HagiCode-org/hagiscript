@@ -50,6 +50,7 @@ components:
 
 - name: "code-server"
   type: "bundled-runtime"
+  required: false
   source: "desktop-vendored-runtime"
   version: "4.117.0"
   bundledInstallMode: "archive-7z-only"

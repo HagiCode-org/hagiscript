@@ -135,6 +135,7 @@ components:
     )
     expect(manifest.componentMap.get("omniroute")?.required).toBe(false)
     expect(manifest.componentMap.get("omniroute")?.bundledInstallMode).toBe("archive-7z-only")
+    expect(manifest.componentMap.get("code-server")?.required).toBe(false)
     expect(manifest.componentMap.get("code-server")?.bundledInstallMode).toBe("archive-7z-only")
   })
 
@@ -149,10 +150,10 @@ components:
     expect(plan.plan.map((item) => item.componentName)).toEqual([
       "node",
       "dotnet",
-      "server",
-      "code-server"
+      "server"
     ])
     expect(plan.plan.map((item) => item.componentName)).not.toContain("omniroute")
+    expect(plan.plan.map((item) => item.componentName)).not.toContain("code-server")
   })
 
   it("includes optional components when explicitly requested", async () => {
@@ -161,11 +162,15 @@ components:
     })
     const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
 
-    const plan = planRuntimeLifecycle("install", manifest, state, {
+    const omniRoutePlan = planRuntimeLifecycle("install", manifest, state, {
       components: ["omniroute"]
     })
+    const codeServerPlan = planRuntimeLifecycle("install", manifest, state, {
+      components: ["code-server"]
+    })
 
-    expect(plan.plan.map((item) => item.componentName)).toEqual(["node", "omniroute"])
+    expect(omniRoutePlan.plan.map((item) => item.componentName)).toEqual(["node", "omniroute"])
+    expect(codeServerPlan.plan.map((item) => item.componentName)).toEqual(["node", "code-server"])
   })
 
   it("rejects bundledInstallMode on non-bundled runtime components", async () => {
@@ -490,7 +495,7 @@ components:
       const state = createInitialRuntimeState(manifest, paths)
       const now = new Date().toISOString()
 
-      for (const componentName of ["node", "dotnet", "server", "code-server"] as const) {
+      for (const componentName of ["node", "dotnet", "server"] as const) {
         const component = manifest.componentMap.get(componentName)
         if (!component) {
           throw new Error(`Missing fixture component ${componentName}`)
@@ -518,10 +523,13 @@ components:
 
       const report = await queryRuntimeState({ runtimeRoot })
       const omniroute = report.components.find((component) => component.name === "omniroute")
+      const codeServer = report.components.find((component) => component.name === "code-server")
 
       expect(report.ready).toBe(true)
       expect(omniroute?.required).toBe(false)
       expect(omniroute?.status).toBe("not-installed")
+      expect(codeServer?.required).toBe(false)
+      expect(codeServer?.status).toBe("not-installed")
     } finally {
       await rm(runtimeRoot, { recursive: true, force: true })
     }
