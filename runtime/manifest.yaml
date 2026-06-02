@@ -6,9 +6,7 @@ runtime:
 paths:
   runtimeRoot: "~/.hagicode/runtime"
   runtimeHome: "program"
-  runtimeDataRoot: "runtime-data"
-  serverProgramRoot: "server"
-  serverDataRoot: "server-data"
+  runtimeDataRoot: "~/.hagicode/runtime-data"
   bin: "bin"
   config: "config"
   logs: "logs"

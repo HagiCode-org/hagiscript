@@ -3,6 +3,7 @@ import { join, posix, relative, resolve, win32 } from "node:path"
 import type { LoadedRuntimeManifest } from "./runtime-manifest.js"
 
 export const defaultRuntimeRoot = "~/.hagicode/runtime"
+export const defaultRuntimeDataRoot = "~/.hagicode/runtime-data"
 
 export interface ResolvedRuntimePaths {
   root: string
@@ -44,7 +45,7 @@ export function resolveRuntimePaths(
     : resolveManagedPath(manifest.paths.runtimeHome, root)
   const runtimeDataRoot = options.runtimeDataRoot
     ? resolveManagedPath(options.runtimeDataRoot, root)
-    : resolveManagedPath(manifest.paths.runtimeDataRoot, root)
+    : resolveManagedPath(manifest.paths.runtimeDataRoot ?? defaultRuntimeDataRoot, root)
   const serverProgramRoot = options.serverProgramRoot
     ? resolveManagedPath(options.serverProgramRoot, root)
     : manifest.paths.serverProgramRoot

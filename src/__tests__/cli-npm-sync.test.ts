@@ -121,7 +121,7 @@ vi.mock("../runtime/runtime-state.js", async (importOriginal) => ({
 
 describe("npm-sync CLI command", () => {
   const defaultRuntimeRoot = path.join(homedir(), ".hagicode", "runtime");
-  const defaultRuntimeDataRoot = path.join(defaultRuntimeRoot, "runtime-data");
+  const defaultRuntimeDataRoot = path.join(homedir(), ".hagicode", "runtime-data");
   const defaultNodeRuntime = path.join(
     defaultRuntimeRoot,
     "program",

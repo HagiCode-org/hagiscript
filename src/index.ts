@@ -87,6 +87,7 @@ export {
   type RuntimeReleasedServiceDefinition
 } from "./runtime/runtime-manifest.js";
 export {
+  defaultRuntimeDataRoot,
   defaultRuntimeRoot,
   getComponentConfigDirectory,
   getComponentLogsDirectory,

@@ -1,7 +1,7 @@
 import { Command, InvalidArgumentError } from "commander";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   getDefaultManagedNodeRuntimeDirectory,
   resolveManagedNodeRuntime
@@ -142,7 +142,7 @@ export function registerNpmSyncCommand(program: Command): void {
         : undefined;
 
       try {
-        const runtimeState = await resolveRuntimeState(runtimeRoot);
+        const runtimeState = await resolveRuntimeState(runtimeRoot, explicitRuntimeManifestPath);
         const runtimeManifestPath =
           explicitRuntimeManifestPath ??
           (!manifestPath && !hasInlineToolSelection
@@ -218,10 +218,14 @@ async function resolveDefaultPrefix(options: {
 }
 
 async function resolveRuntimeState(
-  runtimeRoot: string
+  runtimeRoot: string,
+  runtimeManifestPath?: string
 ): Promise<Awaited<ReturnType<typeof readRuntimeState>> | undefined> {
-  const statePath = resolve(runtimeRoot, "runtime-data", "state.json");
-  return (await readRuntimeState(statePath)) ?? undefined;
+  const manifest = await loadRuntimeManifest({
+    manifestPath: runtimeManifestPath ?? getDefaultRuntimeManifestPath()
+  });
+  const resolvedPaths = resolveRuntimePaths(manifest, { runtimeRoot });
+  return (await readRuntimeState(resolvedPaths.stateFile)) ?? undefined;
 }
 
 async function resolveRuntimePathsFromManifest(

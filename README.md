@@ -353,9 +353,9 @@ The dedicated `logs` action only reads allowlisted managed log targets beneath e
 
 ## Managed NPM Tool Sync
 
-The runtime manifest can also declare managed npm packages under `npmSync`. These packages are installed into the managed npm prefix under `runtime-data/npm`, not into `program/`.
+The runtime manifest can also declare managed npm packages under `npmSync`. These packages are installed into the resolved runtime data prefix under `runtime-data/npm` for relative manifests, or under `~/.hagicode/runtime-data/npm` for the default managed layout, not into `program/`.
 
-If the managed runtime has already been installed, `npm-sync` can read `runtime-data/state.json` under the selected runtime and automatically reuse the recorded `manifestPath` and managed npm prefix. In that case you do not need to pass `--from-manifest`.
+If the managed runtime has already been installed, `npm-sync` can read the canonical `state.json` from the resolved runtime data root and automatically reuse the recorded `manifestPath` and managed npm prefix. In that case you do not need to pass `--from-manifest`.
 
 Sync npm packages by pointing at the runtime root:
 

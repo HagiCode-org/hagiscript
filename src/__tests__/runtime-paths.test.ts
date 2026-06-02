@@ -1,5 +1,5 @@
-import { homedir } from "node:os"
 import path from "node:path"
+import { homedir } from "node:os"
 import { describe, expect, it } from "vitest"
 import {
   getComponentManagedRoot,
@@ -196,6 +196,18 @@ describe("runtime path helpers", () => {
     )
     expect(resolvedPaths.componentDataRoot).toBe(path.resolve(customRuntimeDataRoot, "components"))
     expect(resolvedPaths.npmPrefix).toBe(path.resolve(customRuntimeDataRoot, "npm"))
+  })
+
+  it("resolves the default runtime data root independently from the program root", () => {
+    const resolvedPaths = resolveRuntimePaths(createManifest({
+      runtimeDataRoot: undefined
+    }))
+    const expectedRuntimeDataRoot = path.join(homedir(), ".hagicode", "runtime-data")
+
+    expect(resolvedPaths.root).toBe(path.resolve("/managed-runtime"))
+    expect(resolvedPaths.runtimeHome).toBe(path.join(managedRoot, "program"))
+    expect(resolvedPaths.runtimeDataRoot).toBe(expectedRuntimeDataRoot)
+    expect(resolvedPaths.stateFile).toBe(path.join(expectedRuntimeDataRoot, "state.json"))
   })
 
   it("builds versioned extracted runtime roots beneath runtime-data/runtimeComponents", () => {
