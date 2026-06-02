@@ -931,28 +931,47 @@ async function runCapture(command, args, cwd) {
   const timeoutMs = isPm2Command(args)
     ? pm2CommandTimeoutMs
     : runtimeCommandTimeoutMs;
-  log(
-    `Running command: ${formatCommand(command, args)} (timeout=${timeoutMs}ms)`
-  );
+  const formattedCommand = formatCommand(command, args);
+  const attempts = isNpmSyncCommand(args) ? 3 : 1;
 
-  try {
-    const { stdout, stderr } = await runProcess(command, args, {
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeoutMs
-    });
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     log(
-      `Command completed: ${formatCommand(command, args)}${formatOutputSummary(stdout, stderr)}`
+      `Running command: ${formattedCommand} (timeout=${timeoutMs}ms, attempt=${attempt}/${attempts})`
     );
-    return stdout;
-  } catch (error) {
-    if (error instanceof ProcessRunError) {
-      throw new Error(formatProcessFailure(error), { cause: error });
-    }
 
-    throw error;
+    try {
+      const { stdout, stderr } = await runProcess(command, args, {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeoutMs
+      });
+      log(
+        `Command completed: ${formattedCommand}${formatOutputSummary(stdout, stderr)}`
+      );
+      return stdout;
+    } catch (error) {
+      if (
+        error instanceof ProcessRunError &&
+        attempt < attempts &&
+        isRetriableNpmSyncNetworkError(error)
+      ) {
+        log(
+          `Retrying npm-sync after transient network failure (attempt ${attempt}/${attempts}): ${truncateOutput(formatProcessFailure(error), 400)}`
+        );
+        await delay(1_000 * attempt);
+        continue;
+      }
+
+      if (error instanceof ProcessRunError) {
+        throw new Error(formatProcessFailure(error), { cause: error });
+      }
+
+      throw error;
+    }
   }
+
+  throw new Error(`Command failed after retries: ${formattedCommand}`);
 }
 
 async function waitForManagedPm2Status(service, expectedStatus, options) {
@@ -1373,6 +1392,17 @@ function getManagedPm2ServiceKey(serviceName) {
 
 function isPm2Command(args) {
   return args.includes("pm2");
+}
+
+function isNpmSyncCommand(args) {
+  return args.includes("npm-sync");
+}
+
+function isRetriableNpmSyncNetworkError(error) {
+  const output = [error?.stderr ?? "", error?.stdout ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  return /(ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|network read)/u.test(output);
 }
 
 function log(message) {

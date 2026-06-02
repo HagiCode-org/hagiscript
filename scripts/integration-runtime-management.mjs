@@ -1195,24 +1195,43 @@ async function runCapture(command, args, cwd) {
   const timeoutMs = isPm2Command(args)
     ? pm2CommandTimeoutMs
     : runtimeCommandTimeoutMs;
-  log(
-    `Running command: ${formatCommand(command, args)} (timeout=${timeoutMs}ms)`
-  );
-  try {
-    const { stdout, stderr } = await runProcess(command, args, {
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeoutMs
-    });
+  const formattedCommand = formatCommand(command, args);
+  const attempts = isNpmSyncCommand(args) ? 3 : 1;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     log(
-      `Command completed: ${formatCommand(command, args)}${formatOutputSummary(stdout, stderr)}`
+      `Running command: ${formattedCommand} (timeout=${timeoutMs}ms, attempt=${attempt}/${attempts})`
     );
-    return stdout;
-  } catch (error) {
-    log(`Command failed: ${summarizeProcessError(error)}`);
-    throw error;
+    try {
+      const { stdout, stderr } = await runProcess(command, args, {
+        cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeoutMs
+      });
+      log(
+        `Command completed: ${formattedCommand}${formatOutputSummary(stdout, stderr)}`
+      );
+      return stdout;
+    } catch (error) {
+      if (
+        hasProcessRunResult(error) &&
+        attempt < attempts &&
+        isRetriableNpmSyncNetworkError(error)
+      ) {
+        log(
+          `Retrying npm-sync after transient network failure (attempt ${attempt}/${attempts}): ${truncateOutput(summarizeProcessError(error), 400)}`
+        );
+        await sleep(1_000 * attempt);
+        continue;
+      }
+
+      log(`Command failed: ${summarizeProcessError(error)}`);
+      throw error;
+    }
   }
+
+  throw new Error(`Command failed after retries: ${formattedCommand}`);
 }
 
 async function waitForManagedPm2Status(service, expectedStatus, options) {
@@ -1649,6 +1668,21 @@ async function runStage(name, action) {
 
 function isPm2Command(args) {
   return args.includes("pm2");
+}
+
+function isNpmSyncCommand(args) {
+  return args.includes("npm-sync");
+}
+
+function hasProcessRunResult(error) {
+  return typeof error?.result?.command === "string" && Array.isArray(error?.result?.args);
+}
+
+function isRetriableNpmSyncNetworkError(error) {
+  const output = [error?.stderr ?? "", error?.stdout ?? ""]
+    .filter(Boolean)
+    .join("\n");
+  return /(ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|ECONNREFUSED|network read)/u.test(output);
 }
 
 function isManagedPm2Service(serviceName) {
