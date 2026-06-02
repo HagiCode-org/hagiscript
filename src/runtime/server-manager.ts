@@ -1332,8 +1332,7 @@ async function selectServerArchiveFromDirectory(
 
 async function extractManagedServerArchive(
   archivePath: string,
-  extractRoot: string,
-  _runner: CommandRunner
+  extractRoot: string
 ): Promise<void> {
   try {
     await extractZipArchive(archivePath, extractRoot)

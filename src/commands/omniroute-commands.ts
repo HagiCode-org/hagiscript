@@ -57,7 +57,7 @@ export function registerDedicatedComponentCommand(
 
   group.on("command:*", (operands: string[]) => {
     group.error(
-      `Unsupported ${component} action \"${operands[0] ?? ""}\". Supported actions: ${supportedActions.join(", ")}.`,
+      `Unsupported ${component} action "${operands[0] ?? ""}". Supported actions: ${supportedActions.join(", ")}.`,
       { exitCode: 1 }
     )
   })

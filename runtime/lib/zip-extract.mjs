@@ -1,4 +1,5 @@
 import extractZip from "extract-zip"
+import process from "node:process"
 import { resolve } from "node:path"
 import { spawn } from "node:child_process"
 

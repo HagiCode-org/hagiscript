@@ -1116,12 +1116,6 @@ function assertMissingPath(targetPath) {
   }
 }
 
-function assertEqual(actual, expected, label) {
-  if (actual !== expected) {
-    throw new Error(`Expected ${label} to equal ${expected}, got ${actual}`);
-  }
-}
-
 function delay(ms) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }

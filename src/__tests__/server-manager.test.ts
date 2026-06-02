@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { parse as parseYaml } from "yaml"
 import { describe, expect, it, vi } from "vitest"
 import { createZipArchive } from "./archive-test-utils.js"
 import {
@@ -172,6 +171,7 @@ npmSync:
 
   it("keeps dependency starts ahead of the managed server when PM2 instances are recreated", async () => {
     const runtimeRoot = await mkdtemp(path.join(tmpdir(), "hagiscript-server-runtime-root-"))
+    const manifestPath = await writeManagedServerTestManifest(runtimeRoot)
     const runtimeDataRoot = path.join(runtimeRoot, "runtime-data", "server")
     const configPath = path.join(runtimeDataRoot, "config", "server-config.json")
     const pm2Module = await import("../runtime/pm2-manager.js")
@@ -198,29 +198,30 @@ npmSync:
         omniroute: { status: "installed", version: "3.6.9", type: "bundled-runtime" }
       })
 
-      await startManagedServer({ runtimeRoot })
+      await startManagedServer({ manifestPath, runtimeRoot })
       await resolveManagedServerStartupEnvironment({
+        manifestPath,
         runtimeRoot,
         instanceName: "demo"
       })
 
       expect(runManagedPm2Command).toHaveBeenCalledTimes(3)
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(1, {
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "code-server",
         action: "start",
         nameIdentifierValue: undefined
       })
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(2, {
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "omniroute",
         action: "start",
         nameIdentifierValue: undefined
       })
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(3, {
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "server",
         action: "start",
@@ -242,7 +243,7 @@ npmSync:
         }
       })
       expect(resolveManagedPm2Environment).toHaveBeenCalledWith({
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "server",
         nameIdentifierValue: "demo",
@@ -272,6 +273,7 @@ npmSync:
 
   it("skips optional omniroute integration when the component is not installed", async () => {
     const runtimeRoot = await mkdtemp(path.join(tmpdir(), "hagiscript-server-runtime-root-"))
+    const manifestPath = await writeManagedServerTestManifest(runtimeRoot)
     const runtimeDataRoot = path.join(runtimeRoot, "runtime-data", "server")
     const configPath = path.join(runtimeDataRoot, "config", "server-config.json")
     const pm2Module = await import("../runtime/pm2-manager.js")
@@ -295,18 +297,18 @@ npmSync:
         omniroute: { status: "not-installed", version: null, type: "bundled-runtime" }
       })
 
-      await startManagedServer({ runtimeRoot })
+      await startManagedServer({ manifestPath, runtimeRoot })
 
       expect(runManagedPm2Command).toHaveBeenCalledTimes(2)
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(1, {
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "code-server",
         action: "start",
         nameIdentifierValue: undefined
       })
       expect(runManagedPm2Command).toHaveBeenNthCalledWith(2, {
-        manifestPath: undefined,
+        manifestPath,
         runtimeRoot,
         service: "server",
         action: "start",
@@ -331,6 +333,7 @@ npmSync:
 
   it("resolves managed server environment details inside hagiscript", async () => {
     const runtimeRoot = await mkdtemp(path.join(tmpdir(), "hagiscript-server-runtime-root-"))
+    const manifestPath = await writeManagedServerTestManifest(runtimeRoot)
     const configPath = path.join(runtimeRoot, "runtime-data", "server", "config", "server-config.json")
     const sharedDataRoot = path.dirname(path.dirname(configPath))
     const serverConfigModule = await import("../runtime/server-config.js")
@@ -351,6 +354,7 @@ npmSync:
       })
 
       const result = await resolveManagedServerEnvironment({
+        manifestPath,
         runtimeRoot
       })
 
@@ -1016,7 +1020,8 @@ components:
     const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-server-remove-active-"))
     const runtimeRoot = path.join(directory, "runtime-root")
     const installPath = path.join(runtimeRoot, "server", "versions", "1.2.3")
-    const statePath = path.join(runtimeRoot, "server-data", "versions-state.json")
+    const statePath = path.join(runtimeRoot, "runtime-data", "server", "versions-state.json")
+    const manifestPath = await writeManagedServerTestManifest(runtimeRoot)
 
     await mkdir(path.join(installPath, "lib"), { recursive: true })
     await mkdir(path.dirname(statePath), { recursive: true })
@@ -1051,6 +1056,7 @@ components:
     try {
       await expect(
         removeManagedServerInstalledVersion({
+          manifestPath,
           runtimeRoot,
           version: "1.2.3"
         })
@@ -1067,7 +1073,8 @@ components:
     const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-server-remove-retry-"))
     const runtimeRoot = path.join(directory, "runtime-root")
     const installPath = path.join(runtimeRoot, "server", "versions", "1.2.3")
-    const statePath = path.join(runtimeRoot, "server-data", "versions-state.json")
+    const statePath = path.join(runtimeRoot, "runtime-data", "server", "versions-state.json")
+    const manifestPath = await writeManagedServerTestManifest(runtimeRoot)
     const removeDirectoryFn = vi.fn<typeof rm>(async (targetPath, options) => {
       if (removeDirectoryFn.mock.calls.length < 3) {
         throw Object.assign(new Error("locked"), { code: "EBUSY" })
@@ -1108,6 +1115,7 @@ components:
 
     try {
       const result = await removeManagedServerInstalledVersion({
+        manifestPath,
         runtimeRoot,
         version: "1.2.3",
         removeDirectoryFn,
@@ -1203,28 +1211,74 @@ async function writeRuntimeStateFixture(
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8")
 }
 
-async function readRuntimeManifestFixture(
-  manifestPath: string | undefined
-): Promise<{ runtime: { name: string; version: string }; paths: { runtimeRoot: string } }> {
-  if (!manifestPath) {
-    return {
-      runtime: { name: "fixture-runtime", version: "1.0.0" },
-      paths: { runtimeRoot: "~/.hagicode/runtime" }
-    }
-  }
+async function writeManagedServerTestManifest(runtimeRoot: string): Promise<string> {
+  const manifestPath = path.join(runtimeRoot, "manifest.yaml")
+  await mkdir(runtimeRoot, { recursive: true })
+  await writeFile(
+    manifestPath,
+    `runtime:
+  name: "fixture-runtime"
+  version: "1.0.0"
+paths:
+  runtimeRoot: "${runtimeRoot.replaceAll("\\", "/")}"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
+  serverDataRoot: "runtime-data/server"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node/runtime"
+  dotnetRuntime: "components/dotnet/runtime"
+  vendoredRoot: "components/bundled"
+phases:
+  install:
+    order: ["node", "dotnet", "server", "omniroute", "code-server"]
+  remove:
+    order: ["server", "code-server", "omniroute", "dotnet", "node"]
+  update:
+    order: ["node", "dotnet", "server", "omniroute", "code-server"]
+components:
+  - name: "node"
+    type: "runtime"
+    installScript: "${manifestPath.replaceAll("\\", "/")}"
+  - name: "dotnet"
+    type: "runtime"
+    installScript: "${manifestPath.replaceAll("\\", "/")}"
+  - name: "omniroute"
+    type: "bundled-runtime"
+    required: false
+    runtimeDataDir: "services/omniroute"
+    lifecycleDependencies: ["node"]
+    installScript: "${manifestPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "fixture-omniroute"
+  - name: "code-server"
+    type: "bundled-runtime"
+    required: false
+    runtimeDataDir: "services/code-server"
+    lifecycleDependencies: ["node"]
+    installScript: "${manifestPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "fixture-code-server"
+  - name: "server"
+    type: "released-service"
+    runtimeDataDir: "services/server"
+    lifecycleDependencies: ["node", "dotnet"]
+    installScript: "${manifestPath.replaceAll("\\", "/")}"
+    pm2:
+      appName: "fixture-server"
+    releasedService:
+      dllPath: "lib/PCode.Web.dll"
+      workingDirectory: "lib"
+`,
+    "utf8"
+  )
 
-  const parsed = parseYaml(await readFile(manifestPath, "utf8")) as {
-    runtime?: { name?: string; version?: string }
-    paths?: { runtimeRoot?: string }
-  }
-
-  return {
-    runtime: {
-      name: parsed.runtime?.name ?? "fixture-runtime",
-      version: parsed.runtime?.version ?? "1.0.0"
-    },
-    paths: {
-      runtimeRoot: parsed.paths?.runtimeRoot ?? "~/.hagicode/runtime"
-    }
-  }
+  return manifestPath
 }
