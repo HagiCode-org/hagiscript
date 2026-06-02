@@ -1392,23 +1392,17 @@ function assertVendoredAssetMatchesArchiveFormat(marker, label) {
 
   const assetName = marker.vendoredAssetName;
   const archiveFormat = marker.archiveFormat;
-  if (archiveFormat === "7z") {
-    assert(
-      assetName.endsWith(".7z"),
-      `Expected ${label} to end with .7z. Marker: ${JSON.stringify(marker, null, 2)}`
-    );
-    return;
+  const expectedExtension =
+    archiveFormat === "7z" ? ".7z" : archiveFormat === "zip" ? ".zip" : archiveFormat === "tar.gz" ? ".tar.gz" : null;
+
+  if (!expectedExtension) {
+    throw new Error(`Unsupported archive format ${archiveFormat} for ${label}: ${JSON.stringify(marker, null, 2)}`);
   }
 
-  if (archiveFormat === "tar.gz") {
-    assert(
-      assetName.endsWith(".tar.gz"),
-      `Expected ${label} to end with .tar.gz. Marker: ${JSON.stringify(marker, null, 2)}`
-    );
-    return;
-  }
-
-  throw new Error(`Unsupported archive format ${archiveFormat} for ${label}: ${JSON.stringify(marker, null, 2)}`);
+  assert(
+    assetName.endsWith(expectedExtension),
+    `Expected ${label} to end with ${expectedExtension}. Marker: ${JSON.stringify(marker, null, 2)}`
+  );
 }
 
 async function prepareReleasedServerPayload(options) {
