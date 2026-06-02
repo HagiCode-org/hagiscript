@@ -82,6 +82,8 @@ try {
     const releasedServerPort = enableReleasedServerTest
       ? await getAvailablePort()
       : null;
+    manifest.paths.runtimeDataRoot = "runtime-data";
+    manifest.paths.serverDataRoot = "runtime-data/server";
     manifest.components = manifest.components
       .filter((component) => componentNames.has(component.name))
       .map((component) => {
@@ -134,7 +136,7 @@ try {
         "runtime",
         "install",
         "--from-manifest",
-        manifestPath,
+        pm2ManifestPath,
         "--runtime-root",
         managedRoot,
         "--components",
@@ -165,7 +167,7 @@ try {
         "runtime",
         "state",
         "--from-manifest",
-        manifestPath,
+        pm2ManifestPath,
         "--runtime-root",
         managedRoot,
         "--json"
@@ -229,8 +231,8 @@ try {
       if (!dotnet || dotnet.status !== "installed") {
         throw new Error(`Expected dotnet to be installed for released-server validation: ${stdout}`);
       }
-    } else if (!dotnet || dotnet.status !== "not-installed") {
-      throw new Error(`Expected dotnet to remain not-installed when released-server validation is disabled: ${stdout}`);
+    } else if (dotnet && dotnet.status !== "not-installed") {
+      throw new Error(`Expected dotnet to be absent or remain not-installed when released-server validation is disabled: ${stdout}`);
     }
 
     assertPathsSeparated(
@@ -363,12 +365,12 @@ try {
 
     assertFile(omnirouteConfig);
     assertFile(codeServerConfig);
-    assertFile(omnirouteArchive);
-    assertFile(codeServerArchive);
-    assertMissingPath(omnirouteBin);
-    assertMissingPath(codeServerBin);
-    assertMissingPath(omnirouteCurrentRoot);
-    assertMissingPath(codeServerCurrentRoot);
+    assertMissingPath(omnirouteArchive);
+    assertMissingPath(codeServerArchive);
+    assertFile(omnirouteBin);
+    assertFile(codeServerBin);
+    assertFile(path.join(omnirouteCurrentRoot, "bin", "omniroute.mjs"));
+    assertFile(path.join(codeServerCurrentRoot, "out", "node", "entry.js"));
     if (enableReleasedServerTest) {
       assertFile(dotnetManifest);
       assertFile(dotnetExecutable);
@@ -437,52 +439,52 @@ try {
     );
     assertEqual(
       omnirouteMarker.bundledInstallMode,
-      "archive-7z-only",
-      "omniroute archive-only marker mode"
+      "extract",
+      "omniroute extracted marker mode"
     );
     assertEqual(
       codeServerMarker.bundledInstallMode,
-      "archive-7z-only",
-      "code-server archive-only marker mode"
+      "extract",
+      "code-server extracted marker mode"
     );
     assertEqual(
       omnirouteMarker.archivePath,
-      omnirouteArchive,
-      "omniroute archive marker path"
+      null,
+      "omniroute extracted archive marker path"
     );
     assertEqual(
       codeServerMarker.archivePath,
-      codeServerArchive,
-      "code-server archive marker path"
+      null,
+      "code-server extracted archive marker path"
     );
     assertEqual(
       omnirouteMarker.wrapperPath,
-      null,
-      "omniroute archive-only wrapper marker"
+      path.join(omnirouteCurrentRoot, process.platform === "win32" ? "omniroute.cmd" : "omniroute.sh"),
+      "omniroute extracted wrapper marker"
     );
     assertEqual(
       codeServerMarker.wrapperPath,
-      null,
-      "code-server archive-only wrapper marker"
+      path.join(codeServerCurrentRoot, "bin", process.platform === "win32" ? "code-server.cmd" : "code-server"),
+      "code-server extracted wrapper marker"
     );
-    assert(
-      typeof omnirouteMarker.vendoredAssetName === "string" &&
-        omnirouteMarker.vendoredAssetName.endsWith(".7z"),
-      `Expected omniroute vendored asset to be a 7z archive. Marker: ${JSON.stringify(omnirouteMarker, null, 2)}`
+    assertVendoredAssetMatchesArchiveFormat(
+      omnirouteMarker,
+      "omniroute vendored asset metadata"
     );
-    assert(
-      typeof codeServerMarker.vendoredAssetName === "string" &&
-        codeServerMarker.vendoredAssetName.endsWith(".7z"),
-      `Expected code-server vendored asset to be a 7z archive. Marker: ${JSON.stringify(codeServerMarker, null, 2)}`
+    assertVendoredAssetMatchesArchiveFormat(
+      codeServerMarker,
+      "code-server vendored asset metadata"
     );
 
     archiveOnlyInstallLines = [
-      `- Omniroute archive: ${omnirouteArchive}`,
-      `- Code-server archive: ${codeServerArchive}`,
+      `- Omniroute current root: ${omnirouteCurrentRoot}`,
+      `- Code-server current root: ${codeServerCurrentRoot}`,
+      `- Omniroute wrapper: ${omnirouteBin}`,
+      `- Code-server wrapper: ${codeServerBin}`,
       `- Omniroute vendored asset: ${omnirouteMarker.vendoredAssetName}`,
       `- Code-server vendored asset: ${codeServerMarker.vendoredAssetName}`,
-      "- Verified bundled runtime install uses archive-7z-only mode for omniroute and code-server",
-      "- Verified config.yaml is materialized while wrapper and extracted current payload stay absent"
+      "- Verified bundled runtime install uses extract mode for omniroute and code-server",
+      "- Verified config, wrapper, and extracted current payload are all materialized under separated runtime paths"
     ];
 
     installedTreeLines = renderDirectoryTree(managedRoot);
@@ -958,7 +960,7 @@ try {
         "runtime",
         "remove",
         "--from-manifest",
-        manifestPath,
+        pm2ManifestPath,
         "--runtime-root",
         managedRoot,
         "--components",
@@ -1361,6 +1363,33 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function assertVendoredAssetMatchesArchiveFormat(marker, label) {
+  assert(
+    typeof marker?.vendoredAssetName === "string" && marker.vendoredAssetName.length > 0,
+    `Expected ${label} to include a vendored asset name. Marker: ${JSON.stringify(marker, null, 2)}`
+  );
+
+  const assetName = marker.vendoredAssetName;
+  const archiveFormat = marker.archiveFormat;
+  if (archiveFormat === "7z") {
+    assert(
+      assetName.endsWith(".7z"),
+      `Expected ${label} to end with .7z. Marker: ${JSON.stringify(marker, null, 2)}`
+    );
+    return;
+  }
+
+  if (archiveFormat === "tar.gz") {
+    assert(
+      assetName.endsWith(".tar.gz"),
+      `Expected ${label} to end with .tar.gz. Marker: ${JSON.stringify(marker, null, 2)}`
+    );
+    return;
+  }
+
+  throw new Error(`Unsupported archive format ${archiveFormat} for ${label}: ${JSON.stringify(marker, null, 2)}`);
 }
 
 async function prepareReleasedServerPayload(options) {

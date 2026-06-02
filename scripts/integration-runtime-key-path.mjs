@@ -83,6 +83,8 @@ try {
     const releasedServerPort = enableReleasedServerTest
       ? await getAvailablePort()
       : null;
+    manifest.paths.runtimeDataRoot = "runtime-data";
+    manifest.paths.serverDataRoot = "runtime-data/server";
 
     manifest.components = manifest.components
       .filter((component) => componentNames.has(component.name))
