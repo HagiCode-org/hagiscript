@@ -63,7 +63,7 @@ export interface RuntimeManifestPaths {
   npmPrefix: string
   nodeRuntime: string
   dotnetRuntime: string
-  vendoredRoot: string
+  vendoredRoot?: string
 }
 
 export interface RuntimePm2ServiceDefinition {
@@ -281,7 +281,9 @@ function validateRuntimeManifest(
     npmPrefix: readRequiredString(pathsObject.npmPrefix, "paths.npmPrefix", errors),
     nodeRuntime: readRequiredString(pathsObject.nodeRuntime, "paths.nodeRuntime", errors),
     dotnetRuntime: readRequiredString(pathsObject.dotnetRuntime, "paths.dotnetRuntime", errors),
-    vendoredRoot: readRequiredString(pathsObject.vendoredRoot, "paths.vendoredRoot", errors)
+    vendoredRoot:
+      readOptionalString(pathsObject.vendoredRoot, "paths.vendoredRoot", errors) ??
+      "components/bundled"
   }
   const phases = validateRuntimePhases(phasesObject, errors)
   const components = validateRuntimeComponents(componentValues ?? [], manifestDir, errors)

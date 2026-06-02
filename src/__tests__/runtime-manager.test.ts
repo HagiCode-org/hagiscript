@@ -94,6 +94,47 @@ components:
     await rm(directory, { recursive: true, force: true })
   })
 
+  it("defaults vendoredRoot when the manifest omits it", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-default-vendored-root-"))
+    const manifestPath = path.join(directory, "default-vendored-root.yaml")
+
+    await writeFile(
+      manifestPath,
+        `runtime:
+  name: default-vendored-root
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node"
+  dotnetRuntime: "components/dotnet"
+phases:
+  install:
+    order: ["alpha"]
+  remove:
+    order: ["alpha"]
+  update:
+    order: ["alpha"]
+components:
+  - name: "alpha"
+    type: "runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+`,
+      "utf8"
+    )
+
+    const manifest = await loadRuntimeManifest({ manifestPath })
+
+    expect(manifest.paths.vendoredRoot).toBe("components/bundled")
+    await rm(directory, { recursive: true, force: true })
+  })
+
   it("loads optional embedded npmSync configuration from the runtime manifest", async () => {
     const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
 
