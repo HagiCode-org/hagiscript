@@ -31,6 +31,7 @@ export interface RuntimeScriptExecutionContext {
   downloadCacheDir?: string
   npmRegistryMirror?: string
   pm2VersionOverride?: string
+  useManagedNodeRuntime?: boolean
   runner?: CommandRunner
 }
 
@@ -60,6 +61,7 @@ export interface ManagedRuntimeEnvironmentContext {
   pm2VersionOverride?: string
   scriptBasename?: string
   includeNpmConfigPrefix?: boolean
+  useManagedNodeRuntime?: boolean
 }
 
 export interface RuntimeScriptExecutionResult {
@@ -193,7 +195,8 @@ function buildRuntimeScriptEnvironment(
     verbose: context.verbose,
     npmRegistryMirror: context.npmRegistryMirror,
     pm2VersionOverride: context.pm2VersionOverride,
-    scriptBasename: basename(scriptPathForEnv(context.component, context.phase))
+    scriptBasename: basename(scriptPathForEnv(context.component, context.phase)),
+    useManagedNodeRuntime: context.useManagedNodeRuntime
   })
 }
 
@@ -201,7 +204,10 @@ export function buildManagedRuntimeEnvironment(
   context: ManagedRuntimeEnvironmentContext,
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
-  const runtimeExecutables = getRuntimeExecutablePaths(context.paths.nodeRuntime)
+  const useManagedNodeRuntime = context.useManagedNodeRuntime !== false
+  const runtimeExecutables = useManagedNodeRuntime
+    ? getRuntimeExecutablePaths(context.paths.nodeRuntime)
+    : null
   const bundledNpmModulesDirectory = getManagedNpmModulesDirectory(context.paths.npmPrefix)
   const managedNpmPackagesPrefix = getManagedNpmPackagesPrefix(context.paths)
   const managedNpmBinDirectory = getManagedNpmBinDirectory(managedNpmPackagesPrefix)
@@ -266,9 +272,6 @@ export function buildManagedRuntimeEnvironment(
         managedNpmModulesDirectory,
         bundledNpmModulesDirectory
       ]),
-      NODE: runtimeExecutables.nodePath,
-      npm_node_execpath: runtimeExecutables.nodePath,
-      npm_execpath: runtimeExecutables.npmPath,
       HAGICODE_AGENT_CLI_PATH: managedNpmBinDirectory,
       HAGICODE_NPM_GLOBAL_PATH: managedNpmPackagesPrefix,
       HAGICODE_NPM_GLOBAL_PREFIX: managedNpmPackagesPrefix,
@@ -300,10 +303,18 @@ export function buildManagedRuntimeEnvironment(
         : {}),
       ...(context.scriptBasename
         ? { HAGISCRIPT_RUNTIME_SCRIPT_BASENAME: context.scriptBasename }
+        : {}),
+      ...(runtimeExecutables
+        ? {
+            NODE: runtimeExecutables.nodePath,
+            npm_node_execpath: runtimeExecutables.nodePath,
+            npm_execpath: runtimeExecutables.npmPath
+          }
         : {})
     },
     getManagedRuntimePathEntries(context.paths, {
-      includeRuntimeBin: shouldIncludeManagedRuntimeBin(context.component)
+      includeRuntimeBin: shouldIncludeManagedRuntimeBin(context.component),
+      includeManagedNodeRuntime: useManagedNodeRuntime
     })
   )
 }
@@ -368,11 +379,14 @@ export function getManagedRuntimePathEntries(
   paths: ResolvedRuntimePaths,
   options: {
     includeRuntimeBin?: boolean
+    includeManagedNodeRuntime?: boolean
   } = {}
 ): string[] {
-  const nodeExecutables = getRuntimeExecutablePaths(paths.nodeRuntime)
+  const nodeExecutables = options.includeManagedNodeRuntime === false
+    ? null
+    : getRuntimeExecutablePaths(paths.nodeRuntime)
   return [
-    dirname(nodeExecutables.nodePath),
+    ...(nodeExecutables ? [dirname(nodeExecutables.nodePath)] : []),
     getManagedNpmBinDirectory(getManagedNpmPackagesPrefix(paths)),
     getManagedNpmBinDirectory(paths.npmPrefix),
     ...(options.includeRuntimeBin === false ? [] : [paths.bin])

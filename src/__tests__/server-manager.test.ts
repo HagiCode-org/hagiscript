@@ -154,6 +154,7 @@ npmSync:
       expect(ensureManagedPm2Package).toHaveBeenCalledWith(
         expect.objectContaining({ manifestPath }),
         expect.objectContaining({ root: runtimeRoot }),
+        expect.any(Object),
         {
           npmRegistryMirror: undefined,
           pm2VersionOverride: "^7.0.0"

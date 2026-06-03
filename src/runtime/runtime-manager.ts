@@ -27,7 +27,9 @@ import {
 import {
   loadRuntimeManifest,
   type LoadedRuntimeManifest,
+  resolveRuntimeComponentPolicy,
   type RuntimeComponentDefinition,
+  type ResolvedRuntimeComponentPolicy,
   type RuntimeLifecyclePhase
 } from "./runtime-manifest.js"
 import {
@@ -55,6 +57,8 @@ export interface RuntimeLifecycleOptions {
   manifestPath?: string
   runtimeRoot?: string
   components?: readonly string[]
+  consumer?: string
+  dependencyManagementMode?: string
   dryRun?: boolean
   force?: boolean
   purge?: boolean
@@ -71,9 +75,15 @@ export interface RuntimeLifecycleOptions {
 export interface RuntimePlannedAction {
   componentName: string
   phase: RuntimeLifecyclePhase
-  strategy: "builtin" | "script" | "fallback-install" | "fallback-cleanup"
+  strategy:
+    | "builtin"
+    | "script"
+    | "fallback-install"
+    | "fallback-cleanup"
+    | "skipped-by-policy"
   scriptPath?: string
   reason?: string
+  policy?: ResolvedRuntimeComponentPolicy
 }
 
 export interface RuntimeLifecycleResult {
@@ -109,6 +119,7 @@ export interface RuntimeStateReport {
     name: string
     type: string
     required: boolean
+    effectiveRequired: boolean
     status: RuntimeComponentStatus
     version: string | null
     runtimeDataHome: string | null
@@ -168,6 +179,16 @@ export async function runRuntimeLifecycle(
     }
 
     for (const item of skipped) {
+      if (
+        plan.some(
+          (action) =>
+            action.componentName === item.componentName &&
+            action.strategy === "skipped-by-policy"
+        )
+      ) {
+        continue
+      }
+
       logger(`Skip: ${item.componentName} (${item.reason})`)
     }
 
@@ -216,6 +237,7 @@ export async function runRuntimeLifecycle(
           component,
           manifest,
           paths,
+          state,
           options,
           logFilePath
         )
@@ -277,7 +299,7 @@ export async function runRuntimeLifecycle(
     }
 
     if (phase !== "remove" && shouldEnsureManagedPm2(plan, manifest)) {
-      const pm2Result = await ensureManagedPm2Package(manifest, paths, options)
+      const pm2Result = await ensureManagedPm2Package(manifest, paths, state, options)
       await writeRuntimeLog(
         logFilePath,
         pm2Result.changed
@@ -310,7 +332,10 @@ export async function runRuntimeLifecycle(
 }
 
 export async function queryRuntimeState(
-  options: Pick<RuntimeLifecycleOptions, "manifestPath" | "runtimeRoot">
+  options: Pick<
+    RuntimeLifecycleOptions,
+    "manifestPath" | "runtimeRoot" | "consumer" | "dependencyManagementMode"
+  >
 ): Promise<RuntimeStateReport> {
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
@@ -321,6 +346,7 @@ export async function queryRuntimeState(
   )
   const components = manifest.components.map((component) => {
     const entry = state.components[component.name]
+    const effectiveRequired = resolveReportedComponentRequirement(component, entry, options)
     const fallbackProgramPaths = [getComponentManagedRoot(paths, component.name)]
     const runtimeDataHome = getComponentRuntimeDataHome(
       paths,
@@ -347,6 +373,7 @@ export async function queryRuntimeState(
       name: component.name,
       type: component.type,
       required: component.required,
+      effectiveRequired,
       status: entry?.status ?? "not-installed",
       version: entry?.version ?? null,
       runtimeDataHome,
@@ -383,15 +410,41 @@ export async function queryRuntimeState(
       externalDataRoots
     },
     ready: components
-      .filter((component) => component.required)
+      .filter((component) => component.effectiveRequired)
       .every(
         (component) =>
-          component.status === "installed" &&
+          (component.status === "installed" || component.status === "skipped-by-policy") &&
           (component.details?.releasedServiceReady as boolean | undefined) !== false
       ),
     components,
     lastOperation: state.lastOperation
   }
+}
+
+function resolveReportedComponentRequirement(
+  component: RuntimeComponentDefinition,
+  entry: RuntimeComponentState | undefined,
+  options: Pick<RuntimeLifecycleOptions, "consumer" | "dependencyManagementMode">
+): boolean {
+  if (options.consumer || options.dependencyManagementMode) {
+    return resolveRuntimeComponentPolicy(component, {
+      consumer: options.consumer,
+      dependencyManagementMode: options.dependencyManagementMode
+    }).required
+  }
+
+  if (
+    entry?.status === "skipped-by-policy" &&
+    entry.details?.policyStatus === "skipped-by-policy"
+  ) {
+    return false
+  }
+
+  return component.required
+}
+
+function shouldUseManagedNodeRuntime(state: RuntimeState): boolean {
+  return state.components.node?.status !== "skipped-by-policy"
 }
 
 export function renderRuntimeStateText(report: RuntimeStateReport): string {
@@ -411,7 +464,7 @@ export function renderRuntimeStateText(report: RuntimeStateReport): string {
 
   for (const component of report.components) {
     lines.push(
-      `- ${component.name}: ${component.status} version=${component.version ?? "n/a"} program=${component.programPaths.join("|") || "n/a"} data=${component.externalDataPaths.join("|") || "n/a"}`
+      `- ${component.name}: ${component.status} required=${component.effectiveRequired ? "yes" : "no"} version=${component.version ?? "n/a"} program=${component.programPaths.join("|") || "n/a"} data=${component.externalDataPaths.join("|") || "n/a"}`
     )
     if (component.runtimeDataHome) {
       lines.push(`  runtime-data-home=${component.runtimeDataHome}`)
@@ -443,6 +496,8 @@ function stateDetailsFromComponent(component: RuntimeStateReport["components"][n
   const summary =
     typeof details.readinessSummary === "string"
       ? details.readinessSummary
+      : typeof details.policySummary === "string"
+        ? details.policySummary
       : typeof details.cleanupSummary === "string"
         ? details.cleanupSummary
         : null
@@ -478,6 +533,25 @@ export function planRuntimeLifecycle(
       throw new RuntimeLifecycleError(`Unknown runtime component ${componentName}`)
     }
 
+    const policy = resolveRuntimeComponentPolicy(component, {
+      consumer: options.consumer,
+      dependencyManagementMode: options.dependencyManagementMode
+    })
+    if (phase !== "remove" && component.required && !policy.required) {
+      skipped.push({
+        componentName: component.name,
+        reason: policy.reason ?? "optional policy matched"
+      })
+      plan.push({
+        componentName: component.name,
+        phase,
+        strategy: "skipped-by-policy",
+        reason: policy.reason,
+        policy
+      })
+      continue
+    }
+
     if (phase === "update" && !options.force) {
       const currentState = state.components[component.name]
       if (currentState?.status === "installed" && !componentNeedsUpdate(component, currentState)) {
@@ -500,6 +574,7 @@ async function executeRuntimeAction(
   component: RuntimeComponentDefinition,
   manifest: LoadedRuntimeManifest,
   paths: ResolvedRuntimePaths,
+  state: RuntimeState,
   options: RuntimeLifecycleOptions,
   logFilePath: string
 ): Promise<RuntimeComponentState> {
@@ -510,6 +585,17 @@ async function executeRuntimeAction(
     component.runtimeDataDir
   )
 
+  if (action.strategy === "skipped-by-policy") {
+    return executeSkippedPolicyAction(
+      action,
+      component,
+      paths,
+      componentRoot,
+      componentConfigDir,
+      logFilePath
+    )
+  }
+
   switch (component.name) {
     case "node":
       return executeNodeComponent(action.phase, component, paths, options, logFilePath)
@@ -519,11 +605,86 @@ async function executeRuntimeAction(
         component,
         manifest,
         paths,
+        state,
         componentRoot,
         componentConfigDir,
         options,
         logFilePath
       )
+  }
+}
+
+async function executeSkippedPolicyAction(
+  action: RuntimePlannedAction,
+  component: RuntimeComponentDefinition,
+  paths: ResolvedRuntimePaths,
+  componentRoot: string,
+  componentConfigDir: string,
+  logFilePath: string
+): Promise<RuntimeComponentState> {
+  if (component.name === "node") {
+    await rm(paths.nodeRuntime, { recursive: true, force: true })
+    await removeWrapper(paths.bin, "node")
+    await removeWrapper(paths.bin, "npm")
+  }
+
+  const componentDataHome = getComponentRuntimeDataHome(
+    paths,
+    component.name,
+    component.runtimeDataDir
+  )
+  const componentLogsDir = getComponentLogsDirectory(
+    paths,
+    component.name,
+    component.runtimeDataDir
+  )
+  const componentPm2Home = component.pm2
+    ? getComponentPm2Home(
+        paths,
+        component.name,
+        component.runtimeDataDir,
+        component.pm2.pm2Home
+      )
+    : null
+  const managedProgramPaths =
+    component.name === "node" ? [paths.nodeRuntime] : [componentRoot]
+  const managedDataPaths = [
+    componentDataHome,
+    componentConfigDir,
+    componentLogsDir,
+    ...(componentPm2Home ? [componentPm2Home] : [])
+  ]
+  const reason = action.reason ?? "optional policy matched"
+
+  await writeRuntimeLog(logFilePath, `Skipped ${component.name}: ${reason}`)
+
+  return {
+    name: component.name,
+    type: component.type,
+    status: "skipped-by-policy",
+    version: null,
+    managedProgramPaths,
+    managedDataPaths,
+    managedPaths: [...managedProgramPaths, ...managedDataPaths],
+    lastAction: action.phase,
+    lastUpdatedAt: new Date().toISOString(),
+    logFile: logFilePath,
+    details: {
+      policyStatus: "skipped-by-policy",
+      policySummary: reason,
+      ...(action.policy?.matchedRule?.id
+        ? { policyRuleId: action.policy.matchedRule.id }
+        : {}),
+      ...(action.policy?.context.consumer
+        ? { policyConsumer: action.policy.context.consumer }
+        : {}),
+      ...(action.policy?.context.dependencyManagementMode
+        ? {
+            policyDependencyManagementMode:
+              action.policy.context.dependencyManagementMode
+          }
+        : {})
+    }
   }
 }
 
@@ -610,6 +771,7 @@ async function executeScriptComponent(
   component: RuntimeComponentDefinition,
   manifest: LoadedRuntimeManifest,
   paths: ResolvedRuntimePaths,
+  state: RuntimeState,
   componentRoot: string,
   componentConfigDir: string,
   options: RuntimeLifecycleOptions,
@@ -637,7 +799,8 @@ async function executeScriptComponent(
       downloadCache: options.downloadCache,
       downloadCacheDir: options.downloadCacheDir,
       npmRegistryMirror: options.npmRegistryMirror,
-      pm2VersionOverride: options.pm2VersionOverride
+      pm2VersionOverride: options.pm2VersionOverride,
+      useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
     })
 
     if (action.phase !== "remove" && component.scripts.configure) {
@@ -654,7 +817,8 @@ async function executeScriptComponent(
         downloadCache: options.downloadCache,
         downloadCacheDir: options.downloadCacheDir,
         npmRegistryMirror: options.npmRegistryMirror,
-        pm2VersionOverride: options.pm2VersionOverride
+        pm2VersionOverride: options.pm2VersionOverride,
+        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
       })
     }
 
@@ -672,7 +836,8 @@ async function executeScriptComponent(
         downloadCache: options.downloadCache,
         downloadCacheDir: options.downloadCacheDir,
         npmRegistryMirror: options.npmRegistryMirror,
-        pm2VersionOverride: options.pm2VersionOverride
+        pm2VersionOverride: options.pm2VersionOverride,
+        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
       })
     }
   } else {
@@ -881,6 +1046,7 @@ function resolveScriptForAction(
     case "fallback-install":
       return action.scriptPath ?? component.scripts.install
     case "builtin":
+    case "skipped-by-policy":
     case "fallback-cleanup":
       return null
   }
@@ -919,10 +1085,14 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
   export async function ensureManagedPm2Package(
     manifest: LoadedRuntimeManifest,
     paths: ResolvedRuntimePaths,
+    state: RuntimeState,
     options: Pick<RuntimeLifecycleOptions, "npmRegistryMirror" | "pm2VersionOverride"> = {}
   ): Promise<ManagedPm2EnsureResult> {
-    const verification = await verifyNodeRuntime(paths.nodeRuntime)
-    if (!verification.valid || !verification.npmPath) {
+    const useManagedNodeRuntime = shouldUseManagedNodeRuntime(state)
+    const verification = useManagedNodeRuntime
+      ? await verifyNodeRuntime(paths.nodeRuntime)
+      : null
+    if (useManagedNodeRuntime && (!verification?.valid || !verification.npmPath)) {
       throw new RuntimeLifecycleError(
         "Managed Node runtime is missing. Install the runtime node component before ensuring pm2."
       )
@@ -932,12 +1102,23 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
     await ensureManagedNpmPrefix(paths.npmPrefix)
 
     const npmOptions: NpmGlobalCommandOptions = {
-      nodePath: verification.nodePath,
+      nodePath: useManagedNodeRuntime ? verification?.nodePath : undefined,
       prefix: paths.npmPrefix,
       registryMirror: options.npmRegistryMirror,
-      env: createManagedNpmInstallEnvironment(paths.nodeRuntime)
+      env: useManagedNodeRuntime
+        ? createManagedNpmInstallEnvironment(paths.nodeRuntime)
+        : process.env
     }
-    const inventoryResult = await listGlobalPackages(verification.npmPath, npmOptions)
+    const npmCommand = useManagedNodeRuntime
+      ? verification?.npmPath
+      : resolveHostNpmCommand()
+    if (!npmCommand) {
+      throw new RuntimeLifecycleError(
+        "Host npm is unavailable. Install npm on PATH before using policy-skipped Node runtime components."
+      )
+    }
+
+    const inventoryResult = await listGlobalPackages(npmCommand, npmOptions)
     const installedVersion = parseInstalledGlobalPackageVersion(inventoryResult.stdout, "pm2")
 
     if (installedVersion && isManagedPm2RequirementSatisfied(installedVersion, requirement.range)) {
@@ -949,7 +1130,7 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
       }
     }
 
-    await installGlobalPackage(verification.npmPath, requirement.selector, npmOptions)
+    await installGlobalPackage(npmCommand, requirement.selector, npmOptions)
     return {
       changed: true,
       installedVersion,
@@ -1030,6 +1211,10 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
         process.platform === "win32" ? ";" : ":"
       )
     }
+  }
+
+  function resolveHostNpmCommand(): string {
+    return process.platform === "win32" ? "npm.cmd" : "npm"
   }
 
   function parseInstalledGlobalPackageVersion(

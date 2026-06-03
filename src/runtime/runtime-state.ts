@@ -8,6 +8,7 @@ export type RuntimeComponentStatus =
   | "installed"
   | "removed"
   | "failed"
+  | "skipped-by-policy"
 
 export interface RuntimeComponentState {
   name: string

@@ -80,8 +80,13 @@ export {
 export {
   getDefaultRuntimeManifestPath,
   loadRuntimeManifest,
+  resolveRuntimeComponentPolicy,
   type LoadedRuntimeManifest,
   type RuntimeComponentDefinition,
+  type RuntimeComponentPolicyContext,
+  type RuntimeOptionalComponentPolicy,
+  type RuntimeOptionalComponentPolicyRule,
+  type ResolvedRuntimeComponentPolicy,
   type RuntimeLifecyclePhase,
   type RuntimeManifestPaths,
   type RuntimeReleasedServiceDefinition

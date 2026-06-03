@@ -13,6 +13,8 @@ interface RuntimeBaseOptions {
   fromManifest?: string
   runtimeRoot?: string
   components?: string[]
+  consumer?: string
+  dependencyManagementMode?: string
   verbose?: boolean
   downloadCache?: boolean
   downloadCacheDir?: string
@@ -49,6 +51,11 @@ export function registerRuntimeCommands(program: Command): void {
     .description("install runtime components into a managed runtime root")
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option("--consumer <name>", "identify the active runtime consumer")
+    .option(
+      "--dependency-management-mode <mode>",
+      "identify the dependency-management mode for optional component policy"
+    )
     .option(
       "--components <list>",
       "comma-separated runtime component names to install",
@@ -71,6 +78,11 @@ export function registerRuntimeCommands(program: Command): void {
     .description("remove runtime components from the managed runtime root")
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option("--consumer <name>", "identify the active runtime consumer")
+    .option(
+      "--dependency-management-mode <mode>",
+      "identify the dependency-management mode for optional component policy"
+    )
     .option(
       "--components <list>",
       "comma-separated runtime component names to remove",
@@ -89,6 +101,11 @@ export function registerRuntimeCommands(program: Command): void {
     .description("update installed runtime components")
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option("--consumer <name>", "identify the active runtime consumer")
+    .option(
+      "--dependency-management-mode <mode>",
+      "identify the dependency-management mode for optional component policy"
+    )
     .option(
       "--components <list>",
       "comma-separated runtime component names to update",
@@ -112,12 +129,22 @@ export function registerRuntimeCommands(program: Command): void {
     .description("query the canonical managed runtime state")
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option("--consumer <name>", "identify the active runtime consumer")
+    .option(
+      "--dependency-management-mode <mode>",
+      "identify the dependency-management mode for optional component policy"
+    )
     .option("--json", "emit machine-readable JSON output")
     .action(async (options: RuntimeStateOptions, command: Command) => {
       try {
         const report = await queryRuntimeState({
           manifestPath: validatePathOption(options.fromManifest, "--from-manifest"),
-          runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root")
+          runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root"),
+          consumer: validateLabelOption(options.consumer, "--consumer"),
+          dependencyManagementMode: validateLabelOption(
+            options.dependencyManagementMode,
+            "--dependency-management-mode"
+          )
         })
 
         process.stdout.write(
@@ -140,6 +167,11 @@ async function runLifecycleCommand(
     manifestPath: validatePathOption(options.fromManifest, "--from-manifest"),
     runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root"),
     components: options.components ?? [],
+    consumer: validateLabelOption(options.consumer, "--consumer"),
+    dependencyManagementMode: validateLabelOption(
+      options.dependencyManagementMode,
+      "--dependency-management-mode"
+    ),
     dryRun: options.dryRun ?? false,
     force: options.force ?? false,
     purge: "purge" in options ? options.purge ?? false : false,
@@ -195,6 +227,22 @@ function validatePathOption(
 
   if (normalized.includes("\0")) {
     throw new InvalidArgumentError(`${optionName} contains an invalid null byte.`)
+  }
+
+  return normalized
+}
+
+function validateLabelOption(
+  value: string | undefined,
+  optionName: string
+): string | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new InvalidArgumentError(`${optionName} must be a non-empty string.`)
   }
 
   return normalized

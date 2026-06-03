@@ -12,6 +12,28 @@ export type RuntimeComponentType =
 
 export type RuntimeBundledInstallMode = "extract" | "archive-7z-only"
 
+export interface RuntimeOptionalComponentPolicyRule {
+  id?: string
+  consumers?: string[]
+  dependencyManagementModes?: string[]
+}
+
+export interface RuntimeOptionalComponentPolicy {
+  rules: RuntimeOptionalComponentPolicyRule[]
+}
+
+export interface RuntimeComponentPolicyContext {
+  consumer?: string
+  dependencyManagementMode?: string
+}
+
+export interface ResolvedRuntimeComponentPolicy {
+  required: boolean
+  matchedRule?: RuntimeOptionalComponentPolicyRule
+  reason?: string
+  context: RuntimeComponentPolicyContext
+}
+
 export interface RuntimePackageCatalogEntry {
   id?: string
   packageName: string
@@ -23,6 +45,7 @@ export interface RuntimeComponentDefinition {
   name: string
   type: RuntimeComponentType
   required: boolean
+  optionalPolicy?: RuntimeOptionalComponentPolicy
   source?: string
   version?: string
   channelVersion?: string
@@ -136,6 +159,8 @@ export class RuntimeManifestValidationError extends Error {
   }
 }
 
+const optionalPolicyIdentifierPattern = /^[a-z0-9-]+$/u
+
 const supportedComponentTypes = new Set<RuntimeComponentType>([
   "runtime",
   "package",
@@ -174,6 +199,38 @@ export function getPackageRoot(moduleUrl = import.meta.url): string {
 
 export function getDefaultRuntimeManifestPath(moduleUrl = import.meta.url): string {
   return join(getPackageRoot(moduleUrl), "runtime", "manifest.yaml")
+}
+
+export function resolveRuntimeComponentPolicy(
+  component: Pick<RuntimeComponentDefinition, "required" | "optionalPolicy">,
+  context: RuntimeComponentPolicyContext = {}
+): ResolvedRuntimeComponentPolicy {
+  const normalizedContext = normalizeRuntimeComponentPolicyContext(context)
+
+  if (!component.required) {
+    return {
+      required: false,
+      context: normalizedContext
+    }
+  }
+
+  for (const rule of component.optionalPolicy?.rules ?? []) {
+    if (!runtimeOptionalPolicyRuleMatches(rule, normalizedContext)) {
+      continue
+    }
+
+    return {
+      required: false,
+      matchedRule: rule,
+      reason: describeRuntimeOptionalPolicyRule(rule, normalizedContext),
+      context: normalizedContext
+    }
+  }
+
+  return {
+    required: true,
+    context: normalizedContext
+  }
 }
 
 export async function loadRuntimeManifest(
@@ -515,6 +572,11 @@ function validateRuntimeComponents(
       `components[${index}].releasedService`,
       errors
     )
+    const optionalPolicy = validateRuntimeOptionalComponentPolicy(
+      componentObject.optionalPolicy,
+      `components[${index}].optionalPolicy`,
+      errors
+    )
     const bundledInstallMode = readOptionalBundledInstallMode(
       componentObject.bundledInstallMode,
       `components[${index}].bundledInstallMode`,
@@ -543,6 +605,7 @@ function validateRuntimeComponents(
         `components[${index}].required`,
         errors
       ) ?? true,
+      optionalPolicy,
       source: readOptionalString(componentObject.source, `components[${index}].source`, errors),
       version: readOptionalString(componentObject.version, `components[${index}].version`, errors),
       channelVersion: readOptionalString(
@@ -664,6 +727,70 @@ function readOptionalPm2NameIdentifier(
   return identifier
 }
 
+function validateRuntimeOptionalComponentPolicy(
+  value: unknown,
+  label: string,
+  errors: string[]
+): RuntimeOptionalComponentPolicy | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  const policyObject = toRecord(value, label, errors)
+  const rulesValue = policyObject.rules
+  if (!Array.isArray(rulesValue) || rulesValue.length === 0) {
+    errors.push(`${label}.rules must be a non-empty array`)
+    return undefined
+  }
+
+  const rules = rulesValue.flatMap((ruleValue, ruleIndex) =>
+    validateRuntimeOptionalComponentPolicyRule(
+      ruleValue,
+      `${label}.rules[${ruleIndex}]`,
+      errors
+    )
+  )
+
+  return rules.length > 0
+    ? {
+        rules
+      }
+    : undefined
+}
+
+function validateRuntimeOptionalComponentPolicyRule(
+  value: unknown,
+  label: string,
+  errors: string[]
+): RuntimeOptionalComponentPolicyRule[] {
+  const ruleObject = toRecord(value, label, errors)
+  const consumers = readOptionalStringArray(ruleObject.consumers, `${label}.consumers`, errors)
+  const dependencyManagementModes = readOptionalStringArray(
+    ruleObject.dependencyManagementModes,
+    `${label}.dependencyManagementModes`,
+    errors
+  )
+
+  if (!consumers && !dependencyManagementModes) {
+    errors.push(
+      `${label} must declare at least one of consumers or dependencyManagementModes`
+    )
+  }
+
+  const id = readOptionalString(ruleObject.id, `${label}.id`, errors)
+  if (id && !optionalPolicyIdentifierPattern.test(id)) {
+    errors.push(`${label}.id must match ^[a-z0-9-]+$`)
+  }
+
+  return [
+    {
+      ...(id ? { id } : {}),
+      ...(consumers ? { consumers } : {}),
+      ...(dependencyManagementModes ? { dependencyManagementModes } : {})
+    }
+  ]
+}
+
 function readOptionalBundledInstallMode(
   value: unknown,
   label: string,
@@ -681,6 +808,32 @@ function readOptionalBundledInstallMode(
   }
 
   return installMode
+}
+
+function readOptionalStringArray(
+  value: unknown,
+  label: string,
+  errors: string[]
+): string[] | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    errors.push(`${label} must be a non-empty string array when provided`)
+    return undefined
+  }
+
+  const normalized = value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim())
+
+  if (normalized.length !== value.length) {
+    errors.push(`${label} must be a non-empty string array when provided`)
+    return undefined
+  }
+
+  return Array.from(new Set(normalized))
 }
 
 function validateRuntimeReleasedServiceDefinition(
@@ -777,6 +930,66 @@ function readOptionalBoolean(
   }
 
   return value
+}
+
+function normalizeRuntimeComponentPolicyContext(
+  context: RuntimeComponentPolicyContext
+): RuntimeComponentPolicyContext {
+  return {
+    consumer: normalizePolicySelectorValue(context.consumer),
+    dependencyManagementMode: normalizePolicySelectorValue(
+      context.dependencyManagementMode
+    )
+  }
+}
+
+function runtimeOptionalPolicyRuleMatches(
+  rule: RuntimeOptionalComponentPolicyRule,
+  context: RuntimeComponentPolicyContext
+): boolean {
+  if (rule.consumers?.length) {
+    if (!context.consumer) {
+      return false
+    }
+
+    const normalizedConsumers = rule.consumers.map(normalizePolicySelectorValue)
+    if (!normalizedConsumers.includes(context.consumer)) {
+      return false
+    }
+  }
+
+  if (rule.dependencyManagementModes?.length) {
+    if (!context.dependencyManagementMode) {
+      return false
+    }
+
+    const normalizedModes = rule.dependencyManagementModes.map(normalizePolicySelectorValue)
+    if (!normalizedModes.includes(context.dependencyManagementMode)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function describeRuntimeOptionalPolicyRule(
+  rule: RuntimeOptionalComponentPolicyRule,
+  context: RuntimeComponentPolicyContext
+): string {
+  const selectors = [
+    ...(context.consumer ? [`consumer=${context.consumer}`] : []),
+    ...(context.dependencyManagementMode
+      ? [`dependencyManagementMode=${context.dependencyManagementMode}`]
+      : [])
+  ]
+  const policyId = rule.id ? ` (${rule.id})` : ""
+
+  return `optional policy matched${policyId}${selectors.length > 0 ? `: ${selectors.join(", ")}` : ""}`
+}
+
+function normalizePolicySelectorValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase()
+  return normalized || undefined
 }
 
 function readOptionalObject(

@@ -114,6 +114,33 @@ describe("runtime CLI commands", () => {
     stdout.mockRestore()
   })
 
+  it("passes runtime policy context to lifecycle commands", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "runtime",
+      "install",
+      "--runtime-root",
+      "/tmp/runtime-root",
+      "--consumer",
+      "desktop-store",
+      "--dependency-management-mode",
+      "external-managed"
+    ])
+
+    expect(runtimeManagerMocks.installRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runtimeRoot: "/tmp/runtime-root",
+        consumer: "desktop-store",
+        dependencyManagementMode: "external-managed"
+      })
+    )
+
+    stdout.mockRestore()
+  })
+
   it("passes download cache overrides into runtime install", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
 

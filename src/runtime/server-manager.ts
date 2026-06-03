@@ -280,7 +280,7 @@ export async function installManagedServer(
     })
 
     if (options.ensurePm2 ?? true) {
-      await ensureManagedPm2Package(manifest, paths, {
+      await ensureManagedPm2Package(manifest, paths, runtimeLifecycle.state, {
         npmRegistryMirror: options.registryMirror,
         pm2VersionOverride: options.pm2Version
       })

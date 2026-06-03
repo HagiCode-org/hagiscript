@@ -178,6 +178,14 @@ components:
     expect(manifest.componentMap.get("omniroute")?.bundledInstallMode).toBe("archive-7z-only")
     expect(manifest.componentMap.get("code-server")?.required).toBe(false)
     expect(manifest.componentMap.get("code-server")?.bundledInstallMode).toBe("archive-7z-only")
+    expect(manifest.componentMap.get("node")?.optionalPolicy).toEqual({
+      rules: [
+        {
+          id: "external-managed",
+          dependencyManagementModes: ["external-managed"]
+        }
+      ]
+    })
   })
 
   it("defaults install planning to required components only", async () => {
@@ -212,6 +220,31 @@ components:
 
     expect(omniRoutePlan.plan.map((item) => item.componentName)).toEqual(["node", "omniroute"])
     expect(codeServerPlan.plan.map((item) => item.componentName)).toEqual(["node", "code-server"])
+  })
+
+  it("keeps node in lifecycle order and marks it skipped by policy when external management owns Node", async () => {
+    const manifest = await loadRuntimeManifest({
+      manifestPath: getDefaultRuntimeManifestPath()
+    })
+    const state = createInitialRuntimeState(manifest, resolveRuntimePaths(manifest))
+
+    const plan = planRuntimeLifecycle("install", manifest, state, {
+      dependencyManagementMode: "external-managed"
+    })
+
+    expect(plan.plan.map((item) => item.componentName).slice(0, 3)).toEqual([
+      "node",
+      "dotnet",
+      "server"
+    ])
+    expect(plan.plan[0]).toMatchObject({
+      componentName: "node",
+      strategy: "skipped-by-policy"
+    })
+    expect(plan.skipped).toContainEqual({
+      componentName: "node",
+      reason: expect.stringContaining("external-managed")
+    })
   })
 
   it("rejects bundledInstallMode on non-bundled runtime components", async () => {
@@ -523,6 +556,93 @@ components:
     )
 
     await rm(runtimeRoot, { recursive: true, force: true })
+  })
+
+  it("persists skipped-by-policy node state and continues later required components", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-runtime-optional-node-"))
+    const runtimeRoot = path.join(directory, "runtime-root")
+    const manifestPath = path.join(directory, "manifest.yaml")
+
+    try {
+      await writeFile(
+        manifestPath,
+        `runtime:
+  name: fixture-runtime
+  version: 1.0.0
+paths:
+  runtimeRoot: "~/.hagicode/runtime"
+  runtimeHome: "program"
+  runtimeDataRoot: "runtime-data"
+  bin: "bin"
+  config: "config"
+  logs: "logs"
+  data: "data"
+  stateFile: "state.json"
+  componentsRoot: "components"
+  componentDataRoot: "components"
+  defaultPm2Home: "pm2"
+  npmPrefix: "npm"
+  nodeRuntime: "components/node/runtime"
+  dotnetRuntime: "components/dotnet/runtime"
+  vendoredRoot: "components/services"
+components:
+  - name: "node"
+    type: "runtime"
+    optionalPolicy:
+      rules:
+        - id: "external-managed"
+          dependencyManagementModes: ["external-managed"]
+  - name: "beta"
+    type: "bundled-runtime"
+    installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    verifyScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
+    version: "1.0.0"
+phases:
+  install:
+    order: ["node", "beta"]
+  remove:
+    order: ["beta", "node"]
+  update:
+    order: ["node", "beta"]
+`,
+        "utf8"
+      )
+      await mkdir(path.join(directory, "templates"), { recursive: true })
+      await writeFile(
+        path.join(directory, "templates", "service-template.txt"),
+        "fixture-template\n",
+        "utf8"
+      )
+
+      await installRuntime({
+        manifestPath,
+        runtimeRoot,
+        dependencyManagementMode: "external-managed"
+      })
+
+      const report = await queryRuntimeState({
+        manifestPath,
+        runtimeRoot
+      })
+      const node = report.components.find((component) => component.name === "node")
+      const beta = report.components.find((component) => component.name === "beta")
+
+      expect(report.ready).toBe(true)
+      expect(node).toMatchObject({
+        status: "skipped-by-policy",
+        required: true,
+        effectiveRequired: false,
+        details: {
+          policyStatus: "skipped-by-policy",
+          policyRuleId: "external-managed"
+        }
+      })
+      expect(String(node?.details?.policySummary)).toContain("external-managed")
+      expect(beta?.status).toBe("installed")
+      expect(beta?.effectiveRequired).toBe(true)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it("treats optional components as non-blocking for runtime readiness", async () => {
