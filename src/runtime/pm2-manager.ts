@@ -672,9 +672,10 @@ async function executePm2(
     platform: process.platform,
     env
   })
+  const pm2Args = [definition.pm2Binary, "--hp", definition.pm2Home, ...args]
 
   try {
-    return await runner(definition.nodePath, [definition.pm2Binary, ...args], {
+    return await runner(definition.nodePath, pm2Args, {
       cwd: definition.cwd,
       env,
       shell: launchOptions.shell,
