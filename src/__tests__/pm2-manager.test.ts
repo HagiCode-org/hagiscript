@@ -307,6 +307,81 @@ describe("pm2 manager", () => {
     }
   })
 
+  it("routes managed PM2 through shell launch for Windows Store/MSIX child processes", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const previousWindowsStore = process.env.HAGICODE_DESKTOP_WINDOWS_STORE
+    const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")
+
+    process.env.HAGICODE_DESKTOP_WINDOWS_STORE = "1"
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: "win32"
+    })
+
+    const setup = await createPm2Fixture()
+    let jlistCallCount = 0
+    const runner = vi.fn(
+      async (
+        command: string,
+        args: string[],
+        options?: { env?: NodeJS.ProcessEnv; shell?: boolean }
+      ) => {
+        if (args[1] === "jlist") {
+          jlistCallCount += 1
+          return {
+            command,
+            args,
+            stdout: JSON.stringify([
+              {
+                name: "fixture-omniroute-fixture",
+                pid: 4242,
+                pm2_env: { status: "online" }
+              }
+            ]),
+            stderr: ""
+          }
+        }
+
+        return {
+          command,
+          args,
+          stdout: "started",
+          stderr: "",
+          cwd: options?.env?.PWD
+        }
+      }
+    )
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "omniroute",
+        action: "start",
+        runner
+      })
+
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[0]?.[2]?.shell).toBe(true)
+      expect(runner.mock.calls[1]?.[2]?.shell).toBe(true)
+      expect(runner.mock.calls[2]?.[2]?.shell).toBe(true)
+      expect(runner.mock.calls[3]?.[2]?.shell).toBe(true)
+      expect(result.status).toBe("online")
+      expect(jlistCallCount).toBe(1)
+    } finally {
+      restoreEnv()
+      if (previousWindowsStore === undefined) {
+        delete process.env.HAGICODE_DESKTOP_WINDOWS_STORE
+      } else {
+        process.env.HAGICODE_DESKTOP_WINDOWS_STORE = previousWindowsStore
+      }
+      if (originalPlatformDescriptor) {
+        Object.defineProperty(process, "platform", originalPlatformDescriptor)
+      }
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
   it("starts bundled runtimes through Node entrypoints when the manifest uses packaged defaults", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture({ omitBundledScriptOverride: true, omitBundledArgsOverride: true })

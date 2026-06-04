@@ -2,7 +2,11 @@ import { access, mkdir, writeFile } from "node:fs/promises"
 import { basename, extname, join } from "node:path"
 import process from "node:process"
 import type { CommandResult, CommandRunner } from "./command-launch.js"
-import { CommandExecutionError, runCommand } from "./command-launch.js"
+import {
+  CommandExecutionError,
+  getCommandLaunchOptions,
+  runCommand
+} from "./command-launch.js"
 import {
   buildManagedRuntimeEnvironment,
   getManagedRuntimePathEntries
@@ -664,11 +668,16 @@ async function executePm2(
   } = {}
 ): Promise<CommandResult> {
   const env = buildManagedPm2Environment(definition)
+  const launchOptions = getCommandLaunchOptions(definition.nodePath, {
+    platform: process.platform,
+    env
+  })
 
   try {
     return await runner(definition.nodePath, [definition.pm2Binary, ...args], {
       cwd: definition.cwd,
       env,
+      shell: launchOptions.shell,
       maxBuffer: 10 * 1024 * 1024
     })
   } catch (error) {
