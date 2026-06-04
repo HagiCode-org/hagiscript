@@ -32,6 +32,9 @@ export interface ComponentServiceCommandOptions {
   manifestPath?: string
   runtimeRoot?: string
   lines?: number
+  consumer?: string
+  dependencyManagementMode?: string
+  externalNodePath?: string
 }
 
 interface ComponentServiceDefinition {
@@ -194,7 +197,12 @@ export async function executeComponentServiceAction(
         runtimeRoot: options.runtimeRoot,
         service: definition.service,
         action,
-        componentRootOverride: runtime.versionedRoot
+        componentRootOverride: runtime.versionedRoot,
+        ...(options.consumer ? { consumer: options.consumer } : {}),
+        ...(options.dependencyManagementMode
+          ? { dependencyManagementMode: options.dependencyManagementMode }
+          : {}),
+        ...(options.externalNodePath ? { externalNodePath: options.externalNodePath } : {})
       })
 
       return {
@@ -210,7 +218,12 @@ export async function executeComponentServiceAction(
         manifestPath: options.manifestPath,
         runtimeRoot: options.runtimeRoot,
         service: definition.service,
-        componentRootOverride: runtime.versionedRoot
+        componentRootOverride: runtime.versionedRoot,
+        ...(options.consumer ? { consumer: options.consumer } : {}),
+        ...(options.dependencyManagementMode
+          ? { dependencyManagementMode: options.dependencyManagementMode }
+          : {}),
+        ...(options.externalNodePath ? { externalNodePath: options.externalNodePath } : {})
       })
 
       return {

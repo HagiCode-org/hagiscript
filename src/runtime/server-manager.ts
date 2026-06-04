@@ -115,6 +115,9 @@ export interface ManagedServerLifecycleOptions {
   manifestPath?: string
   runtimeRoot?: string
   instanceName?: string
+  consumer?: string
+  dependencyManagementMode?: string
+  externalNodePath?: string
 }
 
 export interface ManagedServerEnvironmentResult {
@@ -491,6 +494,11 @@ export async function resolveManagedServerStartupEnvironment(
     runtimeRoot: options.runtimeRoot,
     service: "server",
     nameIdentifierValue: options.instanceName?.trim(),
+    ...(options.consumer ? { consumer: options.consumer } : {}),
+    ...(options.dependencyManagementMode
+      ? { dependencyManagementMode: options.dependencyManagementMode }
+      : {}),
+    ...(options.externalNodePath ? { externalNodePath: options.externalNodePath } : {}),
     environmentOverrides
   })
 }
@@ -510,6 +518,11 @@ async function runManagedServerAction(
     service: "server",
     action,
     nameIdentifierValue: options.instanceName?.trim(),
+    ...(options.consumer ? { consumer: options.consumer } : {}),
+    ...(options.dependencyManagementMode
+      ? { dependencyManagementMode: options.dependencyManagementMode }
+      : {}),
+    ...(options.externalNodePath ? { externalNodePath: options.externalNodePath } : {}),
     environmentOverrides
   })
 }
@@ -520,7 +533,11 @@ async function ensureManagedServerDependenciesStarted(
   const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
   const runtimeState = await queryRuntimeState({
     manifestPath: options.manifestPath,
-    runtimeRoot: options.runtimeRoot
+    runtimeRoot: options.runtimeRoot,
+    ...(options.consumer ? { consumer: options.consumer } : {}),
+    ...(options.dependencyManagementMode
+      ? { dependencyManagementMode: options.dependencyManagementMode }
+      : {})
   })
   const managedPm2ServiceNames = new Set<string>(supportedPm2Services)
   const dependencyServices = MANAGED_SERVER_INTEGRATION_DEPENDENCIES.filter(
@@ -537,7 +554,12 @@ async function ensureManagedServerDependenciesStarted(
       runtimeRoot: options.runtimeRoot,
       service,
       action: "start",
-      nameIdentifierValue: options.instanceName?.trim()
+      nameIdentifierValue: options.instanceName?.trim(),
+      ...(options.consumer ? { consumer: options.consumer } : {}),
+      ...(options.dependencyManagementMode
+        ? { dependencyManagementMode: options.dependencyManagementMode }
+        : {}),
+      ...(options.externalNodePath ? { externalNodePath: options.externalNodePath } : {})
     })
   }
 }
@@ -575,7 +597,11 @@ async function resolveManagedServerIntegrationEnvironment(
   const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
   const runtimeState = await queryRuntimeState({
     manifestPath: options.manifestPath,
-    runtimeRoot: options.runtimeRoot
+    runtimeRoot: options.runtimeRoot,
+    ...(options.consumer ? { consumer: options.consumer } : {}),
+    ...(options.dependencyManagementMode
+      ? { dependencyManagementMode: options.dependencyManagementMode }
+      : {})
   })
 
   return {

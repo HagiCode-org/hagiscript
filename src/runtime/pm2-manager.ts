@@ -10,6 +10,7 @@ import {
 import { getRuntimeExecutablePaths } from "./node-verify.js"
 import {
   loadRuntimeManifest,
+  resolveRuntimeComponentPolicy,
   type LoadedRuntimeManifest,
   type RuntimeComponentDefinition
 } from "./runtime-manifest.js"
@@ -43,7 +44,16 @@ export interface ManagedPm2CommandOptions {
   componentRootOverride?: string
   nameIdentifierValue?: string
   environmentOverrides?: Record<string, string | undefined>
+  consumer?: string
+  dependencyManagementMode?: string
+  externalNodePath?: string
   runner?: CommandRunner
+}
+
+interface ManagedPm2PolicyContext {
+  consumer?: string
+  dependencyManagementMode?: string
+  externalNodePath?: string
 }
 
 type ManagedPm2LaunchStrategy = "node-script" | "native-wrapper" | "released-service"
@@ -69,6 +79,7 @@ export interface ResolvedManagedPm2ServiceDefinition {
   pm2Home: string
   pm2Binary: string
   nodePath: string
+  useManagedNodeRuntime: boolean
   launchStrategy: ManagedPm2LaunchStrategy
   dotnetPath?: string
   runtimeFilesDir?: string
@@ -119,6 +130,7 @@ export interface ManagedPm2EnvironmentResult {
   pm2Home: string
   pm2Binary: string
   nodePath: string
+  useManagedNodeRuntime: boolean
   launchStrategy: ManagedPm2LaunchStrategy
   dotnetPath?: string
   runtimeFilesDir?: string
@@ -150,7 +162,12 @@ export async function runManagedPm2Command(
     options.service,
     options.nameIdentifierValue,
     options.environmentOverrides,
-    options.componentRootOverride
+    options.componentRootOverride,
+    {
+      consumer: options.consumer,
+      dependencyManagementMode: options.dependencyManagementMode,
+      externalNodePath: options.externalNodePath
+    }
   )
   const runner = options.runner ?? runCommand
 
@@ -208,7 +225,12 @@ export async function resolveManagedPm2Environment(
     options.service,
     options.nameIdentifierValue,
     options.environmentOverrides,
-    options.componentRootOverride
+    options.componentRootOverride,
+    {
+      consumer: options.consumer,
+      dependencyManagementMode: options.dependencyManagementMode,
+      externalNodePath: options.externalNodePath
+    }
   )
   const env = buildManagedPm2Environment(definition)
 
@@ -225,7 +247,8 @@ export async function resolveManagedPm2Environment(
     env,
     pathKey: process.platform === "win32" ? "Path" : "PATH",
     pathEntries: getManagedRuntimePathEntries(definition.paths, {
-      includeRuntimeBin: definition.component.type !== "released-service"
+      includeRuntimeBin: definition.component.type !== "released-service",
+      includeManagedNodeRuntime: definition.useManagedNodeRuntime
     }),
     runtimeHome: definition.runtimeHome,
     runtimeDataHome: definition.runtimeDataHome,
@@ -234,6 +257,7 @@ export async function resolveManagedPm2Environment(
     pm2Home: definition.pm2Home,
     pm2Binary: definition.pm2Binary,
     nodePath: definition.nodePath,
+    useManagedNodeRuntime: definition.useManagedNodeRuntime,
     launchStrategy: definition.launchStrategy,
     dotnetPath: definition.dotnetPath,
     runtimeFilesDir: definition.runtimeFilesDir,
@@ -248,7 +272,8 @@ export async function resolveManagedPm2ServiceDefinition(
   service: ManagedPm2ServiceName,
   nameIdentifierValue?: string,
   environmentOverrides?: Record<string, string | undefined>,
-  componentRootOverride?: string
+  componentRootOverride?: string,
+  policyContext: ManagedPm2PolicyContext = {}
 ): Promise<ResolvedManagedPm2ServiceDefinition> {
   assertSupportedPm2Service(service)
 
@@ -270,7 +295,11 @@ export async function resolveManagedPm2ServiceDefinition(
     component.name,
     component.runtimeDataDir
   )
-  const nodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
+  const nodeRuntime = await resolveManagedPm2NodeRuntime(
+    manifest,
+    paths,
+    policyContext
+  )
   const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix)
   const { baseAppName, nameIdentifierEnv, defaultNameIdentifier, nameIdentifier } = resolvePm2NameIdentifier(
     manifest,
@@ -289,11 +318,7 @@ export async function resolveManagedPm2ServiceDefinition(
   await Promise.all([
     validateManagedPath(
       pm2Entrypoint,
-      "Managed PM2 binary is missing from the configured runtime npm prefix. Install pm2 into that prefix before using `hagiscript pm2 ...`."
-    ),
-    validateManagedPath(
-      nodePath,
-      "Managed Node runtime is missing. Install the runtime node component first."
+      "Configured PM2 binary is missing from the selected npm prefix. Install pm2 into that prefix before using managed PM2."
     )
   ])
 
@@ -368,7 +393,8 @@ export async function resolveManagedPm2ServiceDefinition(
       componentConfigDir: resolvedServerPaths.componentConfigDir,
       pm2Home: resolvedServerPaths.pm2Home,
       pm2Binary: pm2Entrypoint,
-      nodePath,
+      nodePath: nodeRuntime.nodePath,
+      useManagedNodeRuntime: nodeRuntime.useManagedNodeRuntime,
       launchStrategy: "released-service",
       dotnetPath,
       runtimeFilesDir,
@@ -408,8 +434,56 @@ export async function resolveManagedPm2ServiceDefinition(
     componentConfigDir: defaultComponentConfigDir,
     pm2Home: defaultPm2Home,
     pm2Binary: pm2Entrypoint,
-    nodePath,
+    nodePath: nodeRuntime.nodePath,
+    useManagedNodeRuntime: nodeRuntime.useManagedNodeRuntime,
     launchStrategy: resolveBundledRuntimeLaunchStrategy(script)
+  }
+}
+
+async function resolveManagedPm2NodeRuntime(
+  manifest: LoadedRuntimeManifest,
+  paths: ResolvedRuntimePaths,
+  policyContext: ManagedPm2PolicyContext
+): Promise<{
+  nodePath: string
+  useManagedNodeRuntime: boolean
+}> {
+  const managedNodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
+  const nodeComponent = manifest.componentMap.get("node")
+  const nodePolicy = nodeComponent
+    ? resolveRuntimeComponentPolicy(nodeComponent, {
+        consumer: policyContext.consumer,
+        dependencyManagementMode: policyContext.dependencyManagementMode
+      })
+    : { required: true }
+
+  if (nodePolicy.required) {
+    await validateManagedPath(
+      managedNodePath,
+      "Managed Node runtime is missing. Install the runtime node component first."
+    )
+
+    return {
+      nodePath: managedNodePath,
+      useManagedNodeRuntime: true
+    }
+  }
+
+  const externalNodePath = normalizeManagedEnvironmentValue(policyContext.externalNodePath)
+  if (!externalNodePath) {
+    throw new ManagedPm2Error(
+      "Node runtime is managed externally for the current runtime policy, but no external Node executable path was provided."
+    )
+  }
+
+  await validateManagedPath(
+    externalNodePath,
+    "External Node runtime is unavailable. Provide a valid external Node executable path before starting managed PM2 services."
+  )
+
+  return {
+    nodePath: externalNodePath,
+    useManagedNodeRuntime: false
   }
 }
 
@@ -731,7 +805,8 @@ function buildManagedPm2Environment(
       componentDataHome: definition.runtimeDataHome,
       pm2Home: definition.pm2Home,
       scriptBasename: basename(definition.script),
-      includeNpmConfigPrefix: definition.service !== "server"
+      includeNpmConfigPrefix: definition.service !== "server",
+      useManagedNodeRuntime: definition.useManagedNodeRuntime
     },
     resolvedBaseEnv
   )

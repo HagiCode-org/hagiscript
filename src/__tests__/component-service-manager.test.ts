@@ -102,6 +102,7 @@ describe("component service manager", () => {
       pm2Home: path.join(paths.runtimeDataRoot, "components", "services", "code-server", "pm2"),
       pm2Binary: path.join(paths.npmPrefix, "bin", "pm2"),
       nodePath: path.join(paths.nodeRuntime, "current", "bin", "node"),
+      useManagedNodeRuntime: true,
       launchStrategy: "node-script" as const
     }))
 

@@ -221,6 +221,92 @@ describe("pm2 manager", () => {
     }
   })
 
+  it("uses an external Node executable when the runtime node component is skipped by policy", async () => {
+    const restoreEnv = setPm2NameIdentifierEnv("fixture")
+    const setup = await createPm2Fixture({ skipManagedNodeByPolicy: true })
+    const externalNodePath = getFixtureExternalNodePath(setup.directory)
+    let jlistCallCount = 0
+    const runner = vi.fn(async (command: string, args: string[], options?: { env?: NodeJS.ProcessEnv }) => {
+      if (args[1] === "jlist") {
+        jlistCallCount += 1
+        return {
+          command,
+          args,
+          stdout: JSON.stringify([
+            {
+              name: "fixture-omniroute-fixture",
+              pid: 4242,
+              pm2_env: { status: "online" }
+            }
+          ]),
+          stderr: ""
+        }
+      }
+
+      return {
+        command,
+        args,
+        stdout: "started",
+        stderr: "",
+        cwd: options?.env?.PWD
+      }
+    })
+
+    try {
+      const result = await runManagedPm2Command({
+        manifestPath: setup.manifestPath,
+        runtimeRoot: setup.runtimeRoot,
+        service: "omniroute",
+        action: "start",
+        dependencyManagementMode: "external-managed",
+        externalNodePath,
+        runner
+      })
+
+      expect(runner).toHaveBeenCalledTimes(4)
+      expect(runner.mock.calls[0]?.[0]).toBe(externalNodePath)
+      expect(runner.mock.calls[2]?.[0]).toBe(externalNodePath)
+      expect(runner.mock.calls[2]?.[1]).toEqual([
+        getFixturePm2Entrypoint(setup.runtimeRoot),
+        "start",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current",
+          "custom-launcher.mjs"
+        ),
+        "--name",
+        "fixture-omniroute-fixture",
+        "--cwd",
+        path.join(
+          setup.runtimeRoot,
+          "program",
+          "components",
+          "services",
+          "omniroute",
+          "current"
+        ),
+        "--interpreter",
+        externalNodePath,
+        "--update-env",
+        "--",
+        "--port",
+        "39001"
+      ])
+      const runtimePath =
+        runner.mock.calls[2]?.[2]?.env?.Path ?? runner.mock.calls[2]?.[2]?.env?.PATH ?? ""
+      expect(runtimePath).not.toContain(path.dirname(getFixtureNodePath(setup.runtimeRoot)))
+      expect(result.status).toBe("online")
+      expect(jlistCallCount).toBe(1)
+    } finally {
+      restoreEnv()
+      await rm(setup.directory, { recursive: true, force: true })
+    }
+  })
+
   it("starts bundled runtimes through Node entrypoints when the manifest uses packaged defaults", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture")
     const setup = await createPm2Fixture({ omitBundledScriptOverride: true, omitBundledArgsOverride: true })
@@ -1112,6 +1198,7 @@ async function createPm2Fixture(options: {
   includePm2HomeOverride?: boolean
   omitBundledScriptOverride?: boolean
   omitBundledArgsOverride?: boolean
+  skipManagedNodeByPolicy?: boolean
 } = {}): Promise<{
   directory: string
   manifestPath: string
@@ -1250,6 +1337,12 @@ async function createPm2Fixture(options: {
     "console.log('pm2 entrypoint');\n",
     "utf8"
   )
+  await mkdir(path.dirname(getFixtureExternalNodePath(directory)), { recursive: true })
+  await writeFile(
+    getFixtureExternalNodePath(directory),
+    "#!/usr/bin/env sh\n",
+    "utf8"
+  )
   await writeFile(
     getFixtureNodePath(runtimeRoot),
     "#!/usr/bin/env sh\n",
@@ -1294,6 +1387,7 @@ async function createPm2Fixture(options: {
   )
   if (process.platform !== "win32") {
     await chmod(getFixturePm2Entrypoint(runtimeRoot), 0o755)
+    await chmod(getFixtureExternalNodePath(directory), 0o755)
     await chmod(getFixtureNodePath(runtimeRoot), 0o755)
     await chmod(
       path.join(
@@ -1314,6 +1408,9 @@ async function createPm2Fixture(options: {
   const bundledArgsOverride = options.omitBundledArgsOverride
     ? ""
     : '      args:\n        - "--port"\n        - "39001"\n'
+  const nodeOptionalPolicy = options.skipManagedNodeByPolicy
+    ? '    optionalPolicy:\n      rules:\n        - id: "external-managed"\n          dependencyManagementModes: ["external-managed"]\n'
+    : ""
   const omniroutePm2Config = `${bundledScriptOverride}${pm2HomeOverrideLine}${bundledArgsOverride}      env:
         RUNTIME_MODE: "fixture"
 `
@@ -1355,7 +1452,7 @@ components:
   - name: "node"
     type: "runtime"
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
-  - name: "dotnet"
+${nodeOptionalPolicy}  - name: "dotnet"
     type: "runtime"
     installScript: "${fixtureScriptPath.replaceAll("\\", "/")}"
   - name: "omniroute"
@@ -1410,6 +1507,10 @@ function getFixturePm2EntrypointDirectory(runtimeRoot: string): string {
 
 function getFixturePm2Entrypoint(runtimeRoot: string): string {
   return path.join(getFixturePm2EntrypointDirectory(runtimeRoot), "pm2")
+}
+
+function getFixtureExternalNodePath(directory: string): string {
+  return path.join(directory, "external-node", process.platform === "win32" ? "node.exe" : "node")
 }
 
 function getFixtureNodePath(runtimeRoot: string): string {
