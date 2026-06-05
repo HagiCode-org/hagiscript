@@ -1,23 +1,23 @@
-import { access, mkdir, writeFile } from "node:fs/promises"
-import { basename, extname, join } from "node:path"
-import process from "node:process"
-import type { CommandResult, CommandRunner } from "./command-launch.js"
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
+import process from "node:process";
+import type { CommandResult, CommandRunner } from "./command-launch.js";
 import {
   CommandExecutionError,
   getCommandLaunchOptions,
   runCommand
-} from "./command-launch.js"
+} from "./command-launch.js";
 import {
   buildManagedRuntimeEnvironment,
   getManagedRuntimePathEntries
-} from "./runtime-executor.js"
-import { getRuntimeExecutablePaths } from "./node-verify.js"
+} from "./runtime-executor.js";
+import { getRuntimeExecutablePaths } from "./node-verify.js";
 import {
   loadRuntimeManifest,
   resolveRuntimeComponentPolicy,
   type LoadedRuntimeManifest,
   type RuntimeComponentDefinition
-} from "./runtime-manifest.js"
+} from "./runtime-manifest.js";
 import {
   getComponentConfigDirectory,
   getComponentManagedRoot,
@@ -28,138 +28,162 @@ import {
   resolveReleasedServicePath,
   resolveRuntimePaths,
   type ResolvedRuntimePaths
-} from "./runtime-paths.js"
+} from "./runtime-paths.js";
 import {
   getManagedServerVersionStatePath,
   readManagedServerVersionState
-} from "./server-version-state.js"
+} from "./server-version-state.js";
 
-export const supportedPm2Services = ["server", "omniroute", "code-server"] as const
+export const supportedPm2Services = [
+  "server",
+  "omniroute",
+  "code-server"
+] as const;
 
-export type ManagedPm2ServiceName = (typeof supportedPm2Services)[number]
-export type ManagedPm2Action = "start" | "stop" | "restart" | "status" | "delete"
-export type ManagedPm2Status = "online" | "stopped" | "errored" | "missing" | "unknown"
+export type ManagedPm2ServiceName = (typeof supportedPm2Services)[number];
+export type ManagedPm2Action =
+  | "start"
+  | "stop"
+  | "restart"
+  | "status"
+  | "delete";
+export type ManagedPm2Status =
+  | "online"
+  | "stopped"
+  | "errored"
+  | "missing"
+  | "unknown";
 
 export interface ManagedPm2CommandOptions {
-  manifestPath?: string
-  runtimeRoot?: string
-  service: ManagedPm2ServiceName
-  action: ManagedPm2Action
-  componentRootOverride?: string
-  nameIdentifierValue?: string
-  environmentOverrides?: Record<string, string | undefined>
-  consumer?: string
-  dependencyManagementMode?: string
-  externalNodePath?: string
-  runner?: CommandRunner
+  manifestPath?: string;
+  runtimeRoot?: string;
+  service: ManagedPm2ServiceName;
+  action: ManagedPm2Action;
+  componentRootOverride?: string;
+  nameIdentifierValue?: string;
+  environmentOverrides?: Record<string, string | undefined>;
+  consumer?: string;
+  dependencyManagementMode?: string;
+  externalNodePath?: string;
+  runner?: CommandRunner;
 }
 
 interface ManagedPm2PolicyContext {
-  consumer?: string
-  dependencyManagementMode?: string
-  externalNodePath?: string
+  consumer?: string;
+  dependencyManagementMode?: string;
+  externalNodePath?: string;
 }
 
-type ManagedPm2LaunchStrategy = "node-script" | "native-wrapper" | "released-service"
+type ManagedPm2LaunchStrategy =
+  | "node-script"
+  | "native-wrapper"
+  | "released-service";
 
 export interface ResolvedManagedPm2ServiceDefinition {
-  service: ManagedPm2ServiceName
-  component: RuntimeComponentDefinition
-  manifestDir: string
-  paths: ResolvedRuntimePaths
-  baseAppName: string
-  appName: string
-  nameIdentifierEnv: string
-  defaultNameIdentifier: string
-  nameIdentifier: string
-  cwd: string
-  script: string
-  args: string[]
-  env: Record<string, string>
-  runtimeHome: string
-  runtimeDataHome: string
-  componentRoot: string
-  componentConfigDir: string
-  pm2Home: string
-  pm2Binary: string
-  nodePath: string
-  useManagedNodeRuntime: boolean
-  launchStrategy: ManagedPm2LaunchStrategy
-  dotnetPath?: string
-  runtimeFilesDir?: string
-  ecosystemPath?: string
-  envFilePath?: string
+  service: ManagedPm2ServiceName;
+  component: RuntimeComponentDefinition;
+  manifestDir: string;
+  paths: ResolvedRuntimePaths;
+  baseAppName: string;
+  appName: string;
+  nameIdentifierEnv: string;
+  defaultNameIdentifier: string;
+  nameIdentifier: string;
+  cwd: string;
+  script: string;
+  args: string[];
+  env: Record<string, string>;
+  runtimeHome: string;
+  runtimeDataHome: string;
+  componentRoot: string;
+  componentConfigDir: string;
+  pm2Home: string;
+  pm2Binary: string;
+  nodePath: string;
+  useManagedNodeRuntime: boolean;
+  launchStrategy: ManagedPm2LaunchStrategy;
+  dotnetPath?: string;
+  releasedServiceStartScriptPath?: string;
+  runtimeFilesDir?: string;
+  ecosystemPath?: string;
+  envFilePath?: string;
 }
 
 export interface ManagedPm2CommandResult {
-  service: ManagedPm2ServiceName
-  action: ManagedPm2Action
-  baseAppName: string
-  appName: string
-  nameIdentifierEnv: string
-  nameIdentifier: string
-  cwd: string
-  script: string
-  runtimeHome: string
-  runtimeDataHome: string
-  pm2Home: string
-  pm2Binary: string
-  exists: boolean
-  status: ManagedPm2Status
-  pid: number | null
-  stdout: string
-  stderr: string
-  launchStrategy: ManagedPm2LaunchStrategy
-  dotnetPath?: string
-  runtimeFilesDir?: string
+  service: ManagedPm2ServiceName;
+  action: ManagedPm2Action;
+  baseAppName: string;
+  appName: string;
+  nameIdentifierEnv: string;
+  nameIdentifier: string;
+  cwd: string;
+  script: string;
+  runtimeHome: string;
+  runtimeDataHome: string;
+  pm2Home: string;
+  pm2Binary: string;
+  exists: boolean;
+  status: ManagedPm2Status;
+  pid: number | null;
+  stdout: string;
+  stderr: string;
+  launchStrategy: ManagedPm2LaunchStrategy;
+  dotnetPath?: string;
+  releasedServiceStartScriptPath?: string;
+  runtimeFilesDir?: string;
 }
 
 export interface ManagedPm2EnvironmentResult {
-  service: ManagedPm2ServiceName
-  baseAppName: string
-  appName: string
-  nameIdentifierEnv: string
-  nameIdentifier: string
-  bootstrapNameIdentifierValue: string
-  cwd: string
-  script: string
-  args: string[]
-  env: NodeJS.ProcessEnv
-  pathKey: "PATH" | "Path"
-  pathEntries: string[]
-  runtimeHome: string
-  runtimeDataHome: string
-  componentRoot: string
-  componentConfigDir: string
-  pm2Home: string
-  pm2Binary: string
-  nodePath: string
-  useManagedNodeRuntime: boolean
-  launchStrategy: ManagedPm2LaunchStrategy
-  dotnetPath?: string
-  runtimeFilesDir?: string
-  ecosystemPath?: string
-  envFilePath?: string
+  service: ManagedPm2ServiceName;
+  baseAppName: string;
+  appName: string;
+  nameIdentifierEnv: string;
+  nameIdentifier: string;
+  bootstrapNameIdentifierValue: string;
+  cwd: string;
+  script: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  pathKey: "PATH" | "Path";
+  pathEntries: string[];
+  runtimeHome: string;
+  runtimeDataHome: string;
+  componentRoot: string;
+  componentConfigDir: string;
+  pm2Home: string;
+  pm2Binary: string;
+  nodePath: string;
+  useManagedNodeRuntime: boolean;
+  launchStrategy: ManagedPm2LaunchStrategy;
+  dotnetPath?: string;
+  releasedServiceStartScriptPath?: string;
+  runtimeFilesDir?: string;
+  ecosystemPath?: string;
+  envFilePath?: string;
 }
 
 export class ManagedPm2Error extends Error {
   constructor(message: string, options?: ErrorOptions) {
-    super(message, options)
-    this.name = "ManagedPm2Error"
+    super(message, options);
+    this.name = "ManagedPm2Error";
   }
 }
 
-const DEFAULT_PM2_STATUS_RETRY_DELAY_MS = 500
-const DEFAULT_PM2_STATUS_MAX_RETRIES = 3
-const PM2_NAME_IDENTIFIER_PATTERN = /^[a-z0-9_]+$/u
-const PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT = "hagicode"
-const DEFAULT_PM2_NAME_IDENTIFIER_ENV = "hagicode_instance"
+const DEFAULT_PM2_STATUS_RETRY_DELAY_MS = 500;
+const DEFAULT_PM2_STATUS_MAX_RETRIES = 3;
+const PM2_NAME_IDENTIFIER_PATTERN = /^[a-z0-9_]+$/u;
+const PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT = "hagicode";
+const DEFAULT_PM2_NAME_IDENTIFIER_ENV = "hagicode_instance";
 
 export async function runManagedPm2Command(
   options: ManagedPm2CommandOptions
 ): Promise<ManagedPm2CommandResult> {
-  const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
-  const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
+  const manifest = await loadRuntimeManifest({
+    manifestPath: options.manifestPath
+  });
+  const paths = resolveRuntimePaths(manifest, {
+    runtimeRoot: options.runtimeRoot
+  });
   const definition = await resolveManagedPm2ServiceDefinition(
     manifest,
     paths,
@@ -172,24 +196,29 @@ export async function runManagedPm2Command(
       dependencyManagementMode: options.dependencyManagementMode,
       externalNodePath: options.externalNodePath
     }
-  )
-  const runner = options.runner ?? runCommand
+  );
+  const runner = options.runner ?? runCommand;
 
   switch (options.action) {
     case "start":
-      return recreateManagedPm2App(definition, "start", runner)
+      return recreateManagedPm2App(definition, "start", runner);
     case "restart":
-      return recreateManagedPm2App(definition, "restart", runner)
+      return recreateManagedPm2App(definition, "restart", runner);
     case "stop":
-      await cleanupManagedPm2App(definition, runner)
-      return readManagedPm2Status(definition, "stop", runner)
+      await cleanupManagedPm2App(definition, runner);
+      return readManagedPm2Status(definition, "stop", runner);
     case "delete":
-      await executePm2(definition, buildPm2ActionArgs(definition, "delete"), runner, {
-        allowMissingProcess: true
-      })
-      return readManagedPm2Status(definition, "delete", runner)
+      await executePm2(
+        definition,
+        buildPm2ActionArgs(definition, "delete"),
+        runner,
+        {
+          allowMissingProcess: true
+        }
+      );
+      return readManagedPm2Status(definition, "delete", runner);
     case "status":
-      return readManagedPm2Status(definition, "status", runner)
+      return readManagedPm2Status(definition, "status", runner);
   }
 }
 
@@ -198,12 +227,12 @@ async function recreateManagedPm2App(
   action: "start" | "restart",
   runner: CommandRunner
 ): Promise<ManagedPm2CommandResult> {
-  await cleanupManagedPm2App(definition, runner)
+  await cleanupManagedPm2App(definition, runner);
   if (definition.launchStrategy === "released-service") {
-    await prepareReleasedServicePm2Files(definition)
+    await prepareReleasedServicePm2Files(definition);
   }
-  await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner)
-  return readManagedPm2Status(definition, action, runner)
+  await executePm2(definition, buildPm2ActionArgs(definition, "start"), runner);
+  return readManagedPm2Status(definition, action, runner);
 }
 
 async function cleanupManagedPm2App(
@@ -212,17 +241,26 @@ async function cleanupManagedPm2App(
 ): Promise<void> {
   await executePm2(definition, buildPm2ActionArgs(definition, "stop"), runner, {
     allowMissingProcess: true
-  })
-  await executePm2(definition, buildPm2ActionArgs(definition, "delete"), runner, {
-    allowMissingProcess: true
-  })
+  });
+  await executePm2(
+    definition,
+    buildPm2ActionArgs(definition, "delete"),
+    runner,
+    {
+      allowMissingProcess: true
+    }
+  );
 }
 
 export async function resolveManagedPm2Environment(
   options: Omit<ManagedPm2CommandOptions, "action" | "runner">
 ): Promise<ManagedPm2EnvironmentResult> {
-  const manifest = await loadRuntimeManifest({ manifestPath: options.manifestPath })
-  const paths = resolveRuntimePaths(manifest, { runtimeRoot: options.runtimeRoot })
+  const manifest = await loadRuntimeManifest({
+    manifestPath: options.manifestPath
+  });
+  const paths = resolveRuntimePaths(manifest, {
+    runtimeRoot: options.runtimeRoot
+  });
   const definition = await resolveManagedPm2ServiceDefinition(
     manifest,
     paths,
@@ -235,8 +273,8 @@ export async function resolveManagedPm2Environment(
       dependencyManagementMode: options.dependencyManagementMode,
       externalNodePath: options.externalNodePath
     }
-  )
-  const env = buildManagedPm2Environment(definition)
+  );
+  const env = buildManagedPm2Environment(definition);
 
   return {
     service: definition.service,
@@ -264,10 +302,11 @@ export async function resolveManagedPm2Environment(
     useManagedNodeRuntime: definition.useManagedNodeRuntime,
     launchStrategy: definition.launchStrategy,
     dotnetPath: definition.dotnetPath,
+    releasedServiceStartScriptPath: definition.releasedServiceStartScriptPath,
     runtimeFilesDir: definition.runtimeFilesDir,
     ecosystemPath: definition.ecosystemPath,
     envFilePath: definition.envFilePath
-  }
+  };
 }
 
 export async function resolveManagedPm2ServiceDefinition(
@@ -279,59 +318,66 @@ export async function resolveManagedPm2ServiceDefinition(
   componentRootOverride?: string,
   policyContext: ManagedPm2PolicyContext = {}
 ): Promise<ResolvedManagedPm2ServiceDefinition> {
-  assertSupportedPm2Service(service)
+  assertSupportedPm2Service(service);
 
-  const component = manifest.componentMap.get(service)
+  const component = manifest.componentMap.get(service);
   if (!component) {
-    throw new ManagedPm2Error(`Runtime manifest does not define the ${service} service.`)
+    throw new ManagedPm2Error(
+      `Runtime manifest does not define the ${service} service.`
+    );
   }
 
   const defaultComponentRoot = componentRootOverride
     ? resolveManagedPath(componentRootOverride, paths.root)
-    : getComponentManagedRoot(paths, component.name)
+    : getComponentManagedRoot(paths, component.name);
   const defaultRuntimeDataHome = getComponentRuntimeDataHome(
     paths,
     component.name,
     component.runtimeDataDir
-  )
+  );
   const defaultComponentConfigDir = getComponentConfigDirectory(
     paths,
     component.name,
     component.runtimeDataDir
-  )
+  );
   const nodeRuntime = await resolveManagedPm2NodeRuntime(
     manifest,
     paths,
     policyContext
-  )
-  const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix)
-  const { baseAppName, nameIdentifierEnv, defaultNameIdentifier, nameIdentifier } = resolvePm2NameIdentifier(
+  );
+  const pm2Entrypoint = getManagedPm2Entrypoint(paths.npmPrefix);
+  const {
+    baseAppName,
+    nameIdentifierEnv,
+    defaultNameIdentifier,
+    nameIdentifier
+  } = resolvePm2NameIdentifier(
     manifest,
     component,
     service,
     nameIdentifierValue
-  )
+  );
   const defaultPm2Home = getComponentPm2Home(
     paths,
     component.name,
     component.runtimeDataDir,
     component.pm2?.pm2Home,
     baseAppName
-  )
+  );
 
   await Promise.all([
     validateManagedPath(
       pm2Entrypoint,
       "Configured PM2 binary is missing from the selected npm prefix. Install pm2 into that prefix before using managed PM2."
     )
-  ])
+  ]);
 
   if (component.type === "released-service") {
-    const releasedService = component.releasedService
+    const releasedService = component.releasedService;
     if (!releasedService) {
       throw new ManagedPm2Error(
         `Runtime manifest component ${component.name} is missing releasedService metadata.`
-      )
+      );
     }
 
     const resolvedServerPaths =
@@ -346,36 +392,57 @@ export async function resolveManagedPm2ServiceDefinition(
             runtimeDataHome: defaultRuntimeDataHome,
             componentConfigDir: defaultComponentConfigDir,
             pm2Home: defaultPm2Home
-          }
+          };
 
     const cwd = resolveReleasedServicePath(
       releasedService.workingDirectory,
       resolvedServerPaths.componentRoot
-    )
+    );
     const script = resolveReleasedServicePath(
       releasedService.dllPath,
       resolvedServerPaths.componentRoot
-    )
+    );
+    const releasedServiceStartScriptPath = releasedService.startScript
+      ? resolveReleasedServicePath(
+          releasedService.startScript,
+          resolvedServerPaths.componentRoot
+        )
+      : undefined;
     const runtimeFilesDir = join(
       resolvedServerPaths.runtimeDataHome,
       releasedService.runtimeFilesDir ?? "pm2-runtime"
-    )
-    const ecosystemPath = join(runtimeFilesDir, "ecosystem.config.cjs")
-    const envFilePath = join(runtimeFilesDir, ".env")
+    );
+    const ecosystemPath = join(runtimeFilesDir, "ecosystem.config.cjs");
+    const envFilePath = join(runtimeFilesDir, ".env");
     const dotnetPath = join(
       paths.dotnetRuntime,
       "current",
       process.platform === "win32" ? "dotnet.exe" : "dotnet"
-    )
+    );
 
     await Promise.all([
-      validateManagedPath(script, `Managed released-service payload for ${service} is missing.`),
-      validateManagedPath(cwd, `Managed working directory for ${service} is missing.`),
       validateManagedPath(
-        dotnetPath,
-        "Managed .NET runtime is missing. Install the runtime dotnet component first."
-      )
-    ])
+        script,
+        `Managed released-service payload for ${service} is missing.`
+      ),
+      validateManagedPath(
+        cwd,
+        `Managed working directory for ${service} is missing.`
+      ),
+      ...(releasedServiceStartScriptPath
+        ? [
+            validateManagedPath(
+              releasedServiceStartScriptPath,
+              `Managed released-service start script for ${service} is missing.`
+            )
+          ]
+        : [
+            validateManagedPath(
+              dotnetPath,
+              "Managed .NET runtime is missing. Install the runtime dotnet component first."
+            )
+          ])
+    ]);
 
     return {
       service,
@@ -401,22 +468,32 @@ export async function resolveManagedPm2ServiceDefinition(
       useManagedNodeRuntime: nodeRuntime.useManagedNodeRuntime,
       launchStrategy: "released-service",
       dotnetPath,
+      releasedServiceStartScriptPath,
       runtimeFilesDir,
       ecosystemPath,
       envFilePath
-    }
+    };
   }
 
   const script = resolveManagedPath(
     component.pm2?.script ?? defaultPm2Script(component.name),
     defaultComponentRoot
-  )
-  const cwd = resolveManagedPath(component.pm2?.cwd ?? ".", defaultComponentRoot)
+  );
+  const cwd = resolveManagedPath(
+    component.pm2?.cwd ?? ".",
+    defaultComponentRoot
+  );
 
   await Promise.all([
-    validateManagedPath(script, `Managed runtime entrypoint for ${service} is missing.`),
-    validateManagedPath(cwd, `Managed working directory for ${service} is missing.`)
-  ])
+    validateManagedPath(
+      script,
+      `Managed runtime entrypoint for ${service} is missing.`
+    ),
+    validateManagedPath(
+      cwd,
+      `Managed working directory for ${service} is missing.`
+    )
+  ]);
 
   return {
     service,
@@ -430,7 +507,9 @@ export async function resolveManagedPm2ServiceDefinition(
     nameIdentifier,
     cwd,
     script,
-    args: component.pm2?.args ?? defaultBundledRuntimePm2Args(component.name, defaultComponentConfigDir),
+    args:
+      component.pm2?.args ??
+      defaultBundledRuntimePm2Args(component.name, defaultComponentConfigDir),
     env: mergeManagedEnvironment(component.pm2?.env, environmentOverrides),
     runtimeHome: paths.runtimeHome,
     runtimeDataHome: defaultRuntimeDataHome,
@@ -441,7 +520,7 @@ export async function resolveManagedPm2ServiceDefinition(
     nodePath: nodeRuntime.nodePath,
     useManagedNodeRuntime: nodeRuntime.useManagedNodeRuntime,
     launchStrategy: resolveBundledRuntimeLaunchStrategy(script)
-  }
+  };
 }
 
 async function resolveManagedPm2NodeRuntime(
@@ -449,46 +528,48 @@ async function resolveManagedPm2NodeRuntime(
   paths: ResolvedRuntimePaths,
   policyContext: ManagedPm2PolicyContext
 ): Promise<{
-  nodePath: string
-  useManagedNodeRuntime: boolean
+  nodePath: string;
+  useManagedNodeRuntime: boolean;
 }> {
-  const managedNodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
-  const nodeComponent = manifest.componentMap.get("node")
+  const managedNodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath;
+  const nodeComponent = manifest.componentMap.get("node");
   const nodePolicy = nodeComponent
     ? resolveRuntimeComponentPolicy(nodeComponent, {
         consumer: policyContext.consumer,
         dependencyManagementMode: policyContext.dependencyManagementMode
       })
-    : { required: true }
+    : { required: true };
 
   if (nodePolicy.required) {
     await validateManagedPath(
       managedNodePath,
       "Managed Node runtime is missing. Install the runtime node component first."
-    )
+    );
 
     return {
       nodePath: managedNodePath,
       useManagedNodeRuntime: true
-    }
+    };
   }
 
-  const externalNodePath = normalizeManagedEnvironmentValue(policyContext.externalNodePath)
+  const externalNodePath = normalizeManagedEnvironmentValue(
+    policyContext.externalNodePath
+  );
   if (!externalNodePath) {
     throw new ManagedPm2Error(
       "Node runtime is managed externally for the current runtime policy, but no external Node executable path was provided."
-    )
+    );
   }
 
   await validateManagedPath(
     externalNodePath,
     "External Node runtime is unavailable. Provide a valid external Node executable path before starting managed PM2 services."
-  )
+  );
 
   return {
     nodePath: externalNodePath,
     useManagedNodeRuntime: false
-  }
+  };
 }
 
 async function resolveManagedServerActivePaths(
@@ -496,26 +577,28 @@ async function resolveManagedServerActivePaths(
   serviceHomeName: string,
   pm2HomeOverride?: string
 ): Promise<{
-  componentRoot: string
-  runtimeDataHome: string
-  componentConfigDir: string
-  pm2Home: string
+  componentRoot: string;
+  runtimeDataHome: string;
+  componentConfigDir: string;
+  pm2Home: string;
 }> {
-  const runtimeDataHome = getServerSharedDataRoot(paths)
-  const state = await readManagedServerVersionState(getManagedServerVersionStatePath(paths))
-  const activeVersion = state.activeVersion
+  const runtimeDataHome = getServerSharedDataRoot(paths);
+  const state = await readManagedServerVersionState(
+    getManagedServerVersionStatePath(paths)
+  );
+  const activeVersion = state.activeVersion;
 
   if (!activeVersion) {
     throw new ManagedPm2Error(
       "Managed server does not have an active version. Run `hagiscript server install` or `hagiscript server use <version>` first."
-    )
+    );
   }
 
-  const installedVersion = state.versions[activeVersion]
+  const installedVersion = state.versions[activeVersion];
   if (!installedVersion) {
     throw new ManagedPm2Error(
       `Managed server active version ${activeVersion} is missing from the installed version inventory.`
-    )
+    );
   }
 
   return {
@@ -529,10 +612,12 @@ async function resolveManagedServerActivePaths(
       pm2HomeOverride,
       serviceHomeName
     )
-  }
+  };
 }
 
-export function renderManagedPm2StatusText(result: ManagedPm2CommandResult): string {
+export function renderManagedPm2StatusText(
+  result: ManagedPm2CommandResult
+): string {
   return [
     `Service: ${result.service}`,
     `Base app: ${result.baseAppName}`,
@@ -549,18 +634,31 @@ export function renderManagedPm2StatusText(result: ManagedPm2CommandResult): str
     `Working directory: ${result.cwd}`,
     `PM2 binary: ${result.pm2Binary}`,
     ...(result.dotnetPath ? [`Dotnet: ${result.dotnetPath}`] : []),
-    ...(result.runtimeFilesDir ? [`Runtime files: ${result.runtimeFilesDir}`] : []),
+    ...(result.releasedServiceStartScriptPath
+      ? [
+          `Released-service start script: ${result.releasedServiceStartScriptPath}`
+        ]
+      : []),
+    ...(result.runtimeFilesDir
+      ? [`Runtime files: ${result.runtimeFilesDir}`]
+      : []),
     `PID: ${result.pid ?? "n/a"}`
-  ].join("\n")
+  ].join("\n");
 }
 
-export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentResult): string {
+export function renderManagedPm2EnvironmentText(
+  result: ManagedPm2EnvironmentResult
+): string {
   const argsText =
-    result.args.length > 0 ? result.args.map((entry) => JSON.stringify(entry)).join(" ") : "(none)"
+    result.args.length > 0
+      ? result.args.map((entry) => JSON.stringify(entry)).join(" ")
+      : "(none)";
   const envLines = Object.entries(result.env)
     .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `  ${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
+    .map(
+      ([key, value]) => `  ${key}=${String(value).replace(/\r?\n/g, "\\n")}`
+    );
 
   return [
     `Service: ${result.service}`,
@@ -582,7 +680,14 @@ export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentRes
     `PM2 binary: ${result.pm2Binary}`,
     `Node: ${result.nodePath}`,
     ...(result.dotnetPath ? [`Dotnet: ${result.dotnetPath}`] : []),
-    ...(result.runtimeFilesDir ? [`Runtime files: ${result.runtimeFilesDir}`] : []),
+    ...(result.releasedServiceStartScriptPath
+      ? [
+          `Released-service start script: ${result.releasedServiceStartScriptPath}`
+        ]
+      : []),
+    ...(result.runtimeFilesDir
+      ? [`Runtime files: ${result.runtimeFilesDir}`]
+      : []),
     ...(result.ecosystemPath ? [`PM2 ecosystem: ${result.ecosystemPath}`] : []),
     ...(result.envFilePath ? [`PM2 env file: ${result.envFilePath}`] : []),
     `Path key: ${result.pathKey}`,
@@ -590,17 +695,19 @@ export function renderManagedPm2EnvironmentText(result: ManagedPm2EnvironmentRes
     ...result.pathEntries.map((entry) => `  - ${entry}`),
     "Environment:",
     ...envLines
-  ].join("\n")
+  ].join("\n");
 }
 
-function assertSupportedPm2Service(service: string): asserts service is ManagedPm2ServiceName {
+function assertSupportedPm2Service(
+  service: string
+): asserts service is ManagedPm2ServiceName {
   if ((supportedPm2Services as readonly string[]).includes(service)) {
-    return
+    return;
   }
 
   throw new ManagedPm2Error(
     `Unsupported managed PM2 service "${service}". Supported services: ${supportedPm2Services.join(", ")}.`
-  )
+  );
 }
 
 async function readManagedPm2Status(
@@ -608,12 +715,16 @@ async function readManagedPm2Status(
   action: ManagedPm2Action,
   runner: CommandRunner
 ): Promise<ManagedPm2CommandResult> {
-  let result: CommandResult | undefined
-  let parsed: ManagedPm2ParsedStatus | undefined
+  let result: CommandResult | undefined;
+  let parsed: ManagedPm2ParsedStatus | undefined;
 
-  for (let attempt = 0; attempt <= DEFAULT_PM2_STATUS_MAX_RETRIES; attempt += 1) {
-    result = await executePm2(definition, ["jlist"], runner)
-    parsed = parseManagedPm2Status(result, definition.appName)
+  for (
+    let attempt = 0;
+    attempt <= DEFAULT_PM2_STATUS_MAX_RETRIES;
+    attempt += 1
+  ) {
+    result = await executePm2(definition, ["jlist"], runner);
+    parsed = parseManagedPm2Status(result, definition.appName);
 
     if (parsed.kind === "status") {
       return {
@@ -636,27 +747,29 @@ async function readManagedPm2Status(
         stderr: result.stderr,
         launchStrategy: definition.launchStrategy,
         dotnetPath: definition.dotnetPath,
+        releasedServiceStartScriptPath:
+          definition.releasedServiceStartScriptPath,
         runtimeFilesDir: definition.runtimeFilesDir
-      }
+      };
     }
 
     if (parsed.kind === "failure") {
-      throw new ManagedPm2Error(parsed.message)
+      throw new ManagedPm2Error(parsed.message);
     }
 
-    const retriesRemaining = DEFAULT_PM2_STATUS_MAX_RETRIES - attempt
+    const retriesRemaining = DEFAULT_PM2_STATUS_MAX_RETRIES - attempt;
     if (retriesRemaining <= 0) {
       throw new ManagedPm2Error(
         `Managed PM2 status output could not be normalized after ${attempt + 1} attempt${attempt === 0 ? "" : "s"} during PM2 bootstrap. Last PM2 output: ${parsed.summary}`
-      )
+      );
     }
 
-    await sleep(DEFAULT_PM2_STATUS_RETRY_DELAY_MS)
+    await sleep(DEFAULT_PM2_STATUS_RETRY_DELAY_MS);
   }
 
   throw new ManagedPm2Error(
     `Managed PM2 status output could not be normalized for ${definition.appName}.`
-  )
+  );
 }
 
 async function executePm2(
@@ -664,15 +777,15 @@ async function executePm2(
   args: string[],
   runner: CommandRunner,
   options: {
-    allowMissingProcess?: boolean
+    allowMissingProcess?: boolean;
   } = {}
 ): Promise<CommandResult> {
-  const env = buildManagedPm2Environment(definition)
+  const env = buildManagedPm2Environment(definition);
   const launchOptions = getCommandLaunchOptions(definition.nodePath, {
     platform: process.platform,
     env
-  })
-  const pm2Args = [definition.pm2Binary, "--hp", definition.pm2Home, ...args]
+  });
+  const pm2Args = [definition.pm2Binary, "--hp", definition.pm2Home, ...args];
 
   try {
     return await runner(definition.nodePath, pm2Args, {
@@ -680,7 +793,7 @@ async function executePm2(
       env,
       shell: launchOptions.shell,
       maxBuffer: 10 * 1024 * 1024
-    })
+    });
   } catch (error) {
     if (
       options.allowMissingProcess &&
@@ -698,13 +811,13 @@ async function executePm2(
         exitCode: error.context.exitCode,
         signal: error.context.signal,
         timedOut: error.context.timedOut
-      }
+      };
     }
 
     throw new ManagedPm2Error(
       error instanceof Error ? error.message : String(error),
       error instanceof Error ? { cause: error } : undefined
-    )
+    );
   }
 }
 
@@ -715,43 +828,46 @@ async function prepareReleasedServicePm2Files(
     definition.launchStrategy !== "released-service" ||
     !definition.runtimeFilesDir ||
     !definition.ecosystemPath ||
-    !definition.envFilePath ||
-    !definition.dotnetPath
+    !definition.envFilePath
   ) {
-    return
+    return;
   }
 
-  const env = buildManagedPm2Environment(definition)
+  const env = buildManagedPm2Environment(definition);
 
-  await mkdir(definition.runtimeFilesDir, { recursive: true })
-  await writeFile(definition.envFilePath, buildPm2EnvFile(definition, env), "utf8")
+  await mkdir(definition.runtimeFilesDir, { recursive: true });
+  await writeFile(
+    definition.envFilePath,
+    buildPm2EnvFile(definition, env),
+    "utf8"
+  );
   await writeFile(
     definition.ecosystemPath,
     buildReleasedServiceEcosystemConfig(definition, env),
     "utf8"
-  )
+  );
 }
 
 function buildReleasedServiceEcosystemConfig(
   definition: ResolvedManagedPm2ServiceDefinition,
   env: NodeJS.ProcessEnv
 ): string {
-  if (!definition.dotnetPath || !definition.envFilePath) {
+  if (!definition.envFilePath) {
     throw new ManagedPm2Error(
       `Released-service PM2 launch files are unavailable for ${definition.service}.`
-    )
+    );
   }
 
-  const args = [definition.script, ...definition.args]
+  const launch = resolveReleasedServicePm2Launch(definition);
   return [
     "module.exports = {",
     "  apps: [",
     "    {",
     `      name: ${JSON.stringify(definition.appName)},`,
-    `      script: ${JSON.stringify(definition.dotnetPath)},`,
-    `      args: ${JSON.stringify(args)},`,
+    `      script: ${JSON.stringify(launch.script)},`,
+    `      args: ${JSON.stringify(launch.args)},`,
     `      cwd: ${JSON.stringify(definition.cwd)},`,
-    '      interpreter: "none",',
+    `      interpreter: ${JSON.stringify(launch.interpreter)},`,
     '      exec_mode: "fork",',
     "      autorestart: true,",
     "      watch: false,",
@@ -761,7 +877,61 @@ function buildReleasedServiceEcosystemConfig(
     "  ]",
     "};",
     ""
-  ].join("\n")
+  ].join("\n");
+}
+
+function resolveReleasedServicePm2Launch(
+  definition: ResolvedManagedPm2ServiceDefinition
+): {
+  script: string;
+  args: string[];
+  interpreter: string;
+} {
+  if (definition.releasedServiceStartScriptPath) {
+    if (isNodeLauncherScript(definition.releasedServiceStartScriptPath)) {
+      return {
+        script: definition.releasedServiceStartScriptPath,
+        args: [...definition.args],
+        interpreter: definition.nodePath
+      };
+    }
+
+    if (
+      process.platform === "win32" &&
+      isWindowsBatchScript(definition.releasedServiceStartScriptPath)
+    ) {
+      const cmdExe = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe";
+      return {
+        script: cmdExe,
+        args: [
+          "/d",
+          "/s",
+          "/c",
+          definition.releasedServiceStartScriptPath,
+          ...definition.args
+        ],
+        interpreter: "none"
+      };
+    }
+
+    return {
+      script: definition.releasedServiceStartScriptPath,
+      args: [...definition.args],
+      interpreter: "none"
+    };
+  }
+
+  if (!definition.dotnetPath) {
+    throw new ManagedPm2Error(
+      `Released-service PM2 launch files are unavailable for ${definition.service}.`
+    );
+  }
+
+  return {
+    script: definition.dotnetPath,
+    args: [definition.script, ...definition.args],
+    interpreter: "none"
+  };
 }
 
 function buildPm2EnvFile(
@@ -775,17 +945,19 @@ function buildPm2EnvFile(
       ...Object.entries(env)
         .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, value]) => `${key}=${String(value).replace(/\r?\n/g, "\\n")}`)
+        .map(
+          ([key, value]) => `${key}=${String(value).replace(/\r?\n/g, "\\n")}`
+        )
     ].join("\n") + "\n"
-  )
+  );
 }
 
 function serializePm2Environment(env: NodeJS.ProcessEnv): string {
   const normalizedEntries = Object.entries(env)
     .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => left.localeCompare(right));
 
-  return JSON.stringify(Object.fromEntries(normalizedEntries), null, 8)
+  return JSON.stringify(Object.fromEntries(normalizedEntries), null, 8);
 }
 
 function buildManagedPm2Environment(
@@ -796,13 +968,13 @@ function buildManagedPm2Environment(
     ...baseEnv,
     ...definition.env,
     [definition.nameIdentifierEnv]: definition.nameIdentifier
-  }
+  };
 
   if (
     definition.service === "server" &&
     !normalizeManagedEnvironmentValue(resolvedBaseEnv.ASPNETCORE_ENVIRONMENT)
   ) {
-    resolvedBaseEnv.ASPNETCORE_ENVIRONMENT = "Production"
+    resolvedBaseEnv.ASPNETCORE_ENVIRONMENT = "Production";
   }
 
   return buildManagedRuntimeEnvironment(
@@ -819,7 +991,7 @@ function buildManagedPm2Environment(
       useManagedNodeRuntime: definition.useManagedNodeRuntime
     },
     resolvedBaseEnv
-  )
+  );
 }
 
 function mergeManagedEnvironment(
@@ -828,31 +1000,33 @@ function mergeManagedEnvironment(
 ): Record<string, string> {
   const merged: Record<string, string> = {
     ...(baseEnvironment ?? {})
-  }
+  };
 
   if (!overrides) {
-    return merged
+    return merged;
   }
 
   for (const [key, value] of Object.entries(overrides)) {
     if (!key.trim()) {
-      continue
+      continue;
     }
 
     if (value === undefined) {
-      delete merged[key]
-      continue
+      delete merged[key];
+      continue;
     }
 
-    merged[key] = value
+    merged[key] = value;
   }
 
-  return merged
+  return merged;
 }
 
-function normalizeManagedEnvironmentValue(value: string | undefined): string | undefined {
-  const normalized = value?.trim()
-  return normalized ? normalized : undefined
+function normalizeManagedEnvironmentValue(
+  value: string | undefined
+): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function resolvePm2NameIdentifier(
@@ -861,29 +1035,30 @@ function resolvePm2NameIdentifier(
   service: ManagedPm2ServiceName,
   nameIdentifierValue?: string
 ): {
-  baseAppName: string
-  nameIdentifierEnv: string
-  defaultNameIdentifier: string
-  nameIdentifier: string
+  baseAppName: string;
+  nameIdentifierEnv: string;
+  defaultNameIdentifier: string;
+  nameIdentifier: string;
 } {
-  const nameIdentifierEnv = DEFAULT_PM2_NAME_IDENTIFIER_ENV
+  const nameIdentifierEnv = DEFAULT_PM2_NAME_IDENTIFIER_ENV;
 
   const defaultNameIdentifier =
-    manifest.runtime.hagicodeInstance?.trim() || PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT
+    manifest.runtime.hagicodeInstance?.trim() ||
+    PM2_NAME_IDENTIFIER_BOOTSTRAP_DEFAULT;
   const nameIdentifier =
     nameIdentifierValue?.trim() ||
     manifest.runtime.hagicodeInstance?.trim() ||
-    process.env[nameIdentifierEnv]?.trim()
+    process.env[nameIdentifierEnv]?.trim();
   if (!nameIdentifier) {
     throw new ManagedPm2Error(
       `Managed PM2 service ${service} requires a runtime instance name. Set runtime.hagicodeInstance in the manifest, pass --instance, or set ${nameIdentifierEnv}.`
-    )
+    );
   }
 
   if (!PM2_NAME_IDENTIFIER_PATTERN.test(nameIdentifier)) {
     throw new ManagedPm2Error(
       `Managed PM2 service ${service} requires ${nameIdentifierEnv} to use only lowercase letters, digits, and underscores. Received "${nameIdentifier}".`
-    )
+    );
   }
 
   return {
@@ -891,64 +1066,66 @@ function resolvePm2NameIdentifier(
     nameIdentifierEnv,
     defaultNameIdentifier,
     nameIdentifier
-  }
+  };
 }
 
 type ManagedPm2ParsedStatus =
   | {
-      kind: "status"
+      kind: "status";
       statusEntry: {
-        status: ManagedPm2Status
-        pid: number | null
-      } | null
+        status: ManagedPm2Status;
+        pid: number | null;
+      } | null;
     }
   | {
-      kind: "bootstrap"
-      summary: string
+      kind: "bootstrap";
+      summary: string;
     }
   | {
-      kind: "failure"
-      message: string
-    }
+      kind: "failure";
+      message: string;
+    };
 
 function parseManagedPm2Status(
   result: CommandResult,
   appName: string
 ): ManagedPm2ParsedStatus {
-  const trimmedStdout = result.stdout.trim()
-  const trimmedStderr = result.stderr.trim()
+  const trimmedStdout = result.stdout.trim();
+  const trimmedStderr = result.stderr.trim();
 
   if (!trimmedStdout) {
     if (!trimmedStderr) {
       return {
         kind: "status",
         statusEntry: null
-      }
+      };
     }
 
     if (isRetryablePm2BootstrapOutput(result.stdout, result.stderr)) {
       return {
         kind: "bootstrap",
         summary: summarizePm2Output(result)
-      }
+      };
     }
 
     return {
       kind: "failure",
       message:
         "Managed PM2 status output was empty on stdout and could not be normalized from stderr."
-    }
+    };
   }
 
   try {
-    const parsed = parsePm2ProcessList(result)
-    const entry = parsed.find((value) => isPm2ProcessRecord(value) && value.name === appName)
+    const parsed = parsePm2ProcessList(result);
+    const entry = parsed.find(
+      (value) => isPm2ProcessRecord(value) && value.name === appName
+    );
 
     if (!entry || !isPm2ProcessRecord(entry)) {
       return {
         kind: "status",
         statusEntry: null
-      }
+      };
     }
 
     return {
@@ -957,67 +1134,68 @@ function parseManagedPm2Status(
         status: normalizePm2Status(entry.pm2_env?.status),
         pid: typeof entry.pid === "number" ? entry.pid : null
       }
-    }
+    };
   } catch (error) {
     if (isRetryablePm2BootstrapOutput(result.stdout, result.stderr)) {
       return {
         kind: "bootstrap",
         summary: summarizePm2Output(result)
-      }
+      };
     }
 
     return {
       kind: "failure",
       message: `Managed PM2 status returned invalid JSON: ${error instanceof Error ? error.message : String(error)} (${summarizePm2Output(result)})`
-    }
+    };
   }
 }
 
 function parsePm2ProcessList(result: CommandResult): unknown[] {
-  const directCandidates = [result.stdout.trim(), `${result.stdout}\n${result.stderr}`.trim()].filter(
-    Boolean
-  )
+  const directCandidates = [
+    result.stdout.trim(),
+    `${result.stdout}\n${result.stderr}`.trim()
+  ].filter(Boolean);
 
   for (const candidate of directCandidates) {
-    const direct = tryParseJson(candidate)
+    const direct = tryParseJson(candidate);
     if (Array.isArray(direct)) {
-      return direct
+      return direct;
     }
 
-    const extracted = extractPm2JsonArray(candidate)
+    const extracted = extractPm2JsonArray(candidate);
     if (Array.isArray(extracted)) {
-      return extracted
+      return extracted;
     }
   }
 
-  throw new Error("No JSON array payload was found in PM2 output.")
+  throw new Error("No JSON array payload was found in PM2 output.");
 }
 
 function extractPm2JsonArray(output: string): unknown[] | null {
   for (let index = 0; index < output.length; index += 1) {
     if (output[index] !== "[") {
-      continue
+      continue;
     }
 
-    const nextNonWhitespace = output.slice(index + 1).match(/\S/u)?.[0]
+    const nextNonWhitespace = output.slice(index + 1).match(/\S/u)?.[0];
     if (nextNonWhitespace !== "{" && nextNonWhitespace !== "]") {
-      continue
+      continue;
     }
 
-    const parsed = tryParseJson(output.slice(index))
+    const parsed = tryParseJson(output.slice(index));
     if (Array.isArray(parsed)) {
-      return parsed
+      return parsed;
     }
   }
 
-  return null
+  return null;
 }
 
 function tryParseJson(value: string): unknown {
   try {
-    return JSON.parse(value)
+    return JSON.parse(value);
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -1025,11 +1203,14 @@ function summarizePm2Output(result: CommandResult): string {
   return [result.stdout.trim(), result.stderr.trim()]
     .filter(Boolean)
     .join(" | ")
-    .slice(0, 400)
+    .slice(0, 400);
 }
 
-function isRetryablePm2BootstrapOutput(stdout: string, stderr: string): boolean {
-  const combined = `${stdout}\n${stderr}`.toLowerCase()
+function isRetryablePm2BootstrapOutput(
+  stdout: string,
+  stderr: string
+): boolean {
+  const combined = `${stdout}\n${stderr}`.toLowerCase();
   return [
     "[pm2] spawning",
     "[pm2] launching",
@@ -1040,60 +1221,61 @@ function isRetryablePm2BootstrapOutput(stdout: string, stderr: string): boolean 
     "rpc socket",
     "pub socket",
     "daemon launched"
-  ].some((marker) => combined.includes(marker))
+  ].some((marker) => combined.includes(marker));
 }
 
 function normalizePm2Status(value: unknown): ManagedPm2Status {
   switch (value) {
     case "online":
-      return "online"
+      return "online";
     case "stopped":
-      return "stopped"
+      return "stopped";
     case "errored":
-      return "errored"
+      return "errored";
     default:
-      return "unknown"
+      return "unknown";
   }
 }
 
-function isPm2ProcessRecord(
-  value: unknown
-): value is {
-  name?: string
-  pid?: number
+function isPm2ProcessRecord(value: unknown): value is {
+  name?: string;
+  pid?: number;
   pm2_env?: {
-    status?: string
-  }
+    status?: string;
+  };
 } {
-  return typeof value === "object" && value !== null
+  return typeof value === "object" && value !== null;
 }
 
 function defaultPm2Script(componentName: string): string {
   switch (componentName) {
     case "omniroute":
-      return "current/bin/omniroute.mjs"
+      return "current/bin/omniroute.mjs";
     case "code-server":
-      return "current/out/node/entry.js"
+      return "current/out/node/entry.js";
     default:
-      throw new ManagedPm2Error(`Unsupported PM2 component ${componentName}.`)
+      throw new ManagedPm2Error(`Unsupported PM2 component ${componentName}.`);
   }
 }
 
-function defaultBundledRuntimePm2Args(componentName: string, componentConfigDir: string): string[] {
-  const configPath = join(componentConfigDir, "config.yaml")
+function defaultBundledRuntimePm2Args(
+  componentName: string,
+  componentConfigDir: string
+): string[] {
+  const configPath = join(componentConfigDir, "config.yaml");
 
   switch (componentName) {
     case "omniroute":
-      return ["--config", configPath, "--no-open"]
+      return ["--config", configPath, "--no-open"];
     case "code-server":
-      return ["--config", configPath]
+      return ["--config", configPath];
     default:
-      return []
+      return [];
   }
 }
 
 function toPm2Args(args: readonly string[]): string[] {
-  return args.length > 0 ? ["--", ...args] : []
+  return args.length > 0 ? ["--", ...args] : [];
 }
 
 function buildPm2ActionArgs(
@@ -1104,16 +1286,22 @@ function buildPm2ActionArgs(
     if (!definition.ecosystemPath) {
       throw new ManagedPm2Error(
         `Released-service PM2 ecosystem file is unavailable for ${definition.service}.`
-      )
+      );
     }
 
     switch (action) {
       case "start":
-        return ["start", definition.ecosystemPath, "--only", definition.appName, "--update-env"]
+        return [
+          "start",
+          definition.ecosystemPath,
+          "--only",
+          definition.appName,
+          "--update-env"
+        ];
       case "stop":
-        return ["stop", definition.appName]
+        return ["stop", definition.appName];
       case "delete":
-        return ["delete", definition.appName]
+        return ["delete", definition.appName];
     }
   }
 
@@ -1131,11 +1319,11 @@ function buildPm2ActionArgs(
           definition.nodePath,
           "--update-env",
           ...toPm2Args(definition.args)
-        ]
+        ];
       }
 
       if (definition.launchStrategy === "native-wrapper") {
-        return buildNativeWrapperPm2StartArgs(definition)
+        return buildNativeWrapperPm2StartArgs(definition);
       }
 
       return [
@@ -1147,11 +1335,11 @@ function buildPm2ActionArgs(
         definition.cwd,
         "--update-env",
         ...toPm2Args(definition.args)
-      ]
+      ];
     case "stop":
-      return ["stop", definition.appName]
+      return ["stop", definition.appName];
     case "delete":
-      return ["delete", definition.appName]
+      return ["delete", definition.appName];
   }
 }
 
@@ -1159,7 +1347,7 @@ function buildNativeWrapperPm2StartArgs(
   definition: ResolvedManagedPm2ServiceDefinition
 ): string[] {
   if (process.platform === "win32" && isWindowsBatchScript(definition.script)) {
-    const cmdExe = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe"
+    const cmdExe = process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe";
     return [
       "start",
       cmdExe,
@@ -1171,7 +1359,7 @@ function buildNativeWrapperPm2StartArgs(
       "none",
       "--update-env",
       ...toPm2Args(["/d", "/s", "/c", definition.script, ...definition.args])
-    ]
+    ];
   }
 
   return [
@@ -1185,37 +1373,45 @@ function buildNativeWrapperPm2StartArgs(
     "none",
     "--update-env",
     ...toPm2Args(definition.args)
-  ]
+  ];
 }
 
 function isNodeLauncherScript(scriptPath: string): boolean {
-  const extension = extname(scriptPath).toLowerCase()
-  return extension === ".js" || extension === ".mjs" || extension === ".cjs"
+  const extension = extname(scriptPath).toLowerCase();
+  return extension === ".js" || extension === ".mjs" || extension === ".cjs";
 }
 
 function isWindowsBatchScript(scriptPath: string): boolean {
-  const extension = extname(scriptPath).toLowerCase()
-  return extension === ".cmd" || extension === ".bat"
+  const extension = extname(scriptPath).toLowerCase();
+  return extension === ".cmd" || extension === ".bat";
 }
 
-function resolveBundledRuntimeLaunchStrategy(scriptPath: string): ManagedPm2LaunchStrategy {
-  return isNodeLauncherScript(scriptPath) ? "node-script" : "native-wrapper"
+function resolveBundledRuntimeLaunchStrategy(
+  scriptPath: string
+): ManagedPm2LaunchStrategy {
+  return isNodeLauncherScript(scriptPath) ? "node-script" : "native-wrapper";
 }
 
 function getManagedPm2Entrypoint(npmPrefix: string): string {
   return process.platform === "win32"
     ? join(npmPrefix, "node_modules", "pm2", "bin", "pm2")
-    : join(npmPrefix, "lib", "node_modules", "pm2", "bin", "pm2")
+    : join(npmPrefix, "lib", "node_modules", "pm2", "bin", "pm2");
 }
 
-async function validateManagedPath(pathValue: string, message: string): Promise<void> {
+async function validateManagedPath(
+  pathValue: string,
+  message: string
+): Promise<void> {
   try {
-    await access(pathValue)
+    await access(pathValue);
   } catch (error) {
-    throw new ManagedPm2Error(message, error instanceof Error ? { cause: error } : undefined)
+    throw new ManagedPm2Error(
+      message,
+      error instanceof Error ? { cause: error } : undefined
+    );
   }
 }
 
 async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms))
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
