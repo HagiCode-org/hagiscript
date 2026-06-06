@@ -36,6 +36,7 @@ export interface NpmGlobalCommandOptions {
   nodePath?: string;
   registryMirror?: string;
   prefix?: string;
+  installArgs?: string[];
   runCommand?: (
     command: string,
     args: string[],
@@ -73,7 +74,10 @@ export function buildInstallGlobalPackageArgs(
   selector: string,
   options: NpmGlobalCommandOptions = {}
 ): string[] {
-  return appendGlobalNpmOptions(["install", "-g", selector], options);
+  return appendGlobalNpmOptions(
+    ["install", "-g", ...(options.installArgs ?? []), selector],
+    options
+  );
 }
 
 function appendGlobalNpmOptions(

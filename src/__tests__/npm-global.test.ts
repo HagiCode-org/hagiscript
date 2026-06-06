@@ -87,6 +87,25 @@ describe("npm global wrappers", () => {
     ]);
   });
 
+  it("inserts package-specific install args before the selector", () => {
+    expect(
+      buildInstallGlobalPackageArgs("@earendil-works/pi-coding-agent@0.78.1", {
+        installArgs: ["--ignore-scripts"],
+        registryMirror: "https://registry.example.test",
+        prefix: "/tmp/npm-prefix"
+      })
+    ).toEqual([
+      "install",
+      "-g",
+      "--ignore-scripts",
+      "@earendil-works/pi-coding-agent@0.78.1",
+      "--registry",
+      "https://registry.example.test",
+      "--prefix",
+      "/tmp/npm-prefix"
+    ]);
+  });
+
   it("lists global package inventory with the target npm executable", async () => {
     const runner = vi.fn(async (command: string, args: string[]) => ({
       command,
@@ -177,6 +196,36 @@ describe("npm global wrappers", () => {
     expect(runner).toHaveBeenCalledWith(
       "/runtime/bin/npm",
       ["install", "-g", "openspec@^1.0.0"],
+      120_000,
+      {}
+    );
+  });
+
+  it("passes install args through the npm install wrapper", async () => {
+    const runner = vi.fn(async (command: string, args: string[]) => ({
+      command,
+      args,
+      stdout: "installed",
+      stderr: ""
+    }));
+
+    await installGlobalPackage(
+      "/runtime/bin/npm",
+      "@earendil-works/pi-coding-agent@0.78.1",
+      {
+        installArgs: ["--ignore-scripts"],
+        runCommand: runner
+      }
+    );
+
+    expect(runner).toHaveBeenCalledWith(
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "--ignore-scripts",
+        "@earendil-works/pi-coding-agent@0.78.1"
+      ],
       120_000,
       {}
     );

@@ -59,6 +59,24 @@ describe("npm-sync manifest validation", () => {
     expect(manifest.syncMode).toBe("packages");
   });
 
+  it("loads package manifests with install args", () => {
+    const manifest = validateNpmSyncManifest({
+      packages: {
+        "@earendil-works/pi-coding-agent": {
+          version: "0.78.1",
+          target: "0.78.1",
+          installArgs: [" --ignore-scripts "]
+        }
+      }
+    });
+
+    expect(manifest.packages["@earendil-works/pi-coding-agent"]).toEqual({
+      version: "0.78.1",
+      target: "0.78.1",
+      installArgs: ["--ignore-scripts"]
+    });
+  });
+
   it("loads embedded npmSync manifests from runtime manifests", async () => {
     const directory = await mkdtemp(join(tmpdir(), "hagiscript-runtime-npm-sync-"));
     const manifestPath = join(directory, "runtime-manifest.yaml");
@@ -168,6 +186,19 @@ npmSync:
         packages: { openspec: { version: "definitely bad" } }
       })
     ).toThrow("not a valid semver range");
+  });
+
+  it("rejects invalid install args", () => {
+    expect(() =>
+      validateNpmSyncManifest({
+        packages: {
+          openspec: {
+            version: "^1.0.0",
+            installArgs: ["--ignore-scripts", " "]
+          }
+        }
+      })
+    ).toThrow("installArgs[1]");
   });
 
   it.each([
@@ -336,6 +367,26 @@ describe("npm-sync planning", () => {
     expect(plan.find((action) => action.packageName === "openspec")).toMatchObject({
       targetSelector: "@fission-ai/openspec@1.3.1",
       selectedInstallSelector: "@fission-ai/openspec@1.3.1"
+    });
+  });
+
+  it("retains package-specific install args on planned actions", () => {
+    const manifest = validateNpmSyncManifest({
+      packages: {
+        "@earendil-works/pi-coding-agent": {
+          version: "0.78.1",
+          target: "0.78.1",
+          installArgs: ["--ignore-scripts"]
+        }
+      }
+    });
+
+    const plan = createNpmSyncPlan(manifest, {});
+
+    expect(plan[0]).toMatchObject({
+      packageName: "@earendil-works/pi-coding-agent",
+      selectedInstallSelector: "@earendil-works/pi-coding-agent@0.78.1",
+      installArgs: ["--ignore-scripts"]
     });
   });
 });
@@ -563,6 +614,63 @@ describe("npm-sync execution", () => {
       "--prefix",
       prefix
     ]);
+  });
+
+  it("passes install args from the manifest to npm install commands", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hagiscript-npm-sync-"));
+    const manifestPath = join(directory, "manifest.json");
+    await writeFile(
+      manifestPath,
+      JSON.stringify({
+        packages: {
+          "@earendil-works/pi-coding-agent": {
+            version: "0.78.1",
+            target: "0.78.1",
+            installArgs: ["--ignore-scripts"]
+          }
+        }
+      })
+    );
+    const runner = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === "list") {
+        return commandResult(command, args, { dependencies: {} });
+      }
+
+      return commandResult(command, args, {});
+    });
+
+    const summary = await syncNpmGlobals({
+      runtimePath: "/runtime",
+      manifestPath,
+      verifyRuntime: createVerifyRuntime(),
+      npmOptions: { ...posixNpmOptions, runCommand: runner }
+    });
+
+    expect(summary.actions).toMatchObject([
+      {
+        packageName: "@earendil-works/pi-coding-agent",
+        selectedInstallSelector: "@earendil-works/pi-coding-agent@0.78.1",
+        installArgs: ["--ignore-scripts"],
+        args: [
+          "install",
+          "-g",
+          "--ignore-scripts",
+          "@earendil-works/pi-coding-agent@0.78.1"
+        ]
+      }
+    ]);
+    expect(runner).toHaveBeenNthCalledWith(
+      2,
+      "/runtime/bin/npm",
+      [
+        "install",
+        "-g",
+        "--ignore-scripts",
+        "@earendil-works/pi-coding-agent@0.78.1"
+      ],
+      120_000,
+      {}
+    );
   });
 
   it("uses node.exe plus npm-cli.js for Windows inventory and install commands when the prefix contains spaces", async () => {

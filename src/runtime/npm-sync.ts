@@ -27,6 +27,7 @@ import {
 export interface NpmSyncManifestEntry {
   version: string;
   target?: string;
+  installArgs?: string[];
   toolId?: string;
   toolDisplayName?: string;
   toolGroup?: ToolSyncGroupId;
@@ -64,6 +65,7 @@ export interface NpmSyncPlannedAction {
   requiredRange: string;
   targetSelector: string;
   selectedInstallSelector: string;
+  installArgs?: string[];
   installedVersion?: string;
   action: NpmSyncActionKind;
   toolId?: string;
@@ -288,6 +290,13 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
     }
 
     const target = entry.target;
+    const installArgs = normalizeInstallArgs(
+      entry.installArgs,
+      `${packageName}.installArgs`,
+      errors
+    );
+
+    const baseEntry = installArgs.length > 0 ? { installArgs } : {};
     if (target !== undefined) {
       if (typeof target !== "string" || target.trim().length === 0) {
         errors.push(`${packageName}.target must be a non-empty npm selector`);
@@ -296,12 +305,13 @@ export function validateNpmSyncManifest(value: unknown): NpmSyncManifest {
 
       packages[packageName] = {
         version: normalizedRange,
-        target: target.trim()
+        target: target.trim(),
+        ...baseEntry
       };
       continue;
     }
 
-    packages[packageName] = { version: normalizedRange };
+    packages[packageName] = { version: normalizedRange, ...baseEntry };
   }
 
   if (errors.length > 0) {
@@ -371,6 +381,9 @@ export function createNpmSyncPlan(
         entry.target !== undefined
       );
       const metadata = createActionMetadata(entry);
+      const actionBase = entry.installArgs
+        ? { installArgs: [...entry.installArgs] }
+        : {};
 
       if (!installedVersion) {
         return {
@@ -378,6 +391,7 @@ export function createNpmSyncPlan(
           requiredRange: entry.version,
           targetSelector,
           selectedInstallSelector,
+          ...actionBase,
           action: "install",
           ...metadata
         };
@@ -393,6 +407,7 @@ export function createNpmSyncPlan(
           requiredRange: entry.version,
           targetSelector,
           selectedInstallSelector,
+          ...actionBase,
           installedVersion,
           action: force ? "sync" : "noop",
           ...metadata
@@ -404,6 +419,7 @@ export function createNpmSyncPlan(
         requiredRange: entry.version,
         targetSelector,
         selectedInstallSelector,
+        ...actionBase,
         installedVersion,
         action: classifyOutOfRangeVersion(installedVersion, entry.version),
         ...metadata
@@ -522,7 +538,9 @@ export async function syncNpmGlobals(
         installGlobalPackage(
           runtime.npmPath,
           action.selectedInstallSelector,
-          commandOptions
+          action.installArgs
+            ? { ...commandOptions, installArgs: action.installArgs }
+            : commandOptions
         )
     });
     const installResult = execution.result;
@@ -847,6 +865,36 @@ function normalizeStringArray(
     }
 
     return [item];
+  });
+}
+
+function normalizeInstallArgs(
+  value: unknown,
+  path: string,
+  errors: string[]
+): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array of strings`);
+    return [];
+  }
+
+  return value.flatMap((item, index) => {
+    if (typeof item !== "string") {
+      errors.push(`${path}[${index}] must be a string`);
+      return [];
+    }
+
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      errors.push(`${path}[${index}] must be a non-empty string`);
+      return [];
+    }
+
+    return [trimmed];
   });
 }
 
