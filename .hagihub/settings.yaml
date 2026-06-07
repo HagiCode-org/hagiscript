@@ -1,0 +1,9 @@
+action_recommendations:
+  - id: ci
+    watch: true
+    include: true
+    reason: "build and validate the package"
+  - id: npm-publish
+    watch: true
+    include: true
+    reason: "publish npm package"
