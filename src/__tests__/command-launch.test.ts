@@ -150,7 +150,7 @@ describe("command launch compatibility helpers", () => {
     ).toEqual({});
   });
 
-  it("forces shell launch for Windows Store/MSIX desktop child processes", () => {
+  it("forces shell launch for Microsoft Store/MSIX desktop child processes", () => {
     const env = { HAGICODE_DESKTOP_WINDOWS_STORE: "1" };
 
     expect(isWindowsStoreAppEnvironment(env)).toBe(true);

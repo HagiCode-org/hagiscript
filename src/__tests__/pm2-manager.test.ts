@@ -392,7 +392,7 @@ describe("pm2 manager", () => {
     }
   });
 
-  it("routes managed PM2 through shell launch for Windows Store/MSIX child processes", async () => {
+  it("routes managed PM2 through shell launch for Microsoft Store/MSIX child processes", async () => {
     const restoreEnv = setPm2NameIdentifierEnv("fixture");
     const previousWindowsStore = process.env.HAGICODE_DESKTOP_WINDOWS_STORE;
     const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(
