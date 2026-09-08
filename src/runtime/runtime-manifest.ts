@@ -110,7 +110,6 @@ export interface RuntimeReleasedServiceDefinition {
 export interface RuntimeProxyPublicDefinition {
   serverPort?: number
   codeServerPort?: number
-  omniroutePort?: number
 }
 
 export interface RuntimeProxyCaddyDefinition {
@@ -177,10 +176,6 @@ const builtinRuntimeComponentScripts: Record<string, RuntimeComponentScriptDefin
     install: "install-dotnet.mjs",
     verify: "verify-dotnet.mjs",
     remove: "remove-dotnet.mjs"
-  },
-  omniroute: {
-    install: "install-omniroute.mjs",
-    configure: "configure-omniroute.mjs"
   },
   "code-server": {
     install: "install-code-server.mjs",
@@ -439,11 +434,6 @@ function validateRuntimeProxyPublic(
       "proxy.caddy.public.codeServerPort",
       errors
     ),
-    omniroutePort: readOptionalPort(
-      value.omniroutePort,
-      "proxy.caddy.public.omniroutePort",
-      errors
-    )
   }
 }
 

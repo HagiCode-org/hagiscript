@@ -106,7 +106,6 @@ export function getComponentManagedRoot(
       return paths.nodeRuntime
     case "dotnet":
       return paths.dotnetRuntime
-    case "omniroute":
     case "code-server":
       return join(paths.vendoredRoot, componentName)
     case "server":

@@ -38,19 +38,6 @@ components:
   version: "10.0.5"
   channelVersion: "10.0"
 
-- name: "omniroute"
-  type: "bundled-runtime"
-  required: false
-  source: "desktop-vendored-runtime"
-  version: "3.6.9"
-  bundledInstallMode: "archive-7z-only"
-  runtimeDataDir: "services/omniroute"
-  lifecycleDependencies:
-  - "node"
-  pm2:
-    appName: "hagicode-omniroute"
-    cwd: "current"
-
 - name: "code-server"
   type: "bundled-runtime"
   required: false
@@ -89,13 +76,11 @@ phases:
     - "node"
     - "dotnet"
     - "server"
-    - "omniroute"
     - "code-server"
   remove:
     order:
     - "server"
     - "code-server"
-    - "omniroute"
     - "dotnet"
     - "node"
   update:
@@ -103,7 +88,6 @@ phases:
     - "node"
     - "dotnet"
     - "server"
-    - "omniroute"
     - "code-server"
 
 npmSync:

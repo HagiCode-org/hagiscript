@@ -36,7 +36,6 @@ import {
 
 export const supportedPm2Services = [
   "server",
-  "omniroute",
   "code-server"
 ] as const;
 
@@ -1249,8 +1248,6 @@ function isPm2ProcessRecord(value: unknown): value is {
 
 function defaultPm2Script(componentName: string): string {
   switch (componentName) {
-    case "omniroute":
-      return "current/bin/omniroute.mjs";
     case "code-server":
       return "current/out/node/entry.js";
     default:
@@ -1265,8 +1262,6 @@ function defaultBundledRuntimePm2Args(
   const configPath = join(componentConfigDir, "config.yaml");
 
   switch (componentName) {
-    case "omniroute":
-      return ["--config", configPath, "--no-open"];
     case "code-server":
       return ["--config", configPath];
     default:

@@ -25,7 +25,7 @@ import {
   type SevenZipExtractor
 } from "./seven-zip-extract.js"
 
-export type DedicatedComponentName = "omniroute" | "code_server"
+export type DedicatedComponentName = "code_server"
 export type DedicatedComponentAction = "exact" | "start" | "stop" | "restart" | "status" | "env" | "logs"
 
 export interface ComponentServiceCommandOptions {
@@ -134,16 +134,6 @@ export interface ComponentLogsEnvelope {
 }
 
 const COMPONENT_DEFINITIONS: Record<DedicatedComponentName, ComponentServiceDefinition> = {
-  omniroute: {
-    component: "omniroute",
-    service: "omniroute",
-    manifestComponentName: "omniroute",
-    directoryName: "omniroute",
-    displayName: "OmniRoute",
-    archiveFileName: "omniroute.7z",
-    payloadEntrypointRelativePath: join("bin", "omniroute.mjs"),
-    logFileName: "omniroute.log"
-  },
   code_server: {
     component: "code_server",
     service: "code-server",

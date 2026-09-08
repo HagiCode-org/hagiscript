@@ -22,10 +22,6 @@ const supportedActions: readonly DedicatedComponentAction[] = [
   "logs"
 ]
 
-export function registerOmniRouteCommands(program: Command): void {
-  registerDedicatedComponentCommand(program, "omniroute", "manage the dedicated OmniRoute runtime")
-}
-
 export function registerDedicatedComponentCommand(
   program: Command,
   component: DedicatedComponentName,

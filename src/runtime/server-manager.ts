@@ -235,15 +235,9 @@ const LEGACY_SERVER_HTTP_INDEX_URLS = new Set([
 const DEFAULT_CODE_SERVER_HOST = "127.0.0.1"
 const DEFAULT_CODE_SERVER_PORT = 8080
 const DEFAULT_CODE_SERVER_AUTH_MODE = "none"
-const DEFAULT_OMNIROUTE_HOST = "127.0.0.1"
-const DEFAULT_OMNIROUTE_PORT = 39001
-const MANAGED_SERVER_INTEGRATION_DEPENDENCIES: readonly ManagedPm2ServiceName[] = [
-  "code-server",
-  "omniroute"
-]
+const MANAGED_SERVER_INTEGRATION_DEPENDENCIES: readonly ManagedPm2ServiceName[] = ["code-server"]
 const VSCODE_SERVER_SOURCE_EXTERNAL = "external"
 const VSCODE_SERVER_SECRET_SOURCE_BOOTSTRAP = "bootstrap"
-const OMNIROUTE_SOURCE_EXTERNAL = "external"
 
 export async function installManagedServer(
   options: ManagedServerInstallOptions = {}
@@ -611,13 +605,6 @@ async function resolveManagedServerIntegrationEnvironment(
         : undefined,
       paths,
       manifest
-    )),
-    ...(await resolveManagedOmniRouteEnvironment(
-      isManagedDependencyInstalled(runtimeState, "omniroute")
-        ? manifest.componentMap.get("omniroute")
-        : undefined,
-      paths,
-      manifest
     ))
   }
 }
@@ -658,38 +645,9 @@ async function resolveManagedVsCodeServerEnvironment(
   }
 }
 
-async function resolveManagedOmniRouteEnvironment(
-  component: RuntimeComponentDefinition | undefined,
-  paths: ResolvedRuntimePaths,
-  manifest: LoadedRuntimeManifest
-): Promise<Record<string, string>> {
-  if (!component) {
-    return {}
-  }
-
-  const config = await readYamlObject(
-    join(getComponentConfigDirectory(paths, component.name, component.runtimeDataDir), "config.yaml")
-  )
-  const address = parseConfiguredAddress(
-    readConfigString(config, "listen"),
-    DEFAULT_OMNIROUTE_HOST,
-    DEFAULT_OMNIROUTE_PORT
-  )
-  const exposedPort = resolveManagedDependencyPublicPort(manifest, "omniroute") ?? address.port
-  const baseUrl = buildHttpBaseUrl(address.host, exposedPort)
-
-  return {
-    OmniRoute__Enabled: "true",
-    OmniRoute__ApiEndpoint: baseUrl,
-    OmniRoute__DefaultBaseUrl: baseUrl,
-    OmniRoute__DefaultBaseUrlSource: OMNIROUTE_SOURCE_EXTERNAL,
-    OmniRoute__DefaultBaseUrlLocked: "true"
-  }
-}
-
 function isManagedDependencyInstalled(
   runtimeState: RuntimeStateReport,
-  componentName: "code-server" | "omniroute"
+  componentName: "code-server"
 ): boolean {
   return runtimeState.components.some(
     (component) => component.name === componentName && component.status === "installed"
@@ -698,14 +656,14 @@ function isManagedDependencyInstalled(
 
 function resolveManagedDependencyPublicPort(
   manifest: LoadedRuntimeManifest,
-  service: "code-server" | "omniroute"
+  service: "code-server"
 ): number | undefined {
   const publicConfig = manifest.proxy?.caddy?.public
   if (!publicConfig) {
     return undefined
   }
 
-  return service === "code-server" ? publicConfig.codeServerPort : publicConfig.omniroutePort
+  return publicConfig.codeServerPort
 }
 
 async function readYamlObject(filePath: string): Promise<Record<string, unknown> | undefined> {

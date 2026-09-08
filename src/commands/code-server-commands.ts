@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { registerDedicatedComponentCommand } from "./omniroute-commands.js"
+import { registerDedicatedComponentCommand } from "./dedicated-component-commands.js"
 
 export function registerCodeServerCommands(program: Command): void {
   registerDedicatedComponentCommand(
