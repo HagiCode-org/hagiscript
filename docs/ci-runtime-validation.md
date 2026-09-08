@@ -1,8 +1,8 @@
 # CI Runtime Validation
 
-The `.github/workflows/ci.yml` workflow validates HagiScript on Linux, Windows, and macOS GitHub-hosted runners. Both `validate` and `runtime-management` use the same operating-system matrix:
+The `.github/workflows/ci.yml` workflow validates HagiScript on Linux, Windows, and macOS GitHub-hosted runners through the `validate` job:
 
-The dedicated `runtime-key-path` job now uses the same Linux/Windows/macOS matrix and validates the production-oriented runtime flow with real network downloads on each runner. It installs the managed runtime components from the packaged manifest, provisions scenario-specific npm global tools through `hagiscript npm-sync`, resolves `pm2` from the managed npm prefix, and then starts or stops the managed services through `hagiscript pm2 ...`. An additional released-server step stages the latest public backend payload from GitHub Releases and verifies the same managed PM2 contract against that published package.
+The validation job covers the contributor-facing package flow with real network downloads on each runner. It installs the managed runtime components from the packaged manifest, provisions npm global tools through `hagiscript npm-sync`, and exercises the packaged CLI and managed service contracts.
 
 - `ubuntu-latest` validates POSIX paths, Unix permission bits, symlink resolution, package build output, unit tests, package contents, and installed-package runtime behavior.
 - `windows-latest` validates `.cmd` command shims, managed `node.exe` and `npm.cmd` resolution, Windows-safe argument arrays, installed-package runtime behavior, and the same managed PM2 online-state contract required on Linux and macOS. Runner-specific capability skips remain limited to unrelated platform checks such as symlink creation privilege.
@@ -57,9 +57,9 @@ Major integration stages are named in logs and summaries:
 
 Each integration run writes a consistent Markdown summary with platform, architecture, runner metadata, Node.js and npm versions, temp root, package version, stage outcomes, skipped checks, and final result. The dedicated runtime key-path report is grouped into the three business-path sections `Runtime Install`, `npm-sync Provisioning`, and `Managed PM2 Verification`. Large diagnostics such as PM2 environment snapshots use GitHub-compatible `<details>` blocks so the job summary stays readable. In GitHub Actions, the summary is appended to the job summary and copied into `.ci-artifacts` for upload.
 
-The workflow uploads diagnostics with platform-specific artifact names such as `hagiscript-validate-linux-diagnostics`, `hagiscript-validate-windows-diagnostics`, `hagiscript-runtime-management-macos-diagnostics`, and `hagiscript-runtime-key-path-windows-diagnostics`. Artifacts include stage logs and the integration summary when the reporting step is reached.
+The workflow uploads diagnostics with platform-specific artifact names such as `hagiscript-validate-linux-diagnostics` and `hagiscript-validate-windows-diagnostics`. Artifacts include stage logs and the integration summary when the reporting step is reached.
 
-Skipped checks are listed under `Skipped Checks`. They are not reported as successful validations. A skipped check means the runner did not expose a capability that can be required consistently, while a passed stage means the validation actually ran and succeeded. Managed PM2 lifecycle assertions are not skippable in `runtime-management` or `runtime-key-path`; if a service does not reach `Status: online`, the integration fails on every operating system.
+Skipped checks are listed under `Skipped Checks`. They are not reported as successful validations. A skipped check means the runner did not expose a capability that can be required consistently, while a passed stage means the validation actually ran and succeeded.
 
 ## Expected Failure Signals
 
