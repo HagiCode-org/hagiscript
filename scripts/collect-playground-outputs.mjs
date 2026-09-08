@@ -64,23 +64,6 @@ const commands = [
     ]
   },
   {
-    outputPath: join(outputsRoot, "omniroute-status.json"),
-    command: [
-      "npm",
-      "run",
-      "dev",
-      "--",
-      "pm2",
-      "omniroute",
-      "status",
-      "--from-manifest",
-      manifestPath,
-      "--runtime-root",
-      runtimeRoot,
-      "--json"
-    ]
-  },
-  {
     outputPath: join(outputsRoot, "code-server-status.json"),
     command: [
       "npm",

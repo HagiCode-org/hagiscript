@@ -12,7 +12,6 @@ const instanceName = process.env.PLAYGROUND_INSTANCE_NAME ?? "hagiscript_playgro
 const runtimeRoot = process.env.PLAYGROUND_RUNTIME_ROOT ?? "./playground/runtime-root"
 const manifestPath = process.env.PLAYGROUND_MANIFEST_PATH ?? "./playground/generated/manifest.yaml"
 const serverPort = process.env.PLAYGROUND_SERVER_PORT ?? "39151"
-const omniRoutePort = process.env.PLAYGROUND_OMNIROUTE_PORT ?? "39001"
 const codeServerPort = process.env.PLAYGROUND_CODE_SERVER_PORT ?? "8080"
 
 const resolvedManifestPath = resolve(repoRoot, manifestPath)
@@ -75,10 +74,6 @@ patchComponentPm2Env("server", {
   ASPNETCORE_URLS: `http://127.0.0.1:${serverPort}`
 })
 
-patchComponentPm2Env("omniroute", {
-  OMNIROUTE_LISTEN_PORT: omniRoutePort
-})
-
 patchComponentPm2Env("code-server", {
   CODE_SERVER_BIND_PORT: codeServerPort
 })
@@ -87,4 +82,4 @@ await mkdir(dirname(resolvedManifestPath), { recursive: true })
 await writeFile(resolvedManifestPath, stringify(parsed), "utf8")
 process.stdout.write(`Generated playground manifest: ${resolvedManifestPath}\n`)
 process.stdout.write(`  instance=${instanceName}  runtime-root=${runtimeRoot}\n`)
-process.stdout.write(`  ports: omniroute=${omniRoutePort}  code-server=${codeServerPort}  server=${serverPort}\n`)
+process.stdout.write(`  ports: code-server=${codeServerPort}  server=${serverPort}\n`)
