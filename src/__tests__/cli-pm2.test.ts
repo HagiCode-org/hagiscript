@@ -56,7 +56,7 @@ const pm2ManagerMocks = vi.hoisted(() => ({
   })),
   renderManagedPm2StatusText: vi.fn(() => "pm2 status output"),
   renderManagedPm2EnvironmentText: vi.fn(() => "pm2 env output"),
-  supportedPm2Services: ["server", "omniroute", "code-server"]
+  supportedPm2Services: ["server", "code-server"]
 }))
 
 vi.mock("../runtime/pm2-manager.js", () => pm2ManagerMocks)

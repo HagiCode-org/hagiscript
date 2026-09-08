@@ -128,7 +128,7 @@ const serverManagerMocks = vi.hoisted(() => ({
 const pm2ManagerMocks = vi.hoisted(() => ({
   renderManagedPm2StatusText: vi.fn(() => "server status output"),
   renderManagedPm2EnvironmentText: vi.fn(() => "server env output"),
-  supportedPm2Services: ["server", "omniroute", "code-server"],
+  supportedPm2Services: ["server", "code-server"],
   runManagedPm2Command: vi.fn(),
   resolveManagedPm2Environment: vi.fn()
 }))

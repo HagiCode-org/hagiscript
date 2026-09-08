@@ -119,9 +119,6 @@ describe("runtime path helpers", () => {
   })
 
   it("uses the shared user PM2 root for default service homes", () => {
-    expect(getComponentPm2Home(runtimePaths, "omniroute", "services/omniroute")).toBe(
-      path.join(expectedDefaultPm2Root, "omniroute")
-    )
     expect(getComponentPm2Home(runtimePaths, "alpha", "alpha-data")).toBe(
       path.join(expectedDefaultPm2Root, "alpha")
     )
@@ -143,9 +140,6 @@ describe("runtime path helpers", () => {
   })
 
   it("uses distinct default PM2 homes per component", () => {
-    expect(getComponentPm2Home(runtimePaths, "omniroute", "services/omniroute")).not.toBe(
-      getComponentPm2Home(runtimePaths, "code-server", "services/code-server")
-    )
     expect(getComponentPm2Home(runtimePaths, "server", "services/server")).not.toBe(
       getComponentPm2Home(runtimePaths, "alpha", "alpha-data")
     )

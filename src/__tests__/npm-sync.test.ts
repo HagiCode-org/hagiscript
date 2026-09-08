@@ -312,7 +312,6 @@ describe("npm-sync planning", () => {
       toolManifest,
       {
         skills: "1.5.1",
-        omniroute: "3.6.9",
         "code-server": "4.117.0",
         "@openai/codex": "0.125.0"
       },

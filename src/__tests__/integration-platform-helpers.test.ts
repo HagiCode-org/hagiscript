@@ -108,7 +108,7 @@ describe("installed-runtime integration platform helpers", () => {
       extraSections: [
         {
           title: "Managed PM2 Verification",
-          lines: ["- omniroute: start -> online -> stop -> stopped"],
+          lines: ["- code-server: start -> online -> stop -> stopped"],
           details: [
             {
               summary: "PM2 environment snapshot",
