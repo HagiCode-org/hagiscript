@@ -8,7 +8,7 @@ The dedicated `runtime-key-path` job now uses the same Linux/Windows/macOS matri
 - `windows-latest` validates `.cmd` command shims, managed `node.exe` and `npm.cmd` resolution, Windows-safe argument arrays, installed-package runtime behavior, and the same managed PM2 online-state contract required on Linux and macOS. Runner-specific capability skips remain limited to unrelated platform checks such as symlink creation privilege.
 - `macos-latest` validates POSIX paths on macOS, Unix permission bits, symlink resolution, installed-package runtime behavior, and architecture diagnostics that show whether the runner is `arm64` or `x64`.
 
-The `validate` job runs the full contributor-facing sequence: `npm ci`, `npm test`, `npm run build`, `npm run pack:check`, and `npm run integration:installed-runtime`. The `runtime-management` job preserves the broader runtime-management coverage, while `runtime-key-path` isolates the critical `runtime install -> npm-sync -> managed pm2` path into a separate CI flow with production network downloads.
+The `validate` job runs the full contributor-facing sequence: `npm ci`, `npm test`, `npm run build`, `npm run pack:check`, and `npm run integration:installed-runtime`. Runtime lifecycle coverage is provided by the unit suite and the installed-runtime integration.
 
 ## Command Syntax
 
@@ -55,15 +55,6 @@ Major integration stages are named in logs and summaries:
 - `npm-sync`
 - `npm-sync invalid manifest`
 
-The dedicated runtime key-path summary adds its own focused stages:
-
-- `prepare key-path manifest`
-- `runtime install`
-- `npm-sync tool installation`
-- `pm2 environment contract`
-- `pm2 managed service lifecycle`
-- `released server key-path` (when enabled)
-
 Each integration run writes a consistent Markdown summary with platform, architecture, runner metadata, Node.js and npm versions, temp root, package version, stage outcomes, skipped checks, and final result. The dedicated runtime key-path report is grouped into the three business-path sections `Runtime Install`, `npm-sync Provisioning`, and `Managed PM2 Verification`. Large diagnostics such as PM2 environment snapshots use GitHub-compatible `<details>` blocks so the job summary stays readable. In GitHub Actions, the summary is appended to the job summary and copied into `.ci-artifacts` for upload.
 
 The workflow uploads diagnostics with platform-specific artifact names such as `hagiscript-validate-linux-diagnostics`, `hagiscript-validate-windows-diagnostics`, `hagiscript-runtime-management-macos-diagnostics`, and `hagiscript-runtime-key-path-windows-diagnostics`. Artifacts include stage logs and the integration summary when the reporting step is reached.
@@ -77,7 +68,7 @@ Skipped checks are listed under `Skipped Checks`. They are not reported as succe
 - `npm-sync` fails the job when HagiScript cannot validate the manifest, validate or install the managed runtime, inspect global packages, or install the requested package. Successful output must include manifest validation, runtime validation, registry mirror, package plan, synced package, and changed-count diagnostics.
 - The invalid fixture check is expected to fail with `Manifest validation failed:`. If it exits successfully, CI fails because the negative-path assertion did not prove npm-sync error handling.
 - Platform-specific check failures identify the named stage and include the failing assertion in the integration summary.
-- Managed PM2 lifecycle checks fail the job on all three operating systems when `omniroute`, `code-server`, or the released server cannot reach `Status: online` after `hagiscript pm2 ... start`.
+- Managed PM2 lifecycle checks fail the job on all three operating systems when `code-server` or the released server cannot reach `Status: online` after `hagiscript pm2 ... start`.
 
 ## Local Reproduction
 
@@ -88,7 +79,6 @@ npm test
 npm run build
 npm run pack:check
 npm run integration:installed-runtime
-npm run integration:runtime-key-path
 ```
 
 Override the npm registry mirror used by the npm-sync fixture:
@@ -113,7 +103,7 @@ Local runs use the contributor's current operating system and do not require Git
 
 ## Managed Tool Sync Coverage
 
-The expanded `tools` manifest shape always expands mandatory packages from the internal pinned catalog config: OpenSpec skills (`skills@1.5.1`), OmniRoute (`omniroute@3.6.9`), and code-server (`code-server@4.117.0`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`); custom entries must use valid npm package names and semver-compatible version selectors.
+The expanded `tools` manifest shape always expands mandatory packages from the internal pinned catalog config: OpenSpec skills (`skills@1.5.1`) and code-server (`code-server@4.117.0`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`); custom entries must use valid npm package names and semver-compatible version selectors.
 
 Validation happens before `npm list -g --depth=0 --json` and before any `npm install -g` mutation.
 

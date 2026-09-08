@@ -58,11 +58,10 @@ The packaged runtime manifest defines these managed components:
 
 - `node`: managed Node.js runtime
 - `dotnet`: managed .NET runtime
-- `omniroute`: bundled PM2-managed service, optional by default
 - `code-server`: bundled PM2-managed service
 - `server`: released backend service package
 
-By default, `hagiscript runtime install` prepares the required runtime set and does not install `omniroute` unless you explicitly include it with `--components`.
+By default, `hagiscript runtime install` prepares the required runtime set.
 
 The managed runtime layout separates immutable program files from mutable data:
 
@@ -166,9 +165,8 @@ Operate on selected components only:
 
 ```bash
 hagiscript runtime install --components node,dotnet
-hagiscript runtime update --components code-server,omniroute
+hagiscript runtime update --components code-server
 hagiscript runtime remove --components code-server --purge
-hagiscript runtime install --components omniroute
 ```
 
 ## Runtime Install Workflow
@@ -301,25 +299,20 @@ Read the config as JSON:
 hagiscript server config get --json
 ```
 
-## Dedicated OmniRoute And code_server Commands
+## Dedicated code_server Commands
 
-Hagiscript also exposes first-level commands for the two bundled desktop-facing services:
+Hagiscript also exposes a first-level command for the bundled code-server service:
 
 ```bash
-hagiscript omniroute exact|start|stop|restart|status|env|logs
 hagiscript code_server exact|start|stop|restart|status|env|logs
 ```
 
-These commands are compatibility wrappers over the same managed PM2 contract used by `hagiscript pm2 omniroute ...` and `hagiscript pm2 code-server ...`. They keep the same runtime-scoped PM2 home and managed service identity while hiding the lower-level extracted-runtime details from desktop callers and automation.
+This command is a compatibility wrapper over the same managed PM2 contract used by `hagiscript pm2 code-server ...`. It keeps the same runtime-scoped PM2 home and managed service identity while hiding the lower-level extracted-runtime details from desktop callers and automation.
 
 The primary bundled-runtime flow is 7z-only:
 
 ```bash
 hagiscript runtime install
-hagiscript omniroute exact
-hagiscript omniroute start
-hagiscript omniroute status --json
-
 hagiscript code_server exact
 hagiscript code_server start
 hagiscript code_server logs --lines 50
@@ -330,10 +323,6 @@ hagiscript code_server logs --lines 50
 Examples with explicit runtime context:
 
 ```bash
-hagiscript omniroute exact \
-	--from-manifest ./runtime/manifest.yaml \
-	--runtime-root ~/.hagicode/runtime
-
 hagiscript code_server env \
 	--from-manifest ./runtime/manifest.yaml \
 	--runtime-root ~/.hagicode/runtime \
@@ -343,7 +332,6 @@ hagiscript code_server env \
 Read recent allowlisted managed logs:
 
 ```bash
-hagiscript omniroute logs --lines 100
 hagiscript code_server logs --lines 50 --json
 ```
 
@@ -429,9 +417,9 @@ hagiscript npm-sync --runtime-root ~/.hagicode/runtime
 - `--force`: force reinstall or update where supported
 - `--purge`: remove retained mutable data during runtime removal
 - `--json`: emit machine-readable output for `manifest get`, state, status, env, and config commands
-- `--lines <count>`: limit recent log output for `hagiscript omniroute logs` and `hagiscript code_server logs`
+- `--lines <count>`: limit recent log output for `hagiscript code_server logs`
 
-For downstream automation, `--json` is supported by the dedicated `omniroute` and `code_server` actions as well. Dedicated JSON envelopes always include `component`, `service`, `action`, and `ok`, then add action-specific payloads for extraction paths, lifecycle status, resolved environment, or returned log lines.
+For downstream automation, `--json` is supported by the dedicated `code_server` actions. Dedicated JSON envelopes always include `component`, `service`, `action`, and `ok`, then add action-specific payloads for extraction paths, lifecycle status, resolved environment, or returned log lines.
 
 ## License
 
