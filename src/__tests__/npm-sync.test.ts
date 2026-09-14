@@ -146,8 +146,15 @@ npmSync:
       "@fission-ai/openspec",
       "@openai/codex",
       "@scope/agent-cli",
+      "code-server",
       "skills"
     ]);
+    expect(manifest.packages["code-server"]).toMatchObject({
+      version: "4.117.0",
+      target: "4.117.0",
+      toolId: "code-server",
+      toolRequirement: "mandatory"
+    });
     expect(manifest.packages["@openai/codex"]).toMatchObject({
       version: "0.125.0",
       target: "0.125.0",
@@ -171,7 +178,7 @@ npmSync:
       tools: { optionalAgentCliSyncEnabled: true }
     });
 
-    expect(Object.keys(manifest.packages)).toEqual(["skills"]);
+    expect(Object.keys(manifest.packages)).toEqual(["code-server", "skills"]);
   });
 
   it("rejects manifests without packages", () => {

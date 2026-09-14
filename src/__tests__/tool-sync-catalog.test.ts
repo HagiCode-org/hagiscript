@@ -11,13 +11,15 @@ describe("tool sync catalog", () => {
 
     expect(catalog.map((entry) => entry.id)).toEqual([
       "openspec-skills",
+      "code-server",
       "codex",
       "claude-code",
       "fission-openspec",
       "qoder",
       "opencode"
     ]);
-    expect(catalog.filter((entry) => entry.requirement === "mandatory")).toHaveLength(1);
+    expect(catalog.filter((entry) => entry.requirement === "mandatory")).toHaveLength(2);
+    expect(catalog.map((entry) => entry.id)).not.toContain(["omni", "route"].join(""));
     expect(catalog.filter((entry) => entry.group === "optional-agent-cli")).toHaveLength(5);
   });
 
@@ -28,6 +30,7 @@ describe("tool sync catalog", () => {
       )
     ).toEqual({
       "openspec-skills": "1.5.1",
+      "code-server": "4.117.0",
       codex: "0.125.0",
       "claude-code": "2.1.119",
       "fission-openspec": "1.3.1",
@@ -37,7 +40,7 @@ describe("tool sync catalog", () => {
   });
 
   it("always includes mandatory tools without user selection", () => {
-    expect(Object.keys(buildToolSyncPackageSet())).toEqual(["skills"]);
+    expect(Object.keys(buildToolSyncPackageSet())).toEqual(["code-server", "skills"]);
   });
 
   it("includes selected optional agent CLIs with mandatory tools", () => {
@@ -74,7 +77,7 @@ describe("tool sync catalog", () => {
   it("allows enabled optional CLI sync with zero selections", () => {
     expect(
       Object.keys(buildToolSyncPackageSet({ optionalAgentCliSyncEnabled: true }))
-    ).toEqual(["skills"]);
+    ).toEqual(["code-server", "skills"]);
   });
 
   it("rejects unknown optional CLI IDs", () => {

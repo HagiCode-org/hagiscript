@@ -83,7 +83,7 @@ export function validateToolSyncCatalog(
     }
   }
 
-  for (const requiredId of ["openspec-skills"]) {
+  for (const requiredId of ["openspec-skills", "code-server"]) {
     if (!seenMandatory.has(requiredId)) {
       errors.push(`missing mandatory tool: ${requiredId}`);
     }
