@@ -205,7 +205,7 @@ export function buildManagedRuntimeEnvironment(
   baseEnv: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
   const useManagedNodeRuntime = context.useManagedNodeRuntime !== false
-  const runtimeExecutables = useManagedNodeRuntime
+  const runtimeExecutables = useManagedNodeRuntime && context.paths.nodeRuntime
     ? getRuntimeExecutablePaths(context.paths.nodeRuntime)
     : null
   const bundledNpmModulesDirectory = getManagedNpmModulesDirectory(context.paths.npmPrefix)
@@ -264,7 +264,6 @@ export function buildManagedRuntimeEnvironment(
       HAGISCRIPT_RUNTIME_COMPONENT_DATA_DIR: componentDataHome,
       HAGISCRIPT_RUNTIME_COMPONENT_LOGS_DIR: componentLogsDir,
       HAGISCRIPT_RUNTIME_COMPONENT_PM2_HOME: pm2Home,
-      HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR: context.paths.nodeRuntime,
       HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR: context.paths.dotnetRuntime,
       HAGISCRIPT_RUNTIME_NPM_PREFIX: context.paths.npmPrefix,
       HAGISCRIPT_RUNTIME_NPM_PACKAGES_PREFIX: managedNpmPackagesPrefix,
@@ -306,6 +305,7 @@ export function buildManagedRuntimeEnvironment(
         : {}),
       ...(runtimeExecutables
         ? {
+            HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR: context.paths.nodeRuntime,
             NODE: runtimeExecutables.nodePath,
             npm_node_execpath: runtimeExecutables.nodePath,
             npm_execpath: runtimeExecutables.npmPath
@@ -382,7 +382,7 @@ export function getManagedRuntimePathEntries(
     includeManagedNodeRuntime?: boolean
   } = {}
 ): string[] {
-  const nodeExecutables = options.includeManagedNodeRuntime === false
+  const nodeExecutables = options.includeManagedNodeRuntime === false || !paths.nodeRuntime
     ? null
     : getRuntimeExecutablePaths(paths.nodeRuntime)
   return [

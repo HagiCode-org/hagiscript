@@ -144,6 +144,43 @@ describe("runtime executor environment", () => {
     )
   })
 
+  it("omits Node-only environment variables when the Node runtime is absent", async () => {
+    const runtimeRoot = path.resolve("tmp", "hagiscript-runtime-node-less")
+    const manifest = await loadRuntimeManifest({ manifestPath: fixtureManifestPath })
+    const paths = { ...resolveRuntimePaths(manifest, { runtimeRoot }), nodeRuntime: "" }
+    const component = manifest.componentMap.get("alpha")
+
+    expect(component).toBeDefined()
+
+    const env = buildManagedRuntimeEnvironment(
+      {
+        component: component!,
+        manifest,
+        paths,
+        componentRoot: getComponentManagedRoot(paths, "alpha"),
+        componentConfigDir: getComponentConfigDirectory(
+          paths,
+          "alpha",
+          component?.runtimeDataDir
+        ),
+        componentDataHome: getComponentRuntimeDataHome(
+          paths,
+          "alpha",
+          component?.runtimeDataDir
+        ),
+        pm2Home: getComponentPm2Home(paths, "alpha", component?.runtimeDataDir),
+        useManagedNodeRuntime: false
+      },
+      { PATH: "/usr/bin" }
+    )
+
+    expect(env.HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR).toBeUndefined()
+    expect(env.NODE).toBeUndefined()
+    expect(env.npm_node_execpath).toBeUndefined()
+    expect(env.npm_execpath).toBeUndefined()
+    expect(env.PATH).not.toContain("components/node")
+  })
+
   it("normalizes duplicate Windows PATH keys before prepending managed entries", () => {
     const env = prependPathEntries(
       {

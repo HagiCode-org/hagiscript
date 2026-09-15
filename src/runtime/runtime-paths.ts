@@ -72,7 +72,9 @@ export function resolveRuntimePaths(
     componentDataRoot: resolveManagedPath(manifest.paths.componentDataRoot, runtimeDataRoot),
     defaultPm2Home: manifest.paths.defaultPm2Home,
     npmPrefix: resolveManagedPath(manifest.paths.npmPrefix, runtimeDataRoot),
-    nodeRuntime: resolveManagedPath(manifest.paths.nodeRuntime, runtimeHome),
+    nodeRuntime: manifest.paths.nodeRuntime
+      ? resolveManagedPath(manifest.paths.nodeRuntime, runtimeHome)
+      : "",
     dotnetRuntime: resolveManagedPath(manifest.paths.dotnetRuntime, runtimeHome),
     vendoredRoot: resolveManagedPath(manifest.paths.vendoredRoot ?? "components/bundled", runtimeHome)
   }

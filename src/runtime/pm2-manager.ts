@@ -530,7 +530,9 @@ async function resolveManagedPm2NodeRuntime(
   nodePath: string;
   useManagedNodeRuntime: boolean;
 }> {
-  const managedNodePath = getRuntimeExecutablePaths(paths.nodeRuntime).nodePath;
+  const managedNodePath = paths.nodeRuntime
+    ? getRuntimeExecutablePaths(paths.nodeRuntime).nodePath
+    : "";
   const nodeComponent = manifest.componentMap.get("node");
   const nodePolicy = nodeComponent
     ? resolveRuntimeComponentPolicy(nodeComponent, {
@@ -548,6 +550,13 @@ async function resolveManagedPm2NodeRuntime(
     return {
       nodePath: managedNodePath,
       useManagedNodeRuntime: true
+    };
+  }
+
+  if (!managedNodePath) {
+    return {
+      nodePath: "",
+      useManagedNodeRuntime: false
     };
   }
 

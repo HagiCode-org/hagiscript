@@ -331,7 +331,11 @@ function validateRuntimeManifest(
     defaultPm2Home:
       readOptionalString(pathsObject.defaultPm2Home, "paths.defaultPm2Home", errors) ?? "pm2",
     npmPrefix: readRequiredString(pathsObject.npmPrefix, "paths.npmPrefix", errors),
-    nodeRuntime: readRequiredString(pathsObject.nodeRuntime, "paths.nodeRuntime", errors),
+    nodeRuntime: readOptionalStringAllowEmpty(
+      pathsObject.nodeRuntime,
+      "paths.nodeRuntime",
+      errors
+    ),
     dotnetRuntime: readRequiredString(pathsObject.dotnetRuntime, "paths.dotnetRuntime", errors),
     vendoredRoot:
       readOptionalString(pathsObject.vendoredRoot, "paths.vendoredRoot", errors) ??
@@ -900,6 +904,23 @@ function readOptionalString(
   if (typeof value !== "string" || value.trim().length === 0) {
     errors.push(`${label} must be a non-empty string when provided`)
     return undefined
+  }
+
+  return value.trim()
+}
+
+function readOptionalStringAllowEmpty(
+  value: unknown,
+  label: string,
+  errors: string[]
+): string {
+  if (value === undefined) {
+    return ""
+  }
+
+  if (typeof value !== "string") {
+    errors.push(`${label} must be a string when provided`)
+    return ""
   }
 
   return value.trim()
