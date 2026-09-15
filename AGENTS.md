@@ -31,6 +31,7 @@ npm test
 - The manifest-driven workflow is the core contract; preserve backward compatibility.
 - Keep the runtime layout and toolchain management consistent with the container bootstrap flow.
 - If changing the manifest format or sync logic, ensure compatibility with `hagicode-local-deployment`.
+- Node-less manifests may omit `paths.nodeRuntime`; released-service startup uses the managed .NET runtime directly. This engine/SDK contract is consumed by the separate `repos/hagicode-desktop` `fix-node-runtime-missing-startup` change; Desktop scope expansion and SDK republishing remain separate work.
 
 ## References
 

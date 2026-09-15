@@ -72,6 +72,8 @@ The managed runtime layout separates immutable program files from mutable data:
 
 By default, the packaged manifest installs into `~/.hagicode/runtime`, but you can override that with `--runtime-root`.
 
+`paths.nodeRuntime` is optional for manifests that do not require the Node component. Leave it empty or omit it when the active dependency-management mode is node-less; the released backend then starts directly through the managed .NET runtime. `paths.dotnetRuntime` remains required.
+
 ## Runtime Basics
 
 Create a standalone editable manifest from Hagiscript's packaged default:
