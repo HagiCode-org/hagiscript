@@ -26,7 +26,10 @@ describe("runtime manifest validation", () => {
     const invalidDotnetFixture = await copyFixtureManifest()
 
     try {
-      const fixture = await readFile(fixtureManifestPath, "utf8")
+      const fixture = (await readFile(fixtureManifestPath, "utf8")).replace(
+        /\r\n/g,
+        "\n"
+      )
       await writeFile(
         emptyNodeFixture.manifestPath,
         fixture.replace('nodeRuntime: "components/node"', 'nodeRuntime: ""')
