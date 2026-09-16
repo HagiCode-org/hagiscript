@@ -1,6 +1,7 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
+import process from "node:process"
 import { describe, expect, it } from "vitest"
 import {
   resolveManagedPm2ServiceDefinition
@@ -41,17 +42,19 @@ describe("managed PM2 service resolution", () => {
         runtimeRoot,
         runtimeDataRoot: path.join(runtimeRoot, "runtime-data")
       })
+      const pm2BinDirectory =
+        process.platform === "win32"
+          ? path.join(paths.npmPrefix, "node_modules", "pm2", "bin")
+          : path.join(paths.npmPrefix, "lib", "node_modules", "pm2", "bin")
       await Promise.all([
-        mkdir(path.join(paths.npmPrefix, "lib", "node_modules", "pm2", "bin"), {
-          recursive: true
-        }),
+        mkdir(pm2BinDirectory, { recursive: true }),
         mkdir(path.join(serverInstallPath, "lib"), { recursive: true }),
         mkdir(path.join(paths.dotnetRuntime, "current"), { recursive: true }),
         mkdir(path.dirname(getManagedServerVersionStatePath(paths)), { recursive: true })
       ])
       await Promise.all([
         writeFile(
-          path.join(paths.npmPrefix, "lib", "node_modules", "pm2", "bin", "pm2"),
+          path.join(pm2BinDirectory, "pm2"),
           ""
         ),
         writeFile(path.join(serverInstallPath, "lib", "PCode.Web.dll"), ""),
