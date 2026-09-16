@@ -58,7 +58,14 @@ describe("managed PM2 service resolution", () => {
           ""
         ),
         writeFile(path.join(serverInstallPath, "lib", "PCode.Web.dll"), ""),
-        writeFile(path.join(paths.dotnetRuntime, "current", "dotnet"), ""),
+        writeFile(
+          path.join(
+            paths.dotnetRuntime,
+            "current",
+            process.platform === "win32" ? "dotnet.exe" : "dotnet"
+          ),
+          ""
+        ),
         writeFile(
           getManagedServerVersionStatePath(paths),
           JSON.stringify({
