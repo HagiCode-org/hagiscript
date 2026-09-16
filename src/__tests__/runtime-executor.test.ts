@@ -178,7 +178,9 @@ describe("runtime executor environment", () => {
     expect(env.NODE).toBeUndefined()
     expect(env.npm_node_execpath).toBeUndefined()
     expect(env.npm_execpath).toBeUndefined()
-    expect(env.PATH).not.toContain("components/node")
+    const runtimePath = env.Path ?? env.PATH
+    expect(runtimePath).toBeDefined()
+    expect(runtimePath).not.toContain(path.join("components", "node"))
   })
 
   it("normalizes duplicate Windows PATH keys before prepending managed entries", () => {
