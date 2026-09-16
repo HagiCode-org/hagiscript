@@ -21,7 +21,10 @@ describe("managed PM2 service resolution", () => {
 
     try {
       await cp(packagedRuntimeDirectory, runtimeDirectory, { recursive: true })
-      const manifest = await readFile(manifestPath, "utf8")
+      const manifest = (await readFile(manifestPath, "utf8")).replace(
+        /\r\n/g,
+        "\n"
+      )
       await writeFile(
         manifestPath,
         manifest
