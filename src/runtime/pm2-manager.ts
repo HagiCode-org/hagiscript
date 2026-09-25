@@ -553,9 +553,29 @@ async function resolveManagedPm2NodeRuntime(
     };
   }
 
+  // PM2 process supervision always needs a Node executable to run its own
+  // CLI, even when the managed component being launched is node-less (for
+  // example a released-service .NET server). When no bundled/managed Node
+  // runtime is present, fall back to an externally provided Node executable
+  // instead of silently returning an empty node path, which would otherwise
+  // cause PM2 command spawning to fail with an empty executable argv[0].
   if (!managedNodePath) {
+    const externalNodePath = normalizeManagedEnvironmentValue(
+      policyContext.externalNodePath
+    );
+    if (!externalNodePath) {
+      throw new ManagedPm2Error(
+        "No managed Node runtime is bundled and no external Node executable path was provided. PM2 requires a Node executable to manage services; provide an external Node path."
+      );
+    }
+
+    await validateManagedPath(
+      externalNodePath,
+      "External Node runtime is unavailable. Provide a valid external Node executable path before starting managed PM2 services."
+    );
+
     return {
-      nodePath: "",
+      nodePath: externalNodePath,
       useManagedNodeRuntime: false
     };
   }
