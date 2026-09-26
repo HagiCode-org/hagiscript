@@ -1,5 +1,6 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import process from "node:process";
 import type { CommandResult, CommandRunner } from "./command-launch.js";
 import {
@@ -364,12 +365,14 @@ export async function resolveManagedPm2ServiceDefinition(
     baseAppName
   );
 
-  await Promise.all([
-    validateManagedPath(
+  if (nodeRuntime.useManagedNodeRuntime) {
+    await validateManagedPm2Toolchain(nodeRuntime.nodePath, paths.npmPrefix);
+  } else {
+    await validateManagedPath(
       pm2Entrypoint,
       "Configured PM2 binary is missing from the selected npm prefix. Install pm2 into that prefix before using managed PM2."
-    )
-  ]);
+    );
+  }
 
   if (component.type === "released-service") {
     const releasedService = component.releasedService;
@@ -540,11 +543,17 @@ async function resolveManagedPm2NodeRuntime(
         dependencyManagementMode: policyContext.dependencyManagementMode
       })
     : { required: true };
+  const isDesktopBundledPm2Node = nodeComponent?.source === "desktop-bundled-pm2-node";
 
-  if (nodePolicy.required) {
+  if (nodePolicy.required || isDesktopBundledPm2Node) {
+    if (!managedNodePath) {
+      throw new ManagedPm2Error(
+        "Managed Node runtime for PM2 is missing from paths.nodeRuntime. Install the bundled Node runtime before using managed PM2."
+      );
+    }
     await validateManagedPath(
       managedNodePath,
-      "Managed Node runtime is missing. Install the runtime node component first."
+      "Managed Node executable for PM2 is missing. Install the bundled Node runtime before using managed PM2."
     );
 
     return {
@@ -597,6 +606,86 @@ async function resolveManagedPm2NodeRuntime(
   return {
     nodePath: externalNodePath,
     useManagedNodeRuntime: false
+  };
+}
+
+export async function validateManagedPm2Toolchain(
+  nodePath: string,
+  npmPrefix: string
+): Promise<{
+  nodePath: string;
+  pm2Entrypoint: string;
+  requiredFiles: string[];
+}> {
+  await validateManagedPath(
+    nodePath,
+    "Bundled Node executable for managed PM2 is missing."
+  );
+  const pm2Entrypoint = getManagedPm2Entrypoint(npmPrefix);
+  await validateManagedPath(
+    pm2Entrypoint,
+    "Managed PM2 entrypoint is missing from the configured npm prefix."
+  );
+
+  const pm2PackageRoot = getManagedPm2PackageRoot(npmPrefix);
+  await readManagedPackageManifest(pm2PackageRoot, "pm2");
+  const pending = [join(pm2PackageRoot, "package.json")];
+  const visited = new Set<string>();
+  const requiredFiles = new Set<string>([
+    nodePath,
+    pm2Entrypoint,
+  ]);
+
+  while (pending.length > 0) {
+    const manifestPath = pending.pop();
+    if (!manifestPath || visited.has(manifestPath)) {
+      continue;
+    }
+    visited.add(manifestPath);
+    const packageManifest = await readManagedPackageManifest(dirname(manifestPath), undefined, manifestPath);
+    requiredFiles.add(manifestPath);
+    const packageRequire = createRequire(manifestPath);
+    const dependencies = packageManifest.dependencies;
+
+    for (const dependencyName of isRecord(dependencies) ? Object.keys(dependencies) : []) {
+      let dependencyEntry: string;
+      try {
+        const dependencySearchRoot = process.platform === "win32"
+          ? npmPrefix
+          : join(npmPrefix, "lib");
+        dependencyEntry = packageRequire.resolve(dependencyName, {
+          paths: [dirname(manifestPath), dependencySearchRoot]
+        });
+      } catch (error) {
+        throw new ManagedPm2Error(
+          `Managed PM2 runtime dependency "${dependencyName}" required by "${packageManifest.name}" is missing from ${npmPrefix}.`,
+          error instanceof Error ? { cause: error } : undefined
+        );
+      }
+      const dependencyManifestPath = await findManagedPackageManifest(dependencyEntry, dependencyName);
+      if (!dependencyManifestPath) {
+        throw new ManagedPm2Error(
+          `Managed PM2 runtime dependency "${dependencyName}" required by "${packageManifest.name}" has no package.json.`
+        );
+      }
+      const relativeDependencyManifest = relative(npmPrefix, dependencyManifestPath);
+      if (
+        relativeDependencyManifest === ".." ||
+        relativeDependencyManifest.startsWith(`..${sep}`) ||
+        isAbsolute(relativeDependencyManifest)
+      ) {
+        throw new ManagedPm2Error(
+          `Managed PM2 runtime dependency "${dependencyName}" resolved outside the configured npm prefix.`
+        );
+      }
+      pending.push(dependencyManifestPath);
+    }
+  }
+
+  return {
+    nodePath,
+    pm2Entrypoint,
+    requiredFiles: [...requiredFiles].sort()
   };
 }
 
@@ -1420,6 +1509,78 @@ function getManagedPm2Entrypoint(npmPrefix: string): string {
   return process.platform === "win32"
     ? join(npmPrefix, "node_modules", "pm2", "bin", "pm2")
     : join(npmPrefix, "lib", "node_modules", "pm2", "bin", "pm2");
+}
+
+function getManagedPm2PackageRoot(npmPrefix: string): string {
+  return process.platform === "win32"
+    ? join(npmPrefix, "node_modules", "pm2")
+    : join(npmPrefix, "lib", "node_modules", "pm2");
+}
+
+async function readManagedPackageManifest(
+  packageRoot: string,
+  expectedName?: string,
+  manifestPath = join(packageRoot, "package.json")
+): Promise<{ name: string; dependencies?: unknown }> {
+  let packageManifest: unknown;
+  try {
+    packageManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  } catch (error) {
+    throw new ManagedPm2Error(
+      `Managed PM2 package manifest is missing or invalid: ${manifestPath}`,
+      error instanceof Error ? { cause: error } : undefined
+    );
+  }
+  if (!isRecord(packageManifest) || typeof packageManifest.name !== "string") {
+    throw new ManagedPm2Error(
+      `Managed PM2 package manifest is missing or invalid: ${manifestPath}`
+    );
+  }
+  if (expectedName && packageManifest.name !== expectedName) {
+    throw new ManagedPm2Error(
+      `Managed PM2 package manifest is missing or invalid: ${manifestPath}`
+    );
+  }
+  return { name: packageManifest.name, dependencies: packageManifest.dependencies };
+}
+
+async function findManagedPackageManifest(
+  entryPath: string,
+  expectedName: string
+): Promise<string | null> {
+  let currentDirectory = dirname(entryPath);
+  while (true) {
+    const manifestPath = join(currentDirectory, "package.json");
+    let packageManifest: { name: string; dependencies?: unknown } | null;
+    try {
+      packageManifest = await readManagedPackageManifest(currentDirectory, undefined, manifestPath);
+    } catch (error) {
+      if (
+        error instanceof ManagedPm2Error &&
+        error.cause instanceof Error &&
+        "code" in error.cause &&
+        error.cause.code === "ENOENT"
+      ) {
+        // Continue toward the package root when a dependency entry directory has no manifest.
+      } else {
+        throw error;
+      }
+      packageManifest = null;
+    }
+    if (packageManifest?.name === expectedName) {
+      return manifestPath;
+    }
+
+    const parentDirectory = dirname(currentDirectory);
+    if (parentDirectory === currentDirectory) {
+      return null;
+    }
+    currentDirectory = parentDirectory;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function validateManagedPath(

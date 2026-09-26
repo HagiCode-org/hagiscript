@@ -121,6 +121,7 @@ export {
   resolveManagedPm2Environment,
   resolveManagedPm2ServiceDefinition,
   runManagedPm2Command,
+  validateManagedPm2Toolchain,
   supportedPm2Services,
   type ManagedPm2EnvironmentResult,
   type ManagedPm2Action,
