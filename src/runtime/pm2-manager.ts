@@ -1,5 +1,4 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import process from "node:process";
 import type { CommandResult, CommandRunner } from "./command-launch.js";
@@ -644,28 +643,20 @@ export async function validateManagedPm2Toolchain(
     visited.add(manifestPath);
     const packageManifest = await readManagedPackageManifest(dirname(manifestPath), undefined, manifestPath);
     requiredFiles.add(manifestPath);
-    const packageRequire = createRequire(manifestPath);
     const dependencies = packageManifest.dependencies;
 
     for (const dependencyName of isRecord(dependencies) ? Object.keys(dependencies) : []) {
-      let dependencyEntry: string;
-      try {
-        const dependencySearchRoot = process.platform === "win32"
-          ? npmPrefix
-          : join(npmPrefix, "lib");
-        dependencyEntry = packageRequire.resolve(dependencyName, {
-          paths: [dirname(manifestPath), dependencySearchRoot]
-        });
-      } catch (error) {
-        throw new ManagedPm2Error(
-          `Managed PM2 runtime dependency "${dependencyName}" required by "${packageManifest.name}" is missing from ${npmPrefix}.`,
-          error instanceof Error ? { cause: error } : undefined
-        );
-      }
-      const dependencyManifestPath = await findManagedPackageManifest(dependencyEntry, dependencyName);
+      const dependencySearchRoot = process.platform === "win32"
+        ? npmPrefix
+        : join(npmPrefix, "lib");
+      const dependencyManifestPath = await findManagedDependencyManifest(
+        dirname(manifestPath),
+        dependencySearchRoot,
+        dependencyName
+      );
       if (!dependencyManifestPath) {
         throw new ManagedPm2Error(
-          `Managed PM2 runtime dependency "${dependencyName}" required by "${packageManifest.name}" has no package.json.`
+          `Managed PM2 runtime dependency "${dependencyName}" required by "${packageManifest.name}" is missing from ${npmPrefix}.`
         );
       }
       const relativeDependencyManifest = relative(npmPrefix, dependencyManifestPath);
@@ -1544,16 +1535,22 @@ async function readManagedPackageManifest(
   return { name: packageManifest.name, dependencies: packageManifest.dependencies };
 }
 
-async function findManagedPackageManifest(
-  entryPath: string,
+async function findManagedDependencyManifest(
+  packageRoot: string,
+  searchRoot: string,
   expectedName: string
 ): Promise<string | null> {
-  let currentDirectory = dirname(entryPath);
+  let currentDirectory = packageRoot;
   while (true) {
-    const manifestPath = join(currentDirectory, "package.json");
-    let packageManifest: { name: string; dependencies?: unknown } | null;
+    const manifestPath = join(
+      currentDirectory,
+      "node_modules",
+      ...expectedName.split("/"),
+      "package.json"
+    );
+    let packageManifest: { name: string; dependencies?: unknown } | null = null;
     try {
-      packageManifest = await readManagedPackageManifest(currentDirectory, undefined, manifestPath);
+      packageManifest = await readManagedPackageManifest(dirname(manifestPath), expectedName, manifestPath);
     } catch (error) {
       if (
         error instanceof ManagedPm2Error &&
@@ -1572,7 +1569,7 @@ async function findManagedPackageManifest(
     }
 
     const parentDirectory = dirname(currentDirectory);
-    if (parentDirectory === currentDirectory) {
+    if (currentDirectory === searchRoot || parentDirectory === currentDirectory) {
       return null;
     }
     currentDirectory = parentDirectory;

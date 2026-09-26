@@ -97,6 +97,7 @@ async function createManagedPm2Fixture(options: {
   nodeRequired?: boolean
   missingNode?: boolean
   missingPm2Dependency?: boolean
+  dependencyWithoutMain?: boolean
   missingHostNode?: boolean
 } = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), "hagiscript-managed-pm2-"))
@@ -178,7 +179,9 @@ async function createManagedPm2Fixture(options: {
     ),
     ...(!options.missingPm2Dependency
       ? [
-          writeFile(path.join(pm2DependencyRoot, "index.js"), ""),
+          ...(!options.dependencyWithoutMain
+            ? [writeFile(path.join(pm2DependencyRoot, "index.js"), "")]
+            : []),
           writeFile(
             path.join(pm2DependencyRoot, "package.json"),
             JSON.stringify({ name: "pm2-fixture-dependency", version: "1.0.0" })
@@ -345,6 +348,20 @@ describe("managed PM2 service resolution", () => {
       await expect(
         resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server")
       ).rejects.toThrow(/PM2 runtime dependency "pm2-fixture-dependency".*is missing/)
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("accepts PM2 dependencies without a package entry point", async () => {
+    const fixture = await createManagedPm2Fixture({ dependencyWithoutMain: true })
+    try {
+      const definition = await resolveManagedPm2ServiceDefinition(
+        fixture.loadedManifest,
+        fixture.paths,
+        "server"
+      )
+      expect(definition.pm2Binary).toBe(fixture.pm2Entrypoint)
     } finally {
       await rm(fixture.directory, { recursive: true, force: true })
     }
