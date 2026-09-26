@@ -31,7 +31,7 @@ npm test
 - The manifest-driven workflow is the core contract; preserve backward compatibility.
 - Keep the runtime layout and toolchain management consistent with the container bootstrap flow.
 - If changing the manifest format or sync logic, ensure compatibility with `hagicode-local-deployment`.
-- Generic manifests may omit `paths.nodeRuntime` under their existing policy. Desktop Windows PM2 manifests require the packaged PM2-only Node runtime, while released-service server processes continue to use managed .NET.
+- Generic manifests may omit `paths.nodeRuntime` under their existing policy. Desktop PM2 manifests on Windows, Linux, and macOS require the packaged PM2-only Node runtime, while released-service server processes continue to use managed .NET.
 
 ## References
 
