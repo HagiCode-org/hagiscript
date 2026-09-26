@@ -48,7 +48,7 @@ These values are owned by Hagiscript even in the Desktop-managed flow.
 
 | Variable group | Ownership | Source in Hagiscript | Notes |
 | --- | --- | --- | --- |
-| `PATH` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` + `prependPathEntries()` | Hagiscript rebuilds `PATH` so managed Node, managed npm, and runtime bin entries take precedence. Inherited shell `PATH` is not authoritative. |
+| `PATH` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` + `prependPathEntries()` | Hagiscript rebuilds `PATH` so the selected managed Node and runtime bin entries take precedence. Desktop Windows PM2 always selects its packaged Node, independently of external dependency mode; other manifests retain their existing policy. |
 | `PM2_HOME` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Points PM2 state into the runtime data boundary. |
 | `hagicode_pm2_name` | `hagiscript generated` | `buildManagedPm2Environment()` | The server PM2 instance-name variable. The manifest decides the key name; the server currently uses `hagicode_pm2_name`. |
 | `HAGICODE_RUNTIME_HOME` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Runtime program home. |
@@ -63,7 +63,7 @@ These values are owned by Hagiscript even in the Desktop-managed flow.
 | `HAGISCRIPT_RUNTIME_COMPONENT_*` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Component name, type, version, root, config dir, data dir, logs dir, and PM2 home. |
 | `HAGISCRIPT_RUNTIME_NODE_RUNTIME_DIR` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Managed Node runtime location. |
 | `HAGISCRIPT_RUNTIME_DOTNET_RUNTIME_DIR` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Managed .NET runtime location. |
-| `HAGISCRIPT_RUNTIME_NPM_PREFIX` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Managed npm prefix. |
+| `HAGISCRIPT_RUNTIME_NPM_PREFIX` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Managed npm prefix. Desktop Windows PM2 uses its packaged PM2 prefix rather than the host's external global prefix. |
 | `HAGISCRIPT_RUNTIME_RELEASED_SERVICE_*` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Released backend payload metadata such as DLL path, working directory, config root, runtime files dir, and optional start script. |
 | `HAGISCRIPT_DOWNLOAD_CACHE` / `HAGISCRIPT_DOWNLOAD_CACHE_DIR` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Runtime download-cache contract. |
 | `HAGISCRIPT_RUNTIME_SCRIPT_BASENAME` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Runtime script identity for lifecycle scripts. |

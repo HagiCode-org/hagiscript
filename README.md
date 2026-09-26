@@ -63,6 +63,12 @@ The packaged runtime manifest defines these managed components:
 
 By default, `hagiscript runtime install` prepares the required runtime set.
 
+Desktop's generated Windows service manifest marks its PM2-only Node runtime as required and points
+the npm prefix at the packaged managed PM2 dependency tree. This takes precedence over an external
+Node policy for PM2 commands and the PM2 daemon, while non-Desktop manifests retain their configured
+Node policy. The released Desktop server process itself continues to use the managed .NET
+executable, not Node.
+
 The managed runtime layout separates immutable program files from mutable data:
 
 - `program/`: installed runtime payloads, wrappers, bundled executables
