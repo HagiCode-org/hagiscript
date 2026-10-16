@@ -21,7 +21,7 @@ vi.mock("../runtime/node-verify.js", () => ({
   verifyNodeRuntime: vi.fn(async (targetDirectory: string) => ({
     valid: targetDirectory !== "/bad/runtime",
     targetDirectory,
-    nodeVersion: "v22.12.0",
+    nodeVersion: "v24.11.0",
     npmVersion: "10.9.0",
     nodePath: `${targetDirectory}/bin/node`,
     npmPath: `${targetDirectory}/bin/npm`,
@@ -53,7 +53,7 @@ describe("node runtime CLI commands", () => {
     ]);
 
     const output = stdout.mock.calls.map(([value]) => String(value)).join("");
-    expect(output).toContain("Installing Node.js 22 into /tmp/runtime");
+    expect(output).toContain("Installing Node.js 24 into /tmp/runtime");
     expect(output).toContain("Node.js runtime installed successfully.");
     expect(installNodeRuntime).toHaveBeenCalledWith(
       expect.objectContaining({

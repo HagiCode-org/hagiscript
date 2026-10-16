@@ -24,7 +24,7 @@ export function registerNodeRuntimeCommands(program: Command): void {
     )
     .option(
       "--version <selector>",
-      "Node.js selector: lts, latest, current, 22, 22.11.0, or v22.11.0",
+      "Node.js selector: lts, latest, current, 24, 24.11.0, or v24.11.0",
       validateVersionOption
     )
     .option("--no-download-cache", "disable reuse of the shared download cache")
@@ -38,7 +38,7 @@ export function registerNodeRuntimeCommands(program: Command): void {
 
       try {
         process.stdout.write(
-          `Installing Node.js ${versionSelector ?? "22"} into ${target}\n`
+          `Installing Node.js ${versionSelector ?? "24"} into ${target}\n`
         );
         const result = await installNodeRuntime({
           targetDirectory: target,

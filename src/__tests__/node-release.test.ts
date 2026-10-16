@@ -13,6 +13,11 @@ import {
 } from "../runtime/node-release.js";
 
 const releases: NodeReleaseMetadata[] = [
+  {
+    version: "v24.11.0",
+    files: ["linux-x64", "linux-arm64", "win-x64", "darwin-arm64"],
+    lts: "Krypton"
+  },
   { version: "v23.3.0", files: ["linux-x64", "win-x64", "darwin-arm64"] },
   {
     version: "v22.12.0",
@@ -24,14 +29,14 @@ const releases: NodeReleaseMetadata[] = [
 ];
 
 describe("Node.js release resolution", () => {
-  it("defaults omitted selectors to the latest Node.js 22 release", () => {
-    expect(resolveNodeRelease(releases).version).toBe("v22.12.0");
+  it("defaults omitted selectors to the latest Node.js 24 release", () => {
+    expect(resolveNodeRelease(releases).version).toBe("v24.11.0");
   });
 
   it("resolves lts, latest/current, exact versions, and major selectors", () => {
-    expect(resolveNodeRelease(releases, "lts").version).toBe("v22.12.0");
-    expect(resolveNodeRelease(releases, "latest").version).toBe("v23.3.0");
-    expect(resolveNodeRelease(releases, "current").version).toBe("v23.3.0");
+    expect(resolveNodeRelease(releases, "lts").version).toBe("v24.11.0");
+    expect(resolveNodeRelease(releases, "latest").version).toBe("v24.11.0");
+    expect(resolveNodeRelease(releases, "current").version).toBe("v24.11.0");
     expect(resolveNodeRelease(releases, "20").version).toBe("v20.18.1");
     expect(resolveNodeRelease(releases, "22.1.0").version).toBe("v22.1.0");
     expect(resolveNodeRelease(releases, "v20.18.1").version).toBe("v20.18.1");
@@ -52,35 +57,35 @@ describe("Node.js release resolution", () => {
   it("selects official archive URLs for supported platform files", () => {
     const selected = selectNodeArchive(
       releases,
-      "22",
+      "24",
       mapNodePlatform("linux", "x64")
     );
 
-    expect(selected.fileName).toBe("node-v22.12.0-linux-x64.tar.xz");
+    expect(selected.fileName).toBe("node-v24.11.0-linux-x64.tar.xz");
     expect(selected.url).toBe(
-      "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-x64.tar.xz"
+      "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.xz"
     );
   });
 
   it("skips releases that do not publish the requested platform archive", () => {
     const selected = selectNodeArchive(
       [
-        { version: "v22.22.2", files: ["linux-x64", "win-x64"] },
-        { version: "v22.21.1", files: ["linux-x64", "osx-arm64-tar"] }
+        { version: "v24.12.0", files: ["linux-x64", "win-x64"] },
+        { version: "v24.11.1", files: ["linux-x64", "osx-arm64-tar"] }
       ],
-      "22",
+      "24",
       mapNodePlatform("darwin", "arm64")
     );
 
-    expect(selected.version).toBe("v22.21.1");
-    expect(selected.fileName).toBe("node-v22.21.1-darwin-arm64.tar.xz");
+    expect(selected.version).toBe("v24.11.1");
+    expect(selected.fileName).toBe("node-v24.11.1-darwin-arm64.tar.xz");
   });
 
   it("rejects non-official distribution sources", () => {
     expect(() =>
       selectNodeArchive(
         releases,
-        "22",
+        "24",
         mapNodePlatform("linux", "x64"),
         "https://example.test/dist"
       )

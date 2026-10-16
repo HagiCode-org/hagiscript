@@ -1,6 +1,6 @@
 import { mapNodePlatform, type NodePlatformTarget } from "./node-platform.js";
 
-export const DEFAULT_NODE_MAJOR = 22;
+export const DEFAULT_NODE_MAJOR = 24;
 export const OFFICIAL_NODE_DIST_BASE_URL = "https://nodejs.org/dist";
 
 export interface NodeReleaseMetadata {
@@ -50,7 +50,7 @@ export function validateVersionSelector(selector?: string): void {
   }
 
   throw new NodeVersionSelectorError(
-    `Invalid Node.js version selector: ${selector ?? ""}. Use lts, latest, current, 22, 22.11.0, or v22.11.0.`
+    `Invalid Node.js version selector: ${selector ?? ""}. Use lts, latest, current, 24, 24.11.0, or v24.11.0.`
   );
 }
 
