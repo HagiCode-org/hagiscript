@@ -46,7 +46,7 @@ describe("Node.js runtime installer", () => {
       if (url.endsWith("/index.json")) {
         return Response.json([
           {
-            version: "v22.12.0",
+            version: "v24.11.0",
             files: [platform.releaseFileKey],
             npm: "10.9.0",
             lts: "Jod"
@@ -64,7 +64,7 @@ describe("Node.js runtime installer", () => {
     const result = await installNodeRuntime({ targetDirectory, fetchImpl });
 
     expect(result).toMatchObject({
-      version: "v22.12.0",
+      version: "v24.11.0",
       npmVersion: "10.9.0",
       targetDirectory,
       nodePath: join(targetDirectory, "bin", "node"),
@@ -94,7 +94,7 @@ describe("Node.js runtime installer", () => {
       if (url.endsWith("/index.json")) {
         return Response.json([
           {
-            version: "v22.12.0",
+            version: "v24.11.0",
             files: [platform.releaseFileKey],
             npm: "10.9.0",
             lts: "Jod"
@@ -129,21 +129,21 @@ async function createUnixFixtureArchive(
   nodeFileKey: string
 ): Promise<string> {
   const source = join(root, "source");
-  const runtimeRoot = join(source, `node-v22.12.0-${nodeFileKey}`);
+  const runtimeRoot = join(source, `node-v24.11.0-${nodeFileKey}`);
   const bin = join(runtimeRoot, "bin");
   await mkdir(bin, { recursive: true });
-  await writeFile(join(bin, "node"), "#!/bin/sh\necho v22.12.0\n");
+  await writeFile(join(bin, "node"), "#!/bin/sh\necho v24.11.0\n");
   await writeFile(join(bin, "npm"), "#!/bin/sh\necho 10.9.0\n");
   await chmod(join(bin, "node"), 0o755);
   await chmod(join(bin, "npm"), 0o755);
 
-  const archivePath = join(root, `node-v22.12.0-${nodeFileKey}.tar.xz`);
+  const archivePath = join(root, `node-v24.11.0-${nodeFileKey}.tar.xz`);
   await execa("tar", [
     "-cJf",
     archivePath,
     "-C",
     source,
-    `node-v22.12.0-${nodeFileKey}`
+    `node-v24.11.0-${nodeFileKey}`
   ]);
 
   return archivePath;
