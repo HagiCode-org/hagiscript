@@ -3,6 +3,8 @@
 [![npm version](https://img.shields.io/npm/v/%40hagicode%2Fhagiscript?logo=npm&color=cb3837)](https://www.npmjs.com/package/@hagicode/hagiscript)
 [![npm downloads](https://img.shields.io/npm/dm/%40hagicode%2Fhagiscript?logo=npm&color=2d8cf0)](https://www.npmjs.com/package/@hagicode/hagiscript)
 [![license](https://img.shields.io/badge/license-MIT-ffd43b)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D24.0.0-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![CI](https://img.shields.io/github/actions/workflow/status/HagiCode-org/hagiscript/ci.yml?branch=main&label=CI)](https://github.com/HagiCode-org/hagiscript/actions/workflows/ci.yml)
 
 `@hagicode/hagiscript` is the CLI used to install and operate a managed HagiCode runtime. It manages the runtime layout, bundled services, managed npm tools, and the released backend server from a manifest-driven workflow.
 
