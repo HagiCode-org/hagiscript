@@ -1,7 +1,7 @@
 {
   "name": "@hagicode/hagiscript-sdk",
   "version": "0.3.11",
-  "description": "SDK-only distribution of Hagiscript runtime and server management APIs.",
+  "description": "SDK for Hagiscript runtime and server management APIs",
   "license": "MIT",
   "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
   "bugs": {
@@ -9,7 +9,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HagiCode-org/hagiscript.git"
+    "url": "git+https://github.com/HagiCode-org/hagiscript.git",
+    "directory": "sdk"
+  },
+  "keywords": [
+    "hagicode",
+    "hagicode-org",
+    "hagiscript",
+    "sdk",
+    "runtime",
+    "server-management",
+    "typescript"
+  ],
+  "author": {
+    "name": "HagiCode",
+    "url": "https://github.com/HagiCode-org"
   },
   "type": "module",
   "exports": {
@@ -34,5 +48,8 @@
     "extract-zip": "^2.0.1",
     "semver": "^7.7.4",
     "yaml": "^2.8.4"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

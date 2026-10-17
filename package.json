@@ -1,7 +1,7 @@
 {
   "name": "@hagicode/hagiscript",
   "version": "0.3.11",
-  "description": "Scoped npm package foundation for Hagiscript language tooling.",
+  "description": "Hagiscript language tooling and runtime management CLI for HagiCode",
   "license": "MIT",
   "homepage": "https://github.com/HagiCode-org/hagiscript#readme",
   "bugs": {
@@ -69,11 +69,18 @@
     "playground2:server:env": "npm run playground2:manifest:generate && npm run dev -- server env --from-manifest ./playground/generated/manifest-2.yaml --runtime-root ./playground/runtime-root-2 --json"
   },
   "keywords": [
+    "hagicode",
+    "hagicode-org",
     "hagiscript",
     "scripting",
     "language",
-    "cli"
+    "cli",
+    "runtime"
   ],
+  "author": {
+    "name": "HagiCode",
+    "url": "https://github.com/HagiCode-org"
+  },
   "engines": {
     "node": ">=24.0.0"
   },
