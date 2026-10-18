@@ -18,15 +18,28 @@ Run commands from `repos/hagiscript/`.
 npm install
 npm run build
 npm test
+npm run lint
+npm run format:check
+npm run pack:check
+npm run integration:installed-runtime
+npm run build:sdk
+npm run dev -- <command>
 ```
 
 ## Key Paths
 
-- `src/`: core hagiscript source
+- `src/`: core hagiscript source (`cli.ts`, `commands/`, `runtime/`)
+- `src/__tests__/`: vitest unit tests (only this directory is collected)
+- `runtime/`: packaged runtime manifest, install/verify/remove scripts, and config templates
+- `sdk/`: `@hagicode/hagiscript-sdk` package (versioned in step with the CLI via `npm run sync-sdk-version`)
+- `scripts/`: packaging, release-version, publish-prereq, playground and installed-runtime integration scripts
+- `docs/`: CI runtime validation and Desktop-to-Hagiscript environment contract
 - `dist/`: published build output
 
 ## Agent Guidelines
 
+- Runtime: Node.js 24+ (`engines`, CI uses Node 24). CI (`.github/workflows/ci.yml`) runs `npm test`, build, `pack:check`, and `integration:installed-runtime` on Linux, Windows, and macOS; keep changes cross-platform (use `.cmd` shims and argument arrays, not shell parsing).
+- `npm-publish.yml` publishes dev-tagged CLI and SDK builds; verify package contents with `npm run pack:check` / `pack:check:sdk` when changing `files`, `bin`, or `runtime/`.
 - Treat this as a published npm package; avoid breaking changes without version bumps.
 - The manifest-driven workflow is the core contract; preserve backward compatibility.
 - Keep the runtime layout and toolchain management consistent with the container bootstrap flow.
@@ -36,3 +49,5 @@ npm test
 ## References
 
 - `README.md`
+- `docs/ci-runtime-validation.md`
+- `docs/desktop-hagiscript-env-contract.md`
