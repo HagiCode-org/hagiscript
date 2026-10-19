@@ -23,7 +23,9 @@ npm run format:check
 npm run pack:check
 npm run integration:installed-runtime
 npm run build:sdk
+npm run pack:check:sdk
 npm run dev -- <command>
+npm run playground:runtime:install   # also playground:{runtime,server}:{state,update,remove,start,stop,env}; playground2:* uses a second instance and ports
 ```
 
 ## Key Paths
@@ -32,7 +34,10 @@ npm run dev -- <command>
 - `src/__tests__/`: vitest unit tests (only this directory is collected)
 - `runtime/`: packaged runtime manifest, install/verify/remove scripts, and config templates
 - `sdk/`: `@hagicode/hagiscript-sdk` package (versioned in step with the CLI via `npm run sync-sdk-version`)
+- `bin/runtime`: `hagicode-runtime` bin entry (see `bin` in `package.json`)
+- `playground/`: output location for generated playground manifests and runtime roots (`npm run playground:*`)
 - `scripts/`: packaging, release-version, publish-prereq, playground and installed-runtime integration scripts
+- `.github/workflows/`: `ci.yml`, `npm-publish.yml`, `release-draft-action.yml` (drafts a release via `hagi-release-drafter`, never publishes)
 - `docs/`: CI runtime validation and Desktop-to-Hagiscript environment contract
 - `dist/`: published build output
 
