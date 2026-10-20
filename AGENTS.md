@@ -25,7 +25,7 @@ npm run integration:installed-runtime
 npm run build:sdk
 npm run pack:check:sdk
 npm run dev -- <command>
-npm run playground:runtime:install   # also playground:{runtime,server}:{state,update,remove,start,stop,env}; playground2:* uses a second instance and ports
+npm run playground:runtime:install   # also playground:runtime:{state,update,remove}, playground:server:{install,start,status,stop,env}, playground:outputs:collect; playground2:* uses a second instance and ports
 ```
 
 ## Key Paths
