@@ -32,6 +32,7 @@ npm run playground:runtime:install   # also playground:runtime:{state,update,rem
 
 - `src/`: core hagiscript source (`cli.ts`, `commands/`, `runtime/`)
 - `src/__tests__/`: vitest unit tests (only this directory is collected)
+- `tests/runtime/fixtures/`, `fixtures/`: test fixtures (manifests, component scripts, npm-sync inputs, runtime templates) read by the vitest suites; there are no test files outside `src/__tests__/`
 - `runtime/`: packaged runtime manifest, install/verify/remove scripts, and config templates
 - `sdk/`: `@hagicode/hagiscript-sdk` package (versioned in step with the CLI via `npm run sync-sdk-version`)
 - `bin/runtime`: `hagicode-runtime` bin entry (see `bin` in `package.json`)
