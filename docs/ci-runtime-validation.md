@@ -8,11 +8,11 @@ The validation job covers the contributor-facing package flow with real network 
 - `windows-latest` validates `.cmd` command shims, managed `node.exe` and `npm.cmd` resolution, Windows-safe argument arrays, installed-package runtime behavior, and the same managed PM2 online-state contract required on Linux and macOS. Runner-specific capability skips remain limited to unrelated platform checks such as symlink creation privilege.
 - `macos-latest` validates POSIX paths on macOS, Unix permission bits, symlink resolution, installed-package runtime behavior, and architecture diagnostics that show whether the runner is `arm64` or `x64`.
 
-The `validate` job runs the full contributor-facing sequence: `npm ci`, `npm test`, `npm run build`, `npm run pack:check`, and `npm run integration:installed-runtime`. Runtime lifecycle coverage is provided by the unit suite and the installed-runtime integration.
+The `validate` job runs the full contributor-facing sequence: `pnpm install`, `pnpm test`, `pnpm run build`, `pnpm run pack:check`, and `pnpm run integration:installed-runtime`. Runtime lifecycle coverage is provided by the unit suite and the installed-runtime integration.
 
 ## Command Syntax
 
-The CI jobs run `npm run integration:installed-runtime`. That script packs the current build with `npm pack`, installs the tarball into a temporary npm project, and invokes the installed package binary at `node_modules/.bin/hagiscript` on POSIX or `node_modules/.bin/hagiscript.cmd` on Windows with these command shapes:
+The CI jobs run `pnpm run integration:installed-runtime`. That script packs the current build with `npm pack`, installs the tarball into a temporary npm project, and invokes the installed package binary at `node_modules/.bin/hagiscript` on POSIX or `node_modules/.bin/hagiscript.cmd` on Windows with these command shapes:
 
 ```bash
 hagiscript install-node --target "$TEMP/custom-node-runtime"
@@ -75,28 +75,28 @@ Skipped checks are listed under `Skipped Checks`. They are not reported as succe
 Run local checks from `repos/hagiscript`:
 
 ```bash
-npm test
-npm run build
-npm run pack:check
-npm run integration:installed-runtime
+pnpm test
+pnpm run build
+pnpm run pack:check
+pnpm run integration:installed-runtime
 ```
 
 Override the npm registry mirror used by the npm-sync fixture:
 
 ```bash
-HAGISCRIPT_INTEGRATION_REGISTRY_MIRROR="https://registry.npmjs.org/" npm run integration:installed-runtime
+HAGISCRIPT_INTEGRATION_REGISTRY_MIRROR="https://registry.npmjs.org/" pnpm run integration:installed-runtime
 ```
 
 Preserve the temporary integration directory for debugging:
 
 ```bash
-HAGISCRIPT_KEEP_INTEGRATION_TEMP=1 npm run integration:installed-runtime
+HAGISCRIPT_KEEP_INTEGRATION_TEMP=1 pnpm run integration:installed-runtime
 ```
 
 Write the generated summary to a known location:
 
 ```bash
-HAGISCRIPT_INTEGRATION_SUMMARY_PATH=".ci-artifacts/local-integration-summary.md" npm run integration:installed-runtime
+HAGISCRIPT_INTEGRATION_SUMMARY_PATH=".ci-artifacts/local-integration-summary.md" pnpm run integration:installed-runtime
 ```
 
 Local runs use the contributor's current operating system and do not require GitHub Actions environment variables. When `RUNNER_OS`, `RUNNER_ARCH`, or `GITHUB_RUN_ID` are absent, diagnostics mark the run as local.
