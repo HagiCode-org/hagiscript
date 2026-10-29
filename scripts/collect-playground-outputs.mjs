@@ -9,7 +9,7 @@ const outputsRoot = resolve(repoRoot, "playground", "outputs")
 const manifestPath = "./playground/generated/manifest.yaml"
 const runtimeRoot = "./playground/runtime-root"
 
-await execa("npm", ["run", "playground:manifest:generate"], {
+await execa("pnpm", ["run", "playground:manifest:generate"], {
   cwd: repoRoot,
   stdio: "inherit"
 })
