@@ -121,4 +121,17 @@ describe("release versioning helpers", () => {
       })
     ).toBe("0.1.7-dev.12.3.abcdef1");
   });
+
+  it("prefixes a sha made only of digits so SemVer keeps it a string identifier", () => {
+    const version = (sha: string) =>
+      buildDevVersion("0.1.7", {
+        GITHUB_RUN_NUMBER: "12",
+        GITHUB_RUN_ATTEMPT: "3",
+        GITHUB_SHA: sha
+      });
+
+    expect(version("6e24429ffff")).toBe("0.1.7-dev.12.3.6e24429");
+    expect(version("1008756ffff")).toBe("0.1.7-dev.12.3.g1008756");
+    expect(version("0123456ffff")).toBe("0.1.7-dev.12.3.g0123456");
+  });
 });
