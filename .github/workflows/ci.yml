@@ -34,33 +34,44 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Prepare CI artifact directory
         shell: bash
         run: mkdir -p "$HAGISCRIPT_CI_ARTIFACT_DIR"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify install and lockfile stability
+        run: |
+          test -d node_modules
+          git diff --exit-code -- pnpm-lock.yaml
+
+      - name: Registry neutrality
+        run: pnpm run check:registry
 
       - name: Run tests
-        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-test.log" npm test
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-test.log" pnpm test
 
       - name: Build package
-        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-build.log" npm run build
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-build.log" pnpm run build
 
       - name: Verify packed files
-        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-pack-check.log" npm run pack:check
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-pack-check.log" pnpm run pack:check
 
       - name: Run installed package runtime integration test
         env:
           HAGISCRIPT_INTEGRATION_SUMMARY_PATH: ${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-integration-summary.md
-        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-integration.log" npm run integration:installed-runtime
+        run: node scripts/run-with-log.mjs "${{ env.HAGISCRIPT_CI_ARTIFACT_DIR }}/validate-${{ matrix.platform }}-integration.log" pnpm run integration:installed-runtime
 
       - name: Append validation summary
         if: always()

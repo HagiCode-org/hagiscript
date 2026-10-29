@@ -28,25 +28,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify install and lockfile stability
+        run: |
+          test -d node_modules
+          git diff --exit-code -- pnpm-lock.yaml
+
+      - name: Registry neutrality
+        run: pnpm run check:registry
 
       - name: Verify npm publish prerequisites
-        run: npm run publish:check-prereqs
+        run: pnpm run publish:check-prereqs
 
       - name: Run tests
-        run: npm test
+        run: pnpm test
 
       - name: Build package
-        run: npm run build
+        run: pnpm run build
 
       - name: Resolve development version
         id: version
@@ -54,7 +65,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           HAGISCRIPT_REQUIRE_UNRELEASED_TAG: "1"
         run: |
-          version="$(npm run --silent publish:prepare-dev-version)"
+          version="$(pnpm run --silent publish:prepare-dev-version)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Resolved dev version: $version"
 
@@ -64,10 +75,10 @@ jobs:
         run: npm version --no-git-tag-version --allow-same-version "$DEV_VERSION"
 
       - name: Verify packed files
-        run: npm run pack:check
+        run: pnpm run pack:check
 
       - name: Run installed package runtime integration test
-        run: npm run integration:installed-runtime
+        run: pnpm run integration:installed-runtime
 
       - name: Publish to npm dev dist-tag
         id: publish
@@ -106,10 +117,10 @@ jobs:
           echo "result=published" >> "$GITHUB_OUTPUT"
 
       - name: Build SDK package
-        run: npm run build:sdk
+        run: pnpm run build:sdk
 
       - name: Verify SDK packed files
-        run: npm run pack:check:sdk
+        run: pnpm run pack:check:sdk
 
       - name: Publish SDK to npm dev dist-tag
         id: publish_sdk
@@ -182,23 +193,34 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify install and lockfile stability
+        run: |
+          test -d node_modules
+          git diff --exit-code -- pnpm-lock.yaml
+
+      - name: Registry neutrality
+        run: pnpm run check:registry
 
       - name: Verify release tag matches package version
         id: version
         env:
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          version="$(npm run --silent publish:verify-release -- "$RELEASE_TAG_NAME")"
+          version="$(pnpm run --silent publish:verify-release "$RELEASE_TAG_NAME")"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Validated release version: $version"
 
@@ -208,19 +230,19 @@ jobs:
         run: npm version --no-git-tag-version --allow-same-version "$RELEASE_VERSION"
 
       - name: Verify npm publish prerequisites
-        run: npm run publish:check-prereqs
+        run: pnpm run publish:check-prereqs
 
       - name: Run tests
-        run: npm test
+        run: pnpm test
 
       - name: Build package
-        run: npm run build
+        run: pnpm run build
 
       - name: Verify packed files
-        run: npm run pack:check
+        run: pnpm run pack:check
 
       - name: Run installed package runtime integration test
-        run: npm run integration:installed-runtime
+        run: pnpm run integration:installed-runtime
 
       - name: Publish to npm latest dist-tag
         id: publish
@@ -259,10 +281,10 @@ jobs:
           echo "result=published" >> "$GITHUB_OUTPUT"
 
       - name: Build SDK package
-        run: npm run build:sdk
+        run: pnpm run build:sdk
 
       - name: Verify SDK packed files
-        run: npm run pack:check:sdk
+        run: pnpm run pack:check:sdk
 
       - name: Publish SDK to npm latest dist-tag
         id: publish_sdk
