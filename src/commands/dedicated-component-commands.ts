@@ -37,6 +37,7 @@ export function registerDedicatedComponentCommand(
         const result = await executeComponentServiceAction(component, action, {
           manifestPath: validateDedicatedPathOption(options.fromManifest, "--from-manifest"),
           runtimeRoot: validateDedicatedPathOption(options.runtimeRoot, "--runtime-root"),
+          externalNodePath: validateDedicatedPathOption(options.externalNodePath, "--external-node-path"),
           lines: options.lines
         })
 

@@ -443,13 +443,17 @@ function resolveReportedComponentRequirement(
   return component.required
 }
 
-function shouldUseManagedNodeRuntime(state: RuntimeState, manifest: LoadedRuntimeManifest): boolean {
+export function shouldUseManagedNodeRuntime(state: RuntimeState, manifest: LoadedRuntimeManifest): boolean {
   if (state.components.node?.status === "skipped-by-policy") {
     return false
   }
 
-  // A node component the manifest does not require (optional, or removed from the install phases) is never installed,
-  // so PM2 and npm use the host Node and npm instead of a managed runtime that does not exist.
+  // An installed managed node (for example from `runtime install --components node`) is used even when the manifest
+  // makes Node optional. A node the manifest does not require and that is not installed falls back to host Node and npm.
+  if (state.components.node?.status === "installed") {
+    return true
+  }
+
   const nodeComponent = manifest.componentMap.get("node")
   return !nodeComponent || resolveRuntimeComponentPolicy(nodeComponent).required
 }
@@ -1121,7 +1125,7 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
       : resolveHostNpmCommand()
     if (!npmCommand) {
       throw new RuntimeLifecycleError(
-        "Host npm is unavailable. Install npm on PATH before using policy-skipped Node runtime components."
+        "Host npm is unavailable. Install Node.js with npm on PATH, install the managed Node runtime with `hagiscript runtime install --components node`, or pass --no-ensure-pm2 to skip installing pm2."
       )
     }
 

@@ -7,6 +7,7 @@ import {
 export interface DedicatedComponentCommandOptions {
   fromManifest?: string
   runtimeRoot?: string
+  externalNodePath?: string
   json?: boolean
   lines?: number
 }
@@ -15,6 +16,10 @@ export function applyDedicatedComponentCommonOptions(command: Command): Command 
   return command
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option(
+      "--external-node-path <path>",
+      "Node executable PM2 uses instead of the managed or PATH Node (authoritative when given)"
+    )
     .option("--json", "emit machine-readable JSON output")
 }
 

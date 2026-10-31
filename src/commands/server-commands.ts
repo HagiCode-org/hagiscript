@@ -29,6 +29,7 @@ interface ServerBaseOptions {
   fromManifest?: string
   runtimeRoot?: string
   instance?: string
+  externalNodePath?: string
   json?: boolean
 }
 
@@ -285,6 +286,10 @@ export function registerServerCommands(program: Command): void {
         "--instance <name>",
         "override the manifest-defined PM2 instance identifier used to namespace the managed server app name"
       )
+      .option(
+        "--external-node-path <path>",
+        "Node executable PM2 uses instead of the managed or PATH Node (authoritative when given)"
+      )
       .option("--json", "emit machine-readable JSON output")
       .action(async (options: ServerBaseOptions, command: Command) => {
         try {
@@ -292,7 +297,8 @@ export function registerServerCommands(program: Command): void {
             const result = await resolveManagedServerStartupEnvironment({
               manifestPath: validatePathOption(options.fromManifest, "--from-manifest"),
               runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root"),
-              instanceName: validateInstanceName(options.instance)
+              instanceName: validateInstanceName(options.instance),
+              externalNodePath: validatePathOption(options.externalNodePath, "--external-node-path")
             })
             process.stdout.write(
               options.json
@@ -305,7 +311,8 @@ export function registerServerCommands(program: Command): void {
           const result = await runServerLifecycleAction(action, {
             manifestPath: validatePathOption(options.fromManifest, "--from-manifest"),
             runtimeRoot: validatePathOption(options.runtimeRoot, "--runtime-root"),
-            instanceName: validateInstanceName(options.instance)
+            instanceName: validateInstanceName(options.instance),
+            externalNodePath: validatePathOption(options.externalNodePath, "--external-node-path")
           })
           process.stdout.write(
             options.json
@@ -325,6 +332,7 @@ async function runServerLifecycleAction(
     manifestPath?: string
     runtimeRoot?: string
     instanceName?: string
+    externalNodePath?: string
   }
 ): Promise<ManagedPm2CommandResult> {
   switch (action) {

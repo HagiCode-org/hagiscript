@@ -114,6 +114,32 @@ describe("runtime CLI commands", () => {
     stdout.mockRestore()
   })
 
+  it("forwards an explicit node component request and omits components by default", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+
+    await runCli(["node", "hagiscript", "runtime", "install", "--runtime-root", "/tmp/runtime-root"])
+    const defaultCall = runtimeManagerMocks.installRuntime.mock.calls.at(-1)?.[0] as
+      | { components?: string[] }
+      | undefined
+    expect(defaultCall?.components ?? []).toEqual([])
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "runtime",
+      "install",
+      "--runtime-root",
+      "/tmp/runtime-root",
+      "--components",
+      "node"
+    ])
+    expect(runtimeManagerMocks.installRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({ components: ["node"] })
+    )
+
+    stdout.mockRestore()
+  })
+
   it("passes runtime policy context to lifecycle commands", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
 

@@ -125,4 +125,58 @@ describe("pm2 CLI commands", () => {
 
     stdout.mockRestore()
   })
+
+  it("forwards --external-node-path to PM2 actions and to env", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+
+    await runCli([
+      "node",
+      "hagiscript",
+      "pm2",
+      "server",
+      "start",
+      "--runtime-root",
+      "/tmp/runtime-root",
+      "--external-node-path",
+      "/opt/node/bin/node"
+    ])
+    expect(pm2ManagerMocks.runManagedPm2Command).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: "start", externalNodePath: "/opt/node/bin/node" })
+    )
+
+    await runCli(["node", "hagiscript", "pm2", "server", "env", "--external-node-path", "/opt/node/bin/node"])
+    expect(pm2ManagerMocks.resolveManagedPm2Environment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ externalNodePath: "/opt/node/bin/node" })
+    )
+
+    stdout.mockRestore()
+  })
+
+  it("forwards no external Node path when --external-node-path is omitted", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+
+    await runCli(["node", "hagiscript", "pm2", "server", "status", "--runtime-root", "/tmp/runtime-root"])
+
+    expect(pm2ManagerMocks.runManagedPm2Command.mock.lastCall?.[0]?.externalNodePath).toBeUndefined()
+
+    stdout.mockRestore()
+  })
+
+  it.each([
+    ["an empty value", ""],
+    ["a null byte", "/opt/node\0/bin/node"]
+  ])("rejects %s for --external-node-path before running a PM2 action", async (_label, value) => {
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never)
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+    const callsBefore = pm2ManagerMocks.runManagedPm2Command.mock.calls.length
+
+    await runCli(["node", "hagiscript", "pm2", "server", "start", "--external-node-path", value])
+
+    expect(stderr.mock.calls.map(([text]) => String(text)).join("")).toContain("--external-node-path")
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(pm2ManagerMocks.runManagedPm2Command.mock.calls.length).toBe(callsBefore)
+
+    exit.mockRestore()
+    stderr.mockRestore()
+  })
 })

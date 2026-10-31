@@ -11,6 +11,7 @@ import {
   buildManagedRuntimeEnvironment,
   getManagedRuntimePathEntries
 } from "./runtime-executor.js";
+import { findHostNode, isExecutableNodeFile } from "./host-node.js";
 import { getRuntimeExecutablePaths } from "./node-verify.js";
 import {
   loadRuntimeManifest,
@@ -561,26 +562,19 @@ async function resolveManagedPm2NodeRuntime(
     };
   }
 
-  // PM2 process supervision always needs a Node executable to run its own
-  // CLI, even when the managed component being launched is node-less (for
-  // example a released-service .NET server). When no bundled/managed Node
-  // runtime is present, fall back to an externally provided Node executable
-  // instead of silently returning an empty node path, which would otherwise
-  // cause PM2 command spawning to fail with an empty executable argv[0].
-  if (!managedNodePath) {
-    const externalNodePath = normalizeManagedEnvironmentValue(
-      policyContext.externalNodePath
-    );
-    if (!externalNodePath) {
+  // Node is optional here. PM2 still needs a Node executable to run its own CLI, so pick one in this order:
+  // 1. an explicit --external-node-path (authoritative: a bad value fails and never falls through),
+  // 2. an installed managed Node runtime,
+  // 3. a `node` executable found on PATH.
+  const externalNodePath = normalizeManagedEnvironmentValue(
+    policyContext.externalNodePath
+  );
+  if (externalNodePath) {
+    if (!(await isExecutableNodeFile(externalNodePath))) {
       throw new ManagedPm2Error(
-        "No managed Node runtime is bundled and no external Node executable path was provided. PM2 requires a Node executable to manage services; provide an external Node path."
+        `Node executable given by --external-node-path is missing or not executable: ${externalNodePath}. Pass an existing Node executable path, or omit --external-node-path to use the managed or PATH Node.`
       );
     }
-
-    await validateManagedPath(
-      externalNodePath,
-      "External Node runtime is unavailable. Provide a valid external Node executable path before starting managed PM2 services."
-    );
 
     return {
       nodePath: externalNodePath,
@@ -588,24 +582,27 @@ async function resolveManagedPm2NodeRuntime(
     };
   }
 
-  const externalNodePath = normalizeManagedEnvironmentValue(
-    policyContext.externalNodePath
-  );
-  if (!externalNodePath) {
-    throw new ManagedPm2Error(
-      "Node runtime is managed externally for the current runtime policy, but no external Node executable path was provided."
-    );
+  if (managedNodePath && (await isExecutableNodeFile(managedNodePath))) {
+    return {
+      nodePath: managedNodePath,
+      useManagedNodeRuntime: true
+    };
   }
 
-  await validateManagedPath(
-    externalNodePath,
-    "External Node runtime is unavailable. Provide a valid external Node executable path before starting managed PM2 services."
-  );
+  const hostNodePath = await findHostNode();
+  if (hostNodePath) {
+    return {
+      nodePath: hostNodePath,
+      useManagedNodeRuntime: false
+    };
+  }
 
-  return {
-    nodePath: externalNodePath,
-    useManagedNodeRuntime: false
-  };
+  const managedNodeDescription = managedNodePath
+    ? `the managed Node runtime (not installed at ${managedNodePath})`
+    : "the managed Node runtime (paths.nodeRuntime is not set)";
+  throw new ManagedPm2Error(
+    `No Node executable is available to run PM2. Tried, in order: --external-node-path (not given), ${managedNodeDescription}, and a node executable on PATH (not found). Install the managed Node runtime with \`hagiscript runtime install --components node\`, add Node to PATH, or pass --external-node-path <path>.`
+  );
 }
 
 export async function validateManagedPm2Toolchain(

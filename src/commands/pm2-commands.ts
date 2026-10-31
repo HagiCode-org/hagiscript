@@ -12,6 +12,7 @@ import {
 interface Pm2CommandOptions {
   fromManifest?: string
   runtimeRoot?: string
+  externalNodePath?: string
   json?: boolean
 }
 
@@ -25,6 +26,10 @@ export function registerPm2Commands(program: Command): void {
     .argument("<action>", "pm2 action", parseManagedPm2Action)
     .option("--from-manifest <path>", "override the default runtime manifest")
     .option("--runtime-root <path>", "managed runtime root override")
+    .option(
+      "--external-node-path <path>",
+      "Node executable PM2 uses instead of the managed or PATH Node (authoritative when given)"
+    )
     .option("--json", "emit machine-readable JSON output")
     .action(
       async (
@@ -36,12 +41,14 @@ export function registerPm2Commands(program: Command): void {
         try {
           const manifestPath = validatePathOption(options.fromManifest, "--from-manifest")
           const runtimeRoot = validatePathOption(options.runtimeRoot, "--runtime-root")
+          const externalNodePath = validatePathOption(options.externalNodePath, "--external-node-path")
 
           if (action === "env") {
             const result = await resolveManagedPm2Environment({
               manifestPath,
               runtimeRoot,
-              service
+              service,
+              externalNodePath
             })
 
             process.stdout.write(
@@ -56,7 +63,8 @@ export function registerPm2Commands(program: Command): void {
             manifestPath,
             runtimeRoot,
             service,
-            action
+            action,
+            externalNodePath
           })
 
           process.stdout.write(

@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "node:os"
 import process from "node:process"
@@ -33,10 +33,6 @@ async function setUpNodeLessReleasedServiceFixture(directory: string): Promise<{
     manifestPath,
     manifest
       .replace('  nodeRuntime: "components/node/runtime"\n', "")
-      .replace(
-        '- name: "node"\n  type: "runtime"',
-        '- name: "node"\n  type: "runtime"\n  required: false'
-      )
       .replace(/^\s*startScript: "start\.sh"\n/m, "")
   )
 
@@ -212,6 +208,14 @@ async function createManagedPm2Fixture(options: {
     ),
   ])
 
+  if (process.platform !== "win32") {
+    // Node executables must carry the execute bit to count as managed or external Node.
+    await Promise.all([
+      ...(options.missingNode ? [] : [chmod(nodePath, 0o755)]),
+      ...(options.missingHostNode ? [] : [chmod(hostNodePath, 0o755)]),
+    ])
+  }
+
   return {
     directory,
     hostNodePath,
@@ -221,6 +225,30 @@ async function createManagedPm2Fixture(options: {
     paths,
     pm2Entrypoint,
   }
+}
+
+async function withPathEnv<T>(pathValue: string, run: () => Promise<T>): Promise<T> {
+  const previous = process.env.PATH
+  process.env.PATH = pathValue
+  try {
+    return await run()
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PATH
+    } else {
+      process.env.PATH = previous
+    }
+  }
+}
+
+async function writePathNode(directory: string): Promise<string> {
+  await mkdir(directory, { recursive: true })
+  const nodePath = path.join(directory, process.platform === "win32" ? "node.exe" : "node")
+  await writeFile(nodePath, "")
+  if (process.platform !== "win32") {
+    await chmod(nodePath, 0o755)
+  }
+  return nodePath
 }
 
 describe("managed PM2 service resolution", () => {
@@ -258,9 +286,12 @@ describe("managed PM2 service resolution", () => {
     try {
       const { loadedManifest, paths } = await setUpNodeLessReleasedServiceFixture(directory)
 
-      await expect(
-        resolveManagedPm2ServiceDefinition(loadedManifest, paths, "server")
-      ).rejects.toThrow(/external Node executable/i)
+      // PATH is emptied so a Node installed on the host cannot satisfy the fallback.
+      await withPathEnv("", async () => {
+        await expect(
+          resolveManagedPm2ServiceDefinition(loadedManifest, paths, "server")
+        ).rejects.toThrow(/--external-node-path/)
+      })
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
@@ -455,6 +486,114 @@ describe("managed PM2 service resolution", () => {
 
       expect(definition.nodePath).toBe(fixture.hostNodePath)
       expect(definition.useManagedNodeRuntime).toBe(false)
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("uses the explicit external path over both the managed runtime and PATH Node", async () => {
+    const fixture = await createManagedPm2Fixture({ nodeRequired: false })
+    try {
+      const pathNode = await writePathNode(path.join(fixture.directory, "path-bin"))
+      const definition = await withPathEnv(path.dirname(pathNode), () =>
+        resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server", undefined, undefined, undefined, {
+          externalNodePath: fixture.hostNodePath,
+        })
+      )
+
+      expect(definition.nodePath).toBe(fixture.hostNodePath)
+      expect(definition.useManagedNodeRuntime).toBe(false)
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("fails on an invalid explicit path without falling back to managed or PATH Node", async () => {
+    const fixture = await createManagedPm2Fixture({ nodeRequired: false })
+    try {
+      const pathNode = await writePathNode(path.join(fixture.directory, "path-bin"))
+      const missingExternalNode = path.join(fixture.directory, "missing-node")
+
+      await withPathEnv(path.dirname(pathNode), async () => {
+        await expect(
+          resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server", undefined, undefined, undefined, {
+            externalNodePath: missingExternalNode,
+          })
+        ).rejects.toThrow(missingExternalNode)
+      })
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("uses the installed managed Node when no explicit path is given", async () => {
+    const fixture = await createManagedPm2Fixture({ nodeRequired: false })
+    try {
+      const definition = await withPathEnv("", () =>
+        resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server")
+      )
+
+      expect(definition.nodePath).toBe(fixture.nodePath)
+      expect(definition.useManagedNodeRuntime).toBe(true)
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("uses Node from PATH when neither an explicit path nor a managed runtime is available", async () => {
+    const fixture = await createManagedPm2Fixture({ nodeRequired: false, missingNode: true })
+    try {
+      const pathNode = await writePathNode(path.join(fixture.directory, "path-bin"))
+      const definition = await withPathEnv(path.dirname(pathNode), () =>
+        resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server")
+      )
+
+      expect(definition.nodePath).toBe(pathNode)
+      expect(definition.useManagedNodeRuntime).toBe(false)
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("fails before spawning any PM2 command when no Node is available", async () => {
+    const fixture = await createManagedPm2Fixture({ nodeRequired: false, missingNode: true })
+    const invocations: string[] = []
+    const runner = async (command: string, args: string[], options: { cwd: string }) => {
+      invocations.push(command)
+      return { command, args, stdout: "[]", stderr: "", cwd: options.cwd, exitCode: 0, signal: null, timedOut: false }
+    }
+
+    try {
+      await withPathEnv("", async () => {
+        await expect(
+          runManagedPm2Command({
+            manifestPath: fixture.manifestPath,
+            runtimeRoot: fixture.paths.root,
+            service: "server",
+            action: "start",
+            runner,
+          })
+        ).rejects.toThrow(/--external-node-path[\s\S]*PATH[\s\S]*managed Node runtime/)
+      })
+
+      expect(invocations).toEqual([])
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps required and Desktop bundled Node on the bundled runtime, ignoring an explicit path and PATH", async () => {
+    const fixture = await createManagedPm2Fixture({ missingNode: true })
+    try {
+      const pathNode = await writePathNode(path.join(fixture.directory, "path-bin"))
+
+      await withPathEnv(path.dirname(pathNode), async () => {
+        await expect(
+          resolveManagedPm2ServiceDefinition(fixture.loadedManifest, fixture.paths, "server", undefined, undefined, undefined, {
+            externalNodePath: fixture.hostNodePath,
+          })
+        ).rejects.toThrow(/Managed Node executable for PM2 is missing/)
+      })
     } finally {
       await rm(fixture.directory, { recursive: true, force: true })
     }
