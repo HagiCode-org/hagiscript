@@ -58,12 +58,12 @@ hagiscript server start \
 
 The packaged runtime manifest defines these managed components:
 
-- `node`: managed Node.js runtime
+- `node`: managed Node.js runtime (optional by default; install it with `--components node`)
 - `dotnet`: managed .NET runtime
-- `code-server`: bundled PM2-managed service
+- `code-server`: bundled PM2-managed service (requires `node`)
 - `server`: released backend service package
 
-By default, `hagiscript runtime install` prepares the required runtime set.
+By default, `hagiscript runtime install` prepares the required runtime set. Node is optional by default: the default install does not download a managed Node runtime, and `server` does not depend on it. Install it explicitly with `hagiscript runtime install --components node`. When PM2 needs a Node executable, Hagiscript uses `--external-node-path` if given, then an installed managed Node runtime, then a `node` found on `PATH`.
 
 The managed runtime layout separates immutable program files from mutable data:
 
@@ -283,6 +283,15 @@ Override the PM2 instance name used for namespaced app names:
 hagiscript server start --instance myruntime
 ```
 
+PM2 needs a Node executable. Because the `node` component is optional, the server runs without a managed Node runtime as long as one of these is available: an explicit `--external-node-path`, an installed managed Node runtime, or a `node` on `PATH`. Pass `--external-node-path` to pick a specific executable; it takes precedence over the managed and `PATH` Node and fails if the path is invalid:
+
+```bash
+hagiscript server start --external-node-path /opt/node/bin/node
+hagiscript server status --external-node-path /opt/node/bin/node
+```
+
+The same option works with `hagiscript pm2 <service> <action>` (including `env`) and with `hagiscript code_server <action>`.
+
 ## Server Configuration
 
 Read the effective managed server config:
@@ -410,6 +419,7 @@ hagiscript npm-sync --runtime-root ~/.hagicode/runtime
 - `manifest set <path>`: update manifest paths, npmSync package versions, or server defaults
 - `--from-manifest <path>`: use a specific runtime manifest YAML
 - `--runtime-root <path>`: change the managed runtime root
+- `--external-node-path <path>`: Node executable PM2 uses when the `node` component is optional; takes precedence over the managed and `PATH` Node (`server start|restart|stop|status|env`, `pm2 <service> <action>`, `code_server <action>`)
 - `--runtime-home <path>`: set the manifest's program root
 - `--runtime-data-root <path>`: set the manifest's runtime-data root
 - `--server-program-root <path>`: set the manifest's server program root

@@ -48,7 +48,7 @@ These values are owned by Hagiscript even in the Desktop-managed flow.
 
 | Variable group | Ownership | Source in Hagiscript | Notes |
 | --- | --- | --- | --- |
-| `PATH` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` + `prependPathEntries()` | Hagiscript rebuilds `PATH` so the selected managed Node and runtime bin entries take precedence. Desktop Windows PM2 always selects its packaged Node, independently of external dependency mode; other manifests retain their existing policy. |
+| `PATH` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` + `prependPathEntries()` | Hagiscript rebuilds `PATH` so the selected managed Node and runtime bin entries take precedence. Desktop Windows PM2 always selects its packaged Node, independently of external dependency mode; other manifests retain their existing policy. When the `node` component is optional, the PM2 Node executable is chosen in this order: `--external-node-path` (authoritative, no fall-through on failure), an installed managed Node runtime, then a `node` found on `PATH`. Desktop bundled Node (`desktop-bundled-pm2-node`) is never replaced by an external path or `PATH` Node. |
 | `PM2_HOME` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Points PM2 state into the runtime data boundary. |
 | `hagicode_pm2_name` | `hagiscript generated` | `buildManagedPm2Environment()` | The server PM2 instance-name variable. The manifest decides the key name; the server currently uses `hagicode_pm2_name`. |
 | `HAGICODE_RUNTIME_HOME` | `hagiscript generated` | `buildManagedRuntimeEnvironment()` | Runtime program home. |
@@ -81,6 +81,18 @@ Desktop also forwards an open-ended set of ambient variables into Hagiscript sta
 That means any non-contracted key may still reach PM2 and the backend, but it should be treated as ambient passthrough rather than a stable contract.
 
 Examples include host-machine tokens, editor integration ports, and other user-session variables.
+
+## Optional Node For PM2
+
+`paths.nodeRuntime` names the managed Node location. The packaged manifest declares the `node` component optional, so a default install does not provide it. For a non-Desktop runtime whose `node` component is optional, PM2 runs with the first available Node executable in this order:
+
+1. `--external-node-path <path>` on `server start|restart|stop|status`, `pm2 <service> <action>` or `code_server <action>`. An invalid path fails with an error that names it and never falls through to the next source.
+2. The installed managed Node runtime under `paths.nodeRuntime`, when its executable exists.
+3. A `node` executable found on `PATH` (no shell is spawned, and `.cmd` shims are not used).
+
+If none of these exists, Hagiscript fails before it spawns any PM2 command. The error names the three sources and `--external-node-path`.
+
+Desktop bundled PM2 Node (`source: desktop-bundled-pm2-node`) and required Node keep their bundled-only behavior. They never use `--external-node-path` or `PATH` Node, even when the bundled executable is missing.
 
 ## Effective Precedence
 
