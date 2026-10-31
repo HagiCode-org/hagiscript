@@ -443,8 +443,15 @@ function resolveReportedComponentRequirement(
   return component.required
 }
 
-function shouldUseManagedNodeRuntime(state: RuntimeState): boolean {
-  return state.components.node?.status !== "skipped-by-policy"
+function shouldUseManagedNodeRuntime(state: RuntimeState, manifest: LoadedRuntimeManifest): boolean {
+  if (state.components.node?.status === "skipped-by-policy") {
+    return false
+  }
+
+  // A node component the manifest does not require (optional, or removed from the install phases) is never installed,
+  // so PM2 and npm use the host Node and npm instead of a managed runtime that does not exist.
+  const nodeComponent = manifest.componentMap.get("node")
+  return !nodeComponent || resolveRuntimeComponentPolicy(nodeComponent).required
 }
 
 export function renderRuntimeStateText(report: RuntimeStateReport): string {
@@ -800,7 +807,7 @@ async function executeScriptComponent(
       downloadCacheDir: options.downloadCacheDir,
       npmRegistryMirror: options.npmRegistryMirror,
       pm2VersionOverride: options.pm2VersionOverride,
-      useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
+      useManagedNodeRuntime: shouldUseManagedNodeRuntime(state, manifest)
     })
 
     if (action.phase !== "remove" && component.scripts.configure) {
@@ -818,7 +825,7 @@ async function executeScriptComponent(
         downloadCacheDir: options.downloadCacheDir,
         npmRegistryMirror: options.npmRegistryMirror,
         pm2VersionOverride: options.pm2VersionOverride,
-        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
+        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state, manifest)
       })
     }
 
@@ -837,7 +844,7 @@ async function executeScriptComponent(
         downloadCacheDir: options.downloadCacheDir,
         npmRegistryMirror: options.npmRegistryMirror,
         pm2VersionOverride: options.pm2VersionOverride,
-        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state)
+        useManagedNodeRuntime: shouldUseManagedNodeRuntime(state, manifest)
       })
     }
   } else {
@@ -1088,7 +1095,7 @@ async function ensureManagedDirectories(paths: ResolvedRuntimePaths): Promise<vo
     state: RuntimeState,
     options: Pick<RuntimeLifecycleOptions, "npmRegistryMirror" | "pm2VersionOverride"> = {}
   ): Promise<ManagedPm2EnsureResult> {
-    const useManagedNodeRuntime = shouldUseManagedNodeRuntime(state)
+    const useManagedNodeRuntime = shouldUseManagedNodeRuntime(state, manifest)
     const verification = useManagedNodeRuntime
       ? await verifyNodeRuntime(paths.nodeRuntime)
       : null
