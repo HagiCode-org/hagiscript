@@ -23,14 +23,10 @@ paths:
 components:
 - name: "node"
   type: "runtime"
+  required: false
   source: "desktop-bundled-node"
   version: "22.22.2"
   channelVersion: "22"
-  optionalPolicy:
-    rules:
-    - id: "external-managed"
-      dependencyManagementModes:
-      - "external-managed"
 
 - name: "dotnet"
   type: "runtime"
@@ -56,7 +52,6 @@ components:
   source: "hagicode-release-package"
   runtimeDataDir: "services/server"
   lifecycleDependencies:
-  - "node"
   - "dotnet"
   pm2:
     appName: "hagicode-server"
