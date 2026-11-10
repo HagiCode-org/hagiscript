@@ -58,9 +58,9 @@
     {
       "id": "opencode",
       "displayName": "OpenCode CLI",
-      "packageName": "opencode-ai",
-      "version": "1.14.24",
-      "target": "1.14.24",
+      "packageName": "@opencode/cli",
+      "version": "2.2.7",
+      "target": "2.2.7",
       "group": "optional-agent-cli",
       "requirement": "optional"
     }

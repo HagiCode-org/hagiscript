@@ -35,7 +35,7 @@ describe("tool sync catalog", () => {
       "claude-code": "2.1.119",
       "fission-openspec": "1.3.1",
       qoder: "0.1.48",
-      opencode: "1.14.24"
+      opencode: "2.2.7"
     });
   });
 
