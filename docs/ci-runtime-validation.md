@@ -103,7 +103,7 @@ Local runs use the contributor's current operating system and do not require Git
 
 ## Managed Tool Sync Coverage
 
-The expanded `tools` manifest shape always expands mandatory packages from the internal pinned catalog config: OpenSpec skills (`skills@1.5.1`) and code-server (`code-server@4.117.0`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`opencode-ai@1.14.24`); custom entries must use valid npm package names and semver-compatible version selectors.
+The expanded `tools` manifest shape always expands mandatory packages from the internal pinned catalog config: OpenSpec skills (`skills@1.5.1`) and code-server (`code-server@4.117.0`). Optional agent CLI sync adds selected optional CLIs when present. The first built-in optional IDs are `codex` (`@openai/codex@0.125.0`), `claude-code` (`@anthropic-ai/claude-code@2.1.119`), `fission-openspec` (`@fission-ai/openspec@1.3.1`), `qoder` (`@qoder-ai/qodercli@0.1.48`), and `opencode` (`@opencode/cli@2.2.7`); custom entries must use valid npm package names and semver-compatible version selectors.
 
 Validation happens before `npm list -g --depth=0 --json` and before any `npm install -g` mutation.
 
