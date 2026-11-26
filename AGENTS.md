@@ -44,7 +44,7 @@ pnpm run playground:runtime:install   # also playground:runtime:{state,update,re
 
 ## Agent Guidelines
 
-- Runtime: Node.js 24+ (`engines`, CI uses Node 24). CI (`.github/workflows/ci.yml`) runs `pnpm test`, build, `pack:check`, and `integration:installed-runtime` on Linux, Windows, and macOS; keep changes cross-platform (use `.cmd` shims and argument arrays, not shell parsing).
+- Runtime: Node.js 24+ (`engines`, CI uses Node 24). CI (`.github/workflows/ci.yml`) runs `pnpm run check:registry`, `pnpm test`, build, `pack:check`, and `integration:installed-runtime` on Linux, Windows, and macOS; keep changes cross-platform (use `.cmd` shims and argument arrays, not shell parsing).
 - `npm-publish.yml` publishes dev-tagged CLI and SDK builds from pushes to `main` and `latest` builds when a non-prerelease GitHub release is published (the tag must match the package version, `pnpm run publish:verify-release`); verify package contents with `pnpm run pack:check` / `pack:check:sdk` when changing `files`, `bin`, or `runtime/`.
 - Treat this as a published npm package; avoid breaking changes without version bumps.
 - The manifest-driven workflow is the core contract; preserve backward compatibility.
